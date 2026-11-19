@@ -1,0 +1,90 @@
+{
+ "split": "dev",
+ "model": "minilm",
+ "rows": [
+  {
+   "method": "rrf",
+   "alpha_dense": 0.5,
+   "ndcg@10": 0.3733,
+   "recall@10": 0.442,
+   "mrr@10": 0.4485
+  },
+  {
+   "method": "rrf",
+   "alpha_dense": 0.6,
+   "ndcg@10": 0.3865,
+   "recall@10": 0.4595,
+   "mrr@10": 0.4608
+  },
+  {
+   "method": "rrf",
+   "alpha_dense": 0.7,
+   "ndcg@10": 0.3953,
+   "recall@10": 0.4768,
+   "mrr@10": 0.4647
+  },
+  {
+   "method": "rrf",
+   "alpha_dense": 0.8,
+   "ndcg@10": 0.4038,
+   "recall@10": 0.479,
+   "mrr@10": 0.474
+  },
+  {
+   "method": "rrf",
+   "alpha_dense": 0.9,
+   "ndcg@10": 0.4062,
+   "recall@10": 0.4812,
+   "mrr@10": 0.4794
+  },
+  {
+   "method": "linear",
+   "alpha_dense": 0.1,
+   "ndcg@10": 0.2871,
+   "recall@10": 0.3386,
+   "mrr@10": 0.3486
+  },
+  {
+   "method": "linear",
+   "alpha_dense": 0.3,
+   "ndcg@10": 0.336,
+   "recall@10": 0.3872,
+   "mrr@10": 0.4083
+  },
+  {
+   "method": "linear",
+   "alpha_dense": 0.5,
+   "ndcg@10": 0.4022,
+   "recall@10": 0.4672,
+   "mrr@10": 0.473
+  },
+  {
+   "method": "linear",
+   "alpha_dense": 0.6,
+   "ndcg@10": 0.4179,
+   "recall@10": 0.4879,
+   "mrr@10": 0.4884
+  },
+  {
+   "method": "linear",
+   "alpha_dense": 0.7,
+   "ndcg@10": 0.419,
+   "recall@10": 0.4914,
+   "mrr@10": 0.4872
+  },
+  {
+   "method": "linear",
+   "alpha_dense": 0.8,
+   "ndcg@10": 0.4064,
+   "recall@10": 0.4771,
+   "mrr@10": 0.4753
+  },
+  {
+   "method": "linear",
+   "alpha_dense": 0.9,
+   "ndcg@10": 0.4005,
+   "recall@10": 0.472,
+   "mrr@10": 0.4694
+  }
+ ]
+}

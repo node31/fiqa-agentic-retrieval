@@ -78,9 +78,13 @@ def linear(bm25: Ranked, dense: Ranked, alpha: float = DEFAULT_ALPHA, top: int |
 
 def fuse(bm25: Ranked, dense: Ranked, method: str = "rrf", alpha: float = DEFAULT_ALPHA,
          top: int | None = None) -> Ranked:
-    """Dispatch to RRF or linear fusion (the router calls this after merging shards)."""
+    """Dispatch to RRF or linear fusion (the router calls this after merging shards).
+
+    ``alpha`` is the weight on DENSE for both methods: linear uses α·dense + (1-α)·bm25,
+    and RRF uses list weights (1-α, α). At α = 0.5 weighted RRF ranks exactly like plain RRF.
+    """
     if method == "rrf":
-        return rrf([bm25, dense], top=top)
+        return rrf([bm25, dense], weights=[1 - alpha, alpha], top=top)
     if method == "linear":
         return linear(bm25, dense, alpha, top=top)
     raise ValueError(f"unknown fusion method {method!r}")

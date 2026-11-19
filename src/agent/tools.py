@@ -38,9 +38,16 @@ def http_search_fn(url: str) -> SearchFn:
 
 
 def local_search_fn(router) -> SearchFn:
+    local = threading.local()
+
     def fn(query: str, strategy: str, k: int) -> list[dict]:
-        # WHY asyncio.run per call: agent workers run in plain threads, each needs its own loop.
-        return asyncio.run(router.search(query, k=k, strategy=strategy, include_text=True))["results"]
+        # WHY one persistent loop PER THREAD: agent workers run in plain threads. asyncio.run() per
+        # call would create (and tear down) a new loop + executor every time, which leaked threads
+        # and torch per-thread state in our first ablation runs (process grew to 9 GB).
+        loop = getattr(local, "loop", None)
+        if loop is None:
+            loop = local.loop = asyncio.new_event_loop()
+        return loop.run_until_complete(router.search(query, k=k, strategy=strategy, include_text=True))["results"]
 
     return fn
 

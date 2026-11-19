@@ -1,0 +1,141 @@
+{
+ "n_failures": 161,
+ "p90_doc_words": 270,
+ "mode_counts": {
+  "near_miss_rank_11_20": 29,
+  "A_lexical_only_hit_buried": 10,
+  "B_all_gold_long": 18,
+  "C_neither_retriever_top100": 58
+ },
+ "caseA_4746": {
+  "query": "Personal finance in EFU and NAFA",
+  "max_idf": 10.56,
+  "gold_rank_by_alpha": {
+   "0.7": {
+    "216321": 19
+   },
+   "0.5": {
+    "216321": 2
+   },
+   "0.4": {
+    "216321": 2
+   },
+   "0.3": {
+    "216321": 1
+   }
+  }
+ },
+ "caseA_10054": {
+  "query": "Is there an academic framework for deciding when to sell in-the-money call options?",
+  "max_idf": 6.34,
+  "gold_rank_by_alpha": {
+   "0.7": {
+    "190746": 14,
+    "131989": null
+   },
+   "0.5": {
+    "190746": 7,
+    "131989": null
+   },
+   "0.4": {
+    "190746": 3,
+    "131989": null
+   },
+   "0.3": {
+    "190746": 2,
+    "131989": null
+   }
+  }
+ },
+ "caseA_fix_eval": {
+  "fixed_0.7": {
+   "ndcg@10": 0.41904249948118094,
+   "recall@10": 0.4914380175380176,
+   "mrr@10": 0.48723968253968253,
+   "n": 500
+  },
+  "adaptive_idf>8.0_alpha0.5": {
+   "ndcg@10": 0.41757252604889356,
+   "recall@10": 0.4910713508713509,
+   "mrr@10": 0.4843349206349207,
+   "n": 500
+  },
+  "adaptive_idf>9.0_alpha0.5": {
+   "ndcg@10": 0.42063691515612894,
+   "recall@10": 0.4956046842046842,
+   "mrr@10": 0.48767301587301587,
+   "n": 500
+  },
+  "queries_triggered": {
+   "8.0": 52,
+   "9.0": 25
+  }
+ },
+ "caseB_4029": {
+  "query": "Family suggests my first real estate. Advice?",
+  "dense_score_rank10": 0.5826,
+  "gold": {
+   "324386": {
+    "words": 422,
+    "wordpiece_tokens": 542,
+    "dense_whole_truncated": 0.4637,
+    "dense_max_over_chunks": 0.5482,
+    "best_chunk": 4,
+    "n_chunks": 5
+   },
+   "208783": {
+    "words": 173,
+    "wordpiece_tokens": 212,
+    "dense_whole_truncated": 0.5771,
+    "dense_max_over_chunks": 0.5638,
+    "best_chunk": 0,
+    "n_chunks": 2
+   },
+   "63649": {
+    "words": 1477,
+    "wordpiece_tokens": 1871,
+    "dense_whole_truncated": 0.4359,
+    "dense_max_over_chunks": 0.5273,
+    "best_chunk": 10,
+    "n_chunks": 15
+   }
+  }
+ },
+ "caseC_7490": {
+  "query": "Clarify on some Stocks Terminology",
+  "query_terms": [
+   "clarifi",
+   "some",
+   "stock",
+   "terminolog"
+  ],
+  "gold": {
+   "173836": {
+    "shared_terms": [
+     "stock"
+    ],
+    "top_gold_terms": [
+     "share",
+     "price",
+     "trade",
+     "1",
+     "number",
+     "s"
+    ]
+   },
+   "372153": {
+    "shared_terms": [
+     "stock"
+    ],
+    "top_gold_terms": [
+     "you",
+     "number",
+     "share",
+     "day",
+     "price",
+     "yep"
+    ]
+   }
+  }
+ }
+}

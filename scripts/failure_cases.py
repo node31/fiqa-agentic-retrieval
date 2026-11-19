@@ -44,7 +44,9 @@ def main():
         top = s(q, "hybrid", 10)
         if recall_at_k([r["doc_id"] for r in top], qrels[qid]) > 0:
             continue
-        fused = {r["doc_id"]: (i + 1, r["score"]) for i, r in enumerate(s(q, "hybrid", 200))}
+        # PITFALL: keep depth = 100 exactly as in serving. Min-max fusion normalises over the candidate
+        # pool, so a depth-200 list has different scores and a different order (we were bitten by this).
+        fused = {r["doc_id"]: (i + 1, r["score"]) for i, r in enumerate(s(q, "hybrid", 100))}
         bm = {r["doc_id"]: (i + 1, r["score"]) for i, r in enumerate(s(q, "bm25", 1000))}
         dn = {r["doc_id"]: (i + 1, r["score"]) for i, r in enumerate(s(q, "dense", 1000))}
         gold = [{"doc_id": g, "words": len(corpus[g].split()), "fused": fused.get(g), "bm25": bm.get(g),

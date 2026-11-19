@@ -67,7 +67,7 @@ time is dominated by *document* encoding that real systems do offline, while the
 | none | 0.4190 | 0.4914 | 20.7 ms | 24.5 ms |
 | 10 | 0.4058 | 0.4914 | 338.6 ms | 366.8 ms |
 | 20 | 0.3964 | 0.4829 | 621.0 ms | 634.6 ms |
-| 50 | RERANK50_DOC | | | |
+| 50 | 0.3771 | 0.4633 | 1246.3 ms | 1366.6 ms |
 
 **A negative result, and an important one.** The reranker *hurts* here:
 - At k = 10, R@10 is unchanged *by construction* (same 10 docs), yet nDCG falls, so the CE orders them worse.

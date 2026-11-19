@@ -47,7 +47,7 @@ Fix ideas for long docs: split passages into overlapping chunks and score max-ov
 | none | 0.419 | 0.491 | 20.7 ms |
 | top-10 | 0.406 | 0.491 | 339 ms |
 | top-20 | 0.396 | 0.483 | 621 ms |
-| top-50 | see `results/ablation_rerank_minilm.json` | | |
+| top-50 | 0.377 | 0.463 | 1246 ms |
 
 At k=10 Recall@10 is unchanged *by construction* (the same 10 docs, reordered), yet nDCG drops: the
 cross-encoder orders them **worse** than the fused scores. Deeper k lets it pull in docs the hybrid ranked

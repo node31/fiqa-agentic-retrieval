@@ -215,8 +215,14 @@ class ShardStore:
             raise ShardUnhealthy(f"shard {self.shard_id} is unhealthy; restart to recover from WAL")
 
     # ------------------------------------------------------------------ migration
-    def start_build(self, model: str, batch: int = 256) -> dict:
-        """Create an index for ``model``, start dual-writing to it, and backfill in the background."""
+    def start_build(self, model: str, batch: int = 256, reencode: bool = False, throttle_s: float = 0.0) -> dict:
+        """Create an index for ``model``, start dual-writing to it, and backfill in the background.
+
+        Args:
+            reencode: ignore the offline embedding cache, i.e. what a REAL model change costs.
+            throttle_s: sleep between batches. Rate-limiting the backfill protects serving
+                latency, because the backfill competes with queries for CPU.
+        """
         with self.lock.write():
             if model in self.dense:
                 return {"status": "exists", "ready": self.ready[model]}
@@ -224,13 +230,18 @@ class ShardStore:
             self.ready[model], self.progress[model] = False, 0.0
             snapshot = [(d, self.versions[d][0], t) for d, t in self.docs.items()]
         self._persist_models()
-        threading.Thread(target=self._backfill, args=(model, snapshot, batch), daemon=True).start()
+        threading.Thread(target=self._backfill, args=(model, snapshot, batch, reencode, throttle_s),
+                         daemon=True).start()
         return {"status": "started", "n_docs": len(snapshot)}
 
-    def _backfill(self, model: str, snapshot: list, batch: int) -> None:
+    def _backfill(self, model: str, snapshot: list, batch: int, reencode: bool = False,
+                  throttle_s: float = 0.0) -> None:
+        import time
+
         for i in range(0, len(snapshot), batch):
             chunk = snapshot[i:i + batch]
-            vecs = self._vectors_for(model, [(d, t) for d, _, t in chunk])
+            items = [(d, t) for d, _, t in chunk]
+            vecs = self._embed(model, [t for _, t in items]) if reencode else self._vectors_for(model, items)
             with self.lock.write():
                 idx = self.dense.get(model)
                 if idx is None:
@@ -242,6 +253,8 @@ class ShardStore:
                 if keep:
                     idx.add([chunk[j][0] for j in keep], vecs[keep])
             self.progress[model] = (i + len(chunk)) / max(len(snapshot), 1)
+            if throttle_s:
+                time.sleep(throttle_s)
         self.progress[model], self.ready[model] = 1.0, True
 
     def drop_model(self, model: str) -> dict:

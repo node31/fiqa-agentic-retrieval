@@ -68,7 +68,7 @@ def dispatch(store, op: str, p: dict) -> dict:
     if op == "delete":
         return store.delete(p["doc_id"], int(p["version"]))
     if op == "build_model":
-        return store.start_build(p["model"])
+        return store.start_build(p["model"], reencode=bool(p.get("reencode")), throttle_s=float(p.get("throttle_s", 0)))
     if op == "drop_model":
         return store.drop_model(p["model"])
     if op == "health":
@@ -217,9 +217,10 @@ class Router:
         return {"active_model": self.active_model, "previous_model": self.previous_model,
                 "shards": {str(i): ok[i] for i in sorted(ok)}, "missing_shards": sorted(missing)}
 
-    async def migrate(self, target: str) -> dict:
+    async def migrate(self, target: str, reencode: bool = False, throttle_s: float = 0.0) -> dict:
         """Start building ``target`` on every shard (dual-write begins immediately)."""
-        ok, missing = await self._fan("build_model", self._all({"model": target}), timeout=30.0)
+        ok, missing = await self._fan("build_model", self._all(
+            {"model": target, "reencode": reencode, "throttle_s": throttle_s}), timeout=30.0)
         if missing:
             raise ShardFailure(missing)
         # WHY warm now: loading the query encoder takes seconds, so do it before cutover.
@@ -286,6 +287,8 @@ class WriteReq(BaseModel):
 
 class ModelReq(BaseModel):
     model: str
+    reencode: bool = False
+    throttle_s: float = 0.0
 
 
 def create_app():
@@ -345,7 +348,7 @@ def create_app():
 
     @app.post("/admin/migrate")
     async def migrate(req: ModelReq):
-        return await guard(router.migrate(req.model))
+        return await guard(router.migrate(req.model, req.reencode, req.throttle_s))
 
     @app.post("/admin/cutover")
     async def cutover(req: ModelReq):

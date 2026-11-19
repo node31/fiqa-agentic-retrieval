@@ -21,7 +21,7 @@ quality gap disappears (0.416 vs 0.419). ADR 0002.
 
 **Q: What does the cold vs warm delta tell you?**
 It's ~0. We preload models and run a warmup encode at process start, and keep HTTP connections alive.
-The residual cold cost (first forward pass) is ~1 ms. p95 of 20 cold samples is a noisy number anyway.
+What warmup hides (`results/microbench.json`): model load 1.5 s and a first encode of 19 ms vs 8 ms warm. p95 of 20 cold samples is a noisy number anyway.
 
 **Q: Why did reranking not help?**
 The MS MARCO MiniLM cross-encoder *lowered* nDCG@10 (0.406 at k=10, 0.396 at k=20, vs 0.419 without) and

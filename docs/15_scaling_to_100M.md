@@ -15,14 +15,15 @@ then the router fan-out. Back-of-envelope arithmetic tells you which wall you hi
 - IVF-PQ with 48-byte codes (m = 48 sub-quantisers × 8 bits): 100M × 48 B = **4.8 GB** (+ ~0.4 GB ids, + centroids). That is 32× smaller.
 - HNSW over float32: 153.6 GB + graph (M = 32 → ~256 B/vector ≈ 25.6 GB) ≈ **180 GB**: needs big-memory nodes.
 
-**Flat search latency**: our flat scan does ~19K vectors/ms/shard (≈1 ms for a shard). 100M vectors
-flat = ~5,200 ms of single-thread compute per query. Even split over 64 shards, that's ~80 ms per
+**Flat search latency**: measured 1.4 ms for a 19.2K shard and 5.3 ms for 57.6K vectors (4 threads,
+`results/microbench.json`), i.e. ~11K vectors/ms once the data is out of cache, bound by memory bandwidth.
+100M vectors flat ≈ **9 s** of compute per query. Even split over 64 shards, that's ~140 ms per
 shard. **Flat is out.** IVF (nlist = 65,536, nprobe = 32) scans ~0.05% of the codes, ~50K codes per query: ~1–3 ms.
 
 **BM25 postings**: we have 3.77M postings for 57K docs (≈ 65 per doc). At 100M docs that's ≈ 6.5B postings
 × (4 B doc id + 4 B tf) ≈ **52 GB** uncompressed. Lucene-style delta + varint compression gets ~3–5×, so ~10–17 GB.
 
-**Text store**: FiQA averages ~760 bytes/passage, so 100M ≈ **76 GB**. It belongs on disk/object storage, not in RAM. Fetch only the top-k.
+**Text store**: FiQA averages 768 bytes/passage (measured), so 100M ≈ **77 GB**. It belongs on disk/object storage, not in RAM. Fetch only the top-k.
 
 **Offline embedding**: we measured 57,638 passages in 567 s (MiniLM) on 32 cores ≈ 102 docs/s.
 100M / 102 ≈ **11.3 days** on this box. On a GPU (A100 ≈ 5–10K docs/s for MiniLM) it's ~3–6 hours; 8 GPUs, under 1 hour.
@@ -47,7 +48,7 @@ shard. **Flat is out.** IVF (nlist = 65,536, nprobe = 32) scans ~0.05% of the co
 ## 4. Exercises
 
 1. Redo the vector-memory arithmetic for 768-d models (bge-base). How many 2 GB shards are needed for PQ-48 vs flat?
-2. At what corpus size does flat search per shard (19K vectors/ms) exceed half the 50 ms budget?
+2. At what corpus size does flat search per shard (~11K vectors/ms) exceed half the 50 ms budget?
 3. Estimate re-embedding time for 100M docs with bge-small on our CPU (we measured 1,063 s for 57,638).
 
 Solutions: [solutions/15_scaling.md](solutions/15_scaling.md)

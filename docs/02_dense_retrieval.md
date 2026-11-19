@@ -29,7 +29,7 @@ rules about synonyms.
 
 ```
 offline (once):  57,638 passages --encoder--> D (57,638 x 384 float32 = 88 MB) --> artifacts/emb_minilm.npy
-online (per query): "what is short selling?" --encoder (~15 ms CPU)--> q (384,) --> D @ q --> top-k
+online (per query): "what is short selling?" --encoder (~8 ms CPU)--> q (384,) --> D @ q --> top-k
 ```
 
 ## 4. How this repo implements it
@@ -59,8 +59,8 @@ python examples/05_bge_query_prefix.py    # what the BGE instruction changes
 ## 6. Observe it in the real system
 
 `results/bench.json`: dense-minilm beats BM25 by **+0.124 nDCG@10** (0.388 vs 0.264). The cost is
-16× the latency (18.8 vs 1.2 ms), almost all of it in the **query encoder**. The faiss search over
-57K vectors is ~1 ms. Published MTEB FiQA test numbers: MiniLM 0.369, bge-small 0.403. Our dev
+16× the latency (18.8 vs 1.2 ms). `scripts/microbench.py` splits it: query encoder 8.2 ms, faiss flat
+search over 57K vectors 5.3 ms, Python glue the rest. Published MTEB FiQA test numbers: MiniLM 0.369, bge-small 0.403. Our dev
 numbers are in the same range.
 
 ## 7. Pitfalls and interview questions

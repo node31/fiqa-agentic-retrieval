@@ -1,0 +1,24 @@
+{
+  "threads": 4,
+  "model_load_ms": 1467.3,
+  "first_encode_ms": 19.2,
+  "second_encode_ms": 8.8,
+  "warm_encode": {
+    "p50_ms": 8.21,
+    "p95_ms": 8.699
+  },
+  "faiss_flat_19k": {
+    "p50_ms": 1.38,
+    "p95_ms": 1.624
+  },
+  "faiss_flat_57k": {
+    "p50_ms": 5.305,
+    "p95_ms": 5.495
+  },
+  "vector_bytes_per_doc": 1536,
+  "bm25_57k": {
+    "p50_ms": 1.023,
+    "p95_ms": 1.07
+  },
+  "text_bytes_per_passage_mean": 768
+}

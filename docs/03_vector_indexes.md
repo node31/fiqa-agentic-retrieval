@@ -24,7 +24,7 @@ section captains, who point you to their tallest friends, and so on. Usually rig
 ## 3. Diagram
 
 ```
-Flat:  q · [v1 v2 v3 ... v19,206]  -> one BLAS matrix-vector product per query (~1 ms per shard)
+Flat:  q · [v1 v2 v3 ... v19,206]  -> one BLAS matrix-vector product per query (1.4 ms per 19K-vector shard, measured)
 HNSW:  top layer (few nodes) -> greedy hop -> ... -> bottom layer (all nodes) -> best-first search
 IVF:   q -> nearest nprobe of nlist centroids -> scan only those lists
 ```
@@ -32,8 +32,8 @@ IVF:   q -> nearest nprobe of nlist centroids -> scan only those lists
 ## 4. How this repo implements it
 
 `faiss.IndexIDMap2(faiss.IndexFlatIP(384))`:
-- **Flat**, because 19K vectors per shard × 384 dims takes ~1 ms per query. That is negligible next to the
-  ~15 ms query encoder, and the assignment allows exact search at this size.
+- **Flat**, because 19K vectors per shard × 384 dims takes 1.4 ms per query (`results/microbench.json`). That is small
+  next to the 8 ms query encoder, and the assignment allows exact search at this size.
 - **IDMap2** lets us use our own int64 ids (mapped from string doc ids) and supports `remove_ids`,
   which live deletes and upserts need.
 - Deterministic tie-break `(-score, doc_id)` so merged shard results equal single-node results.
@@ -46,8 +46,11 @@ python examples/06_faiss_flat_vs_hnsw.py   # recall vs latency for HNSW settings
 
 ## 6. Observe it in the real system
 
-Dense single-node p50 is 18.8 ms (`results/bench.json`), of which the faiss search is about 1 ms. Switching
-to HNSW would save under 1 ms (~5%) and cost ~1–5% recall. **Not worth it at this scale.** At 100M
+Dense single-node p50 is 18.8 ms (`results/bench.json`). `scripts/microbench.py` splits it: query encode 8.2 ms,
+faiss flat over all 57.6K vectors 5.3 ms (1.4 ms over one 19.2K shard), and the remaining ~5 ms is Python glue
+(id mapping, result lists, the harness). Note 57K costs 3.8× a 19K shard, not 3×: 88 MB of vectors no longer fits
+in cache, so the scan becomes memory-bandwidth bound (~17 GB/s). In the 3-shard service, HNSW would save ~1 ms of
+~29 ms and cost ~1–5% recall. **Not worth it at this scale.** At 100M
 vectors the picture flips: see [15](15_scaling_to_100M.md).
 
 ## 7. Pitfalls and interview questions

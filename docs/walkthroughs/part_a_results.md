@@ -55,9 +55,10 @@ lower, and recall falls too. A model trained on MS MARCO web search doesn't tran
 
 ## 5. Latency: what is in 20 ms?
 
-Single-node hybrid ≈ 15–17 ms MiniLM query encode + ~1 ms BM25 + ~1 ms faiss over 57K vectors + < 1 ms fusion.
-To go faster: ONNX/int8 encoder, batching concurrent queries, or a smaller encoder. The index structures
-are not the bottleneck at this scale.
+Single-node hybrid (`scripts/microbench.py`): 8.2 ms MiniLM query encode + 5.3 ms faiss over 57K vectors +
+1.0 ms BM25 + fusion and Python glue for the rest.
+To go faster: ONNX/int8 encoder, batching concurrent queries, or a smaller encoder; in a single node an
+ANN index would save a few ms of the 5.3 ms scan. Sharding already cuts the scan to 1.4 ms per shard.
 
 ## Questions to test yourself
 1. Why is Recall@10 identical for "none" and "rerank top-10"?

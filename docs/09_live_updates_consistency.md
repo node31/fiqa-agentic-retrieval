@@ -31,7 +31,7 @@ sequenceDiagram
   C->>R: POST /upsert {doc_id, version, text}
   R->>S: forward (retry on timeout: safe because idempotent)
   S->>S: 1. version check (fast no-op path)
-  S->>S: 2. embed text for EVERY maintained model (outside the lock, ~15 ms)
+  S->>S: 2. embed text for EVERY maintained model (outside the lock, ~8 ms per model)
   S->>S: 3. take write lock, re-check version, append to WAL + fsync
   S->>S: 4. apply to docs, versions, BM25 delta segment, dense indexes, release lock
   S-->>R: {applied: true}
@@ -71,7 +71,7 @@ missing_shards: [1]`, restarts it, and finds the acknowledged write again via WA
 
 ## 7. Pitfalls and interview questions
 
-- **Embedding inside the lock** blocks all readers for ~15 ms per write. We compute outside, then
+- **Embedding inside the lock** blocks all readers for ~8 ms+ per write (per model). We compute outside, then
   re-check the version inside (another writer may have won the race).
 - **Version source**: we trust the client's version (like Elasticsearch `version_type=external`).
   Wall-clock versions break under clock skew. A per-doc counter at the owner shard is the alternative.

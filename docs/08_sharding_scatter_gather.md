@@ -30,7 +30,7 @@ sequenceDiagram
   participant S as Shards 0..2
   C->>R: POST /search {query, k, strategy}
   par embed query (thread)
-    R->>R: MiniLM encode (~15 ms)
+    R->>R: MiniLM encode (~8 ms)
   and DFS phase
     R->>S: POST /stats {terms}
     S-->>R: {n_docs, total_len, df}

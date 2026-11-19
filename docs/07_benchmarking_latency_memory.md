@@ -19,7 +19,7 @@ are anecdotes.
 ## 3. Diagram: what one timed query includes (service mode)
 
 ```
-client ──HTTP──> router: tokenize + embed (15 ms) ┐
+client ──HTTP──> router: tokenize + embed (8 ms)  ┐
                      ├─ DFS stats  ──> 3 shards ──┤ ~2-3 ms (parallel)
                      ├─ search     ──> 3 shards ──┤ ~3-5 ms (parallel, slowest wins)
                      └─ merge + fuse (<1 ms) ─────┘
@@ -56,8 +56,9 @@ python examples/11_memory_measurement.py    # RSS vs tracemalloc vs arithmetic
 **Cold ≈ warm.** We expected a big cold penalty and found almost none, because we *removed* the cold costs
 on purpose. The model is loaded and a warmup encode runs at startup (router `on_event("startup")`),
 vectors are copied into RAM (not lazily mmapped), and the httpx client keeps connections alive.
-What remains (first-forward-pass kernel selection, cache misses) is ~1 ms. Before those fixes,
-an unwarmed process paid ~2–3 s on the first query for model loading.
+What warmup hides (`results/microbench.json`): model load 1.5 s, and the first encode in a fresh
+process costs 19 ms vs 8 ms afterwards (one-time kernel/allocator setup). Without the startup hook the
+first user query would pay ~1.5 s.
 The *warm* p95 is sometimes *higher* than cold p95: 500 samples see more tail events (GC,
 OS scheduling) than 20 samples do. p95 of 20 samples is just the 19th value.
 

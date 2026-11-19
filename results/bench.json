@@ -1,0 +1,787 @@
+{
+ "machine": {
+  "cpu": "AMD EPYC 7763 64-Core Processor",
+  "logical_cores": 32,
+  "physical_cores": 16,
+  "ram_gb": 127.9,
+  "os": "Windows-11-10.0.26300-SP0",
+  "python": "3.13.15"
+ },
+ "protocol": {
+  "split": "dev (500 queries)",
+  "cold": "first 20 dev queries in a fresh process",
+  "warmup": "100 train queries (seed 42)",
+  "warm": "all 500 dev queries after warmup",
+  "latency_measured_by": "client, end to end (service: includes HTTP to router)",
+  "torch_threads_per_process": 4
+ },
+ "configs": {
+  "bm25": {
+   "mode": "local",
+   "split": "dev",
+   "overall": {
+    "ndcg@10": 0.2642,
+    "recall@10": 0.3135,
+    "mrr@10": 0.3222,
+    "n": 500
+   },
+   "stratified": {
+    "doclen:gold_in_top10pct_longest": {
+     "recall@10": 0.3104,
+     "n": 185
+    },
+    "doclen:gold_not_longest": {
+     "recall@10": 0.3153,
+     "n": 315
+    },
+    "qlen:long(>15)": {
+     "recall@10": 0.3148,
+     "n": 84
+    },
+    "qlen:medium(5-15)": {
+     "recall@10": 0.3159,
+     "n": 403
+    },
+    "qlen:short(<5)": {
+     "recall@10": 0.2308,
+     "n": 13
+    }
+   },
+   "latency": {
+    "cold_first20": {
+     "p50_ms": 1.19,
+     "p95_ms": 1.9,
+     "n": 20
+    },
+    "warm": {
+     "p50_ms": 1.17,
+     "p95_ms": 1.97,
+     "n": 500
+    }
+   },
+   "memory": {
+    "process": {
+     "rss_mb": 390.5,
+     "peak_rss_mb": 511.4
+    }
+   },
+   "name": "bm25",
+   "config": {
+    "mode": "local",
+    "name": "bm25",
+    "strategy": "bm25",
+    "model": "minilm",
+    "fusion": "rrf",
+    "alpha": 0.5,
+    "rerank_k": 0,
+    "bm25_stats": "global",
+    "split": "dev",
+    "limit": null,
+    "threads": 4
+   },
+   "startup_s": 9.3
+  },
+  "dense-minilm": {
+   "mode": "local",
+   "split": "dev",
+   "overall": {
+    "ndcg@10": 0.3881,
+    "recall@10": 0.4665,
+    "mrr@10": 0.4532,
+    "n": 500
+   },
+   "stratified": {
+    "doclen:gold_in_top10pct_longest": {
+     "recall@10": 0.414,
+     "n": 185
+    },
+    "doclen:gold_not_longest": {
+     "recall@10": 0.4974,
+     "n": 315
+    },
+    "qlen:long(>15)": {
+     "recall@10": 0.4543,
+     "n": 84
+    },
+    "qlen:medium(5-15)": {
+     "recall@10": 0.4705,
+     "n": 403
+    },
+    "qlen:short(<5)": {
+     "recall@10": 0.4231,
+     "n": 13
+    }
+   },
+   "latency": {
+    "cold_first20": {
+     "p50_ms": 19.06,
+     "p95_ms": 21.23,
+     "n": 20
+    },
+    "warm": {
+     "p50_ms": 18.82,
+     "p95_ms": 20.81,
+     "n": 500
+    }
+   },
+   "memory": {
+    "process": {
+     "rss_mb": 805.7,
+     "peak_rss_mb": 805.7
+    }
+   },
+   "name": "dense-minilm",
+   "config": {
+    "mode": "local",
+    "name": "dense-minilm",
+    "strategy": "dense",
+    "model": "minilm",
+    "fusion": "rrf",
+    "alpha": 0.5,
+    "rerank_k": 0,
+    "bm25_stats": "global",
+    "split": "dev",
+    "limit": null,
+    "threads": 4
+   },
+   "startup_s": 9.9
+  },
+  "dense-bge-small": {
+   "mode": "local",
+   "split": "dev",
+   "overall": {
+    "ndcg@10": 0.3981,
+    "recall@10": 0.4681,
+    "mrr@10": 0.4773,
+    "n": 500
+   },
+   "stratified": {
+    "doclen:gold_in_top10pct_longest": {
+     "recall@10": 0.4215,
+     "n": 185
+    },
+    "doclen:gold_not_longest": {
+     "recall@10": 0.4955,
+     "n": 315
+    },
+    "qlen:long(>15)": {
+     "recall@10": 0.518,
+     "n": 84
+    },
+    "qlen:medium(5-15)": {
+     "recall@10": 0.4604,
+     "n": 403
+    },
+    "qlen:short(<5)": {
+     "recall@10": 0.3846,
+     "n": 13
+    }
+   },
+   "latency": {
+    "cold_first20": {
+     "p50_ms": 30.2,
+     "p95_ms": 34.15,
+     "n": 20
+    },
+    "warm": {
+     "p50_ms": 30.62,
+     "p95_ms": 34.15,
+     "n": 500
+    }
+   },
+   "memory": {
+    "process": {
+     "rss_mb": 851.4,
+     "peak_rss_mb": 851.4
+    }
+   },
+   "name": "dense-bge-small",
+   "config": {
+    "mode": "local",
+    "name": "dense-bge-small",
+    "strategy": "dense",
+    "model": "bge-small",
+    "fusion": "rrf",
+    "alpha": 0.5,
+    "rerank_k": 0,
+    "bm25_stats": "global",
+    "split": "dev",
+    "limit": null,
+    "threads": 4
+   },
+   "startup_s": 9.9
+  },
+  "hybrid-rrf-minilm": {
+   "mode": "local",
+   "split": "dev",
+   "overall": {
+    "ndcg@10": 0.3733,
+    "recall@10": 0.442,
+    "mrr@10": 0.4485,
+    "n": 500
+   },
+   "stratified": {
+    "doclen:gold_in_top10pct_longest": {
+     "recall@10": 0.4197,
+     "n": 185
+    },
+    "doclen:gold_not_longest": {
+     "recall@10": 0.4551,
+     "n": 315
+    },
+    "qlen:long(>15)": {
+     "recall@10": 0.4589,
+     "n": 84
+    },
+    "qlen:medium(5-15)": {
+     "recall@10": 0.4428,
+     "n": 403
+    },
+    "qlen:short(<5)": {
+     "recall@10": 0.3077,
+     "n": 13
+    }
+   },
+   "latency": {
+    "cold_first20": {
+     "p50_ms": 21.71,
+     "p95_ms": 24.28,
+     "n": 20
+    },
+    "warm": {
+     "p50_ms": 22.06,
+     "p95_ms": 39.86,
+     "n": 500
+    }
+   },
+   "memory": {
+    "process": {
+     "rss_mb": 812.2,
+     "peak_rss_mb": 812.2
+    }
+   },
+   "name": "hybrid-rrf-minilm",
+   "config": {
+    "mode": "local",
+    "name": "hybrid-rrf-minilm",
+    "strategy": "hybrid",
+    "model": "minilm",
+    "fusion": "rrf",
+    "alpha": 0.5,
+    "rerank_k": 0,
+    "bm25_stats": "global",
+    "split": "dev",
+    "limit": null,
+    "threads": 4
+   },
+   "startup_s": 9.7
+  },
+  "hybrid-linear-minilm": {
+   "mode": "local",
+   "split": "dev",
+   "overall": {
+    "ndcg@10": 0.419,
+    "recall@10": 0.4914,
+    "mrr@10": 0.4872,
+    "n": 500
+   },
+   "stratified": {
+    "doclen:gold_in_top10pct_longest": {
+     "recall@10": 0.4636,
+     "n": 185
+    },
+    "doclen:gold_not_longest": {
+     "recall@10": 0.5078,
+     "n": 315
+    },
+    "qlen:long(>15)": {
+     "recall@10": 0.5096,
+     "n": 84
+    },
+    "qlen:medium(5-15)": {
+     "recall@10": 0.4911,
+     "n": 403
+    },
+    "qlen:short(<5)": {
+     "recall@10": 0.3846,
+     "n": 13
+    }
+   },
+   "latency": {
+    "cold_first20": {
+     "p50_ms": 20.09,
+     "p95_ms": 23.27,
+     "n": 20
+    },
+    "warm": {
+     "p50_ms": 20.73,
+     "p95_ms": 24.54,
+     "n": 500
+    }
+   },
+   "memory": {
+    "process": {
+     "rss_mb": 811.6,
+     "peak_rss_mb": 811.6
+    }
+   },
+   "name": "hybrid-linear-minilm",
+   "config": {
+    "mode": "local",
+    "name": "hybrid-linear-minilm",
+    "strategy": "hybrid",
+    "model": "minilm",
+    "fusion": "linear",
+    "alpha": 0.7,
+    "rerank_k": 0,
+    "bm25_stats": "global",
+    "split": "dev",
+    "limit": null,
+    "threads": 4
+   },
+   "startup_s": 10.0
+  },
+  "hybrid-linear-bge-small": {
+   "mode": "local",
+   "split": "dev",
+   "overall": {
+    "ndcg@10": 0.4155,
+    "recall@10": 0.4856,
+    "mrr@10": 0.4953,
+    "n": 500
+   },
+   "stratified": {
+    "doclen:gold_in_top10pct_longest": {
+     "recall@10": 0.4471,
+     "n": 185
+    },
+    "doclen:gold_not_longest": {
+     "recall@10": 0.5082,
+     "n": 315
+    },
+    "qlen:long(>15)": {
+     "recall@10": 0.5432,
+     "n": 84
+    },
+    "qlen:medium(5-15)": {
+     "recall@10": 0.4793,
+     "n": 403
+    },
+    "qlen:short(<5)": {
+     "recall@10": 0.3077,
+     "n": 13
+    }
+   },
+   "latency": {
+    "cold_first20": {
+     "p50_ms": 36.31,
+     "p95_ms": 42.0,
+     "n": 20
+    },
+    "warm": {
+     "p50_ms": 35.26,
+     "p95_ms": 40.31,
+     "n": 500
+    }
+   },
+   "memory": {
+    "process": {
+     "rss_mb": 853.8,
+     "peak_rss_mb": 853.8
+    }
+   },
+   "name": "hybrid-linear-bge-small",
+   "config": {
+    "mode": "local",
+    "name": "hybrid-linear-bge-small",
+    "strategy": "hybrid",
+    "model": "bge-small",
+    "fusion": "linear",
+    "alpha": 0.7,
+    "rerank_k": 0,
+    "bm25_stats": "global",
+    "split": "dev",
+    "limit": null,
+    "threads": 4
+   },
+   "startup_s": 9.8
+  },
+  "svc3-bm25": {
+   "mode": "service",
+   "n_shards": 3,
+   "split": "dev",
+   "overall": {
+    "ndcg@10": 0.2642,
+    "recall@10": 0.3135,
+    "mrr@10": 0.3222,
+    "n": 500
+   },
+   "stratified": {
+    "doclen:gold_in_top10pct_longest": {
+     "recall@10": 0.3104,
+     "n": 185
+    },
+    "doclen:gold_not_longest": {
+     "recall@10": 0.3153,
+     "n": 315
+    },
+    "qlen:long(>15)": {
+     "recall@10": 0.3148,
+     "n": 84
+    },
+    "qlen:medium(5-15)": {
+     "recall@10": 0.3159,
+     "n": 403
+    },
+    "qlen:short(<5)": {
+     "recall@10": 0.2308,
+     "n": 13
+    }
+   },
+   "latency": {
+    "cold_first20": {
+     "p50_ms": 10.91,
+     "p95_ms": 12.12,
+     "n": 20
+    },
+    "warm": {
+     "p50_ms": 10.69,
+     "p95_ms": 11.51,
+     "n": 500
+    }
+   },
+   "memory": {
+    "shards": {
+     "0": {
+      "rss_mb": 720.9,
+      "peak_rss_mb": 720.9
+     },
+     "1": {
+      "rss_mb": 721.1,
+      "peak_rss_mb": 721.5
+     },
+     "2": {
+      "rss_mb": 721.4,
+      "peak_rss_mb": 721.8
+     }
+    },
+    "max_shard_peak_rss_mb": 721.8
+   },
+   "name": "svc3-bm25",
+   "config": {
+    "mode": "service",
+    "name": "svc3-bm25",
+    "strategy": "bm25",
+    "model": "minilm",
+    "fusion": "rrf",
+    "alpha": 0.5,
+    "rerank_k": 0,
+    "bm25_stats": "global",
+    "split": "dev",
+    "limit": null,
+    "threads": 4
+   },
+   "startup_s": 0.7
+  },
+  "svc3-dense-minilm": {
+   "mode": "service",
+   "n_shards": 3,
+   "split": "dev",
+   "overall": {
+    "ndcg@10": 0.3881,
+    "recall@10": 0.4665,
+    "mrr@10": 0.4532,
+    "n": 500
+   },
+   "stratified": {
+    "doclen:gold_in_top10pct_longest": {
+     "recall@10": 0.414,
+     "n": 185
+    },
+    "doclen:gold_not_longest": {
+     "recall@10": 0.4974,
+     "n": 315
+    },
+    "qlen:long(>15)": {
+     "recall@10": 0.4543,
+     "n": 84
+    },
+    "qlen:medium(5-15)": {
+     "recall@10": 0.4705,
+     "n": 403
+    },
+    "qlen:short(<5)": {
+     "recall@10": 0.4231,
+     "n": 13
+    }
+   },
+   "latency": {
+    "cold_first20": {
+     "p50_ms": 22.78,
+     "p95_ms": 24.3,
+     "n": 20
+    },
+    "warm": {
+     "p50_ms": 22.18,
+     "p95_ms": 27.01,
+     "n": 500
+    }
+   },
+   "memory": {
+    "shards": {
+     "0": {
+      "rss_mb": 721.2,
+      "peak_rss_mb": 721.3
+     },
+     "1": {
+      "rss_mb": 721.9,
+      "peak_rss_mb": 721.9
+     },
+     "2": {
+      "rss_mb": 722.9,
+      "peak_rss_mb": 722.9
+     }
+    },
+    "max_shard_peak_rss_mb": 722.9
+   },
+   "name": "svc3-dense-minilm",
+   "config": {
+    "mode": "service",
+    "name": "svc3-dense-minilm",
+    "strategy": "dense",
+    "model": "minilm",
+    "fusion": "rrf",
+    "alpha": 0.5,
+    "rerank_k": 0,
+    "bm25_stats": "global",
+    "split": "dev",
+    "limit": null,
+    "threads": 4
+   },
+   "startup_s": 1.1
+  },
+  "svc3-hybrid-linear-minilm": {
+   "mode": "service",
+   "n_shards": 3,
+   "split": "dev",
+   "overall": {
+    "ndcg@10": 0.419,
+    "recall@10": 0.4914,
+    "mrr@10": 0.4872,
+    "n": 500
+   },
+   "stratified": {
+    "doclen:gold_in_top10pct_longest": {
+     "recall@10": 0.4636,
+     "n": 185
+    },
+    "doclen:gold_not_longest": {
+     "recall@10": 0.5078,
+     "n": 315
+    },
+    "qlen:long(>15)": {
+     "recall@10": 0.5096,
+     "n": 84
+    },
+    "qlen:medium(5-15)": {
+     "recall@10": 0.4911,
+     "n": 403
+    },
+    "qlen:short(<5)": {
+     "recall@10": 0.3846,
+     "n": 13
+    }
+   },
+   "latency": {
+    "cold_first20": {
+     "p50_ms": 29.51,
+     "p95_ms": 33.04,
+     "n": 20
+    },
+    "warm": {
+     "p50_ms": 28.62,
+     "p95_ms": 40.5,
+     "n": 500
+    }
+   },
+   "memory": {
+    "shards": {
+     "0": {
+      "rss_mb": 721.6,
+      "peak_rss_mb": 721.7
+     },
+     "1": {
+      "rss_mb": 721.7,
+      "peak_rss_mb": 721.7
+     },
+     "2": {
+      "rss_mb": 722.9,
+      "peak_rss_mb": 723.0
+     }
+    },
+    "max_shard_peak_rss_mb": 723.0
+   },
+   "name": "svc3-hybrid-linear-minilm",
+   "config": {
+    "mode": "service",
+    "name": "svc3-hybrid-linear-minilm",
+    "strategy": "hybrid",
+    "model": "minilm",
+    "fusion": "linear",
+    "alpha": 0.7,
+    "rerank_k": 0,
+    "bm25_stats": "global",
+    "split": "dev",
+    "limit": null,
+    "threads": 4
+   },
+   "startup_s": 0.7
+  },
+  "svc1-hybrid-linear-minilm": {
+   "mode": "service",
+   "n_shards": 1,
+   "split": "dev",
+   "overall": {
+    "ndcg@10": 0.419,
+    "recall@10": 0.4914,
+    "mrr@10": 0.4872,
+    "n": 500
+   },
+   "stratified": {
+    "doclen:gold_in_top10pct_longest": {
+     "recall@10": 0.4636,
+     "n": 185
+    },
+    "doclen:gold_not_longest": {
+     "recall@10": 0.5078,
+     "n": 315
+    },
+    "qlen:long(>15)": {
+     "recall@10": 0.5096,
+     "n": 84
+    },
+    "qlen:medium(5-15)": {
+     "recall@10": 0.4911,
+     "n": 403
+    },
+    "qlen:short(<5)": {
+     "recall@10": 0.3846,
+     "n": 13
+    }
+   },
+   "latency": {
+    "cold_first20": {
+     "p50_ms": 22.92,
+     "p95_ms": 25.08,
+     "n": 20
+    },
+    "warm": {
+     "p50_ms": 23.42,
+     "p95_ms": 26.25,
+     "n": 500
+    }
+   },
+   "memory": {
+    "shards": {
+     "0": {
+      "rss_mb": 775.2,
+      "peak_rss_mb": 775.2
+     }
+    },
+    "max_shard_peak_rss_mb": 775.2
+   },
+   "name": "svc1-hybrid-linear-minilm",
+   "config": {
+    "mode": "service",
+    "name": "svc1-hybrid-linear-minilm",
+    "strategy": "hybrid",
+    "model": "minilm",
+    "fusion": "linear",
+    "alpha": 0.7,
+    "rerank_k": 0,
+    "bm25_stats": "global",
+    "split": "dev",
+    "limit": null,
+    "threads": 4
+   },
+   "startup_s": 0.7
+  },
+  "svc3-bm25-localidf": {
+   "mode": "service",
+   "n_shards": 3,
+   "split": "dev",
+   "overall": {
+    "ndcg@10": 0.2653,
+    "recall@10": 0.3142,
+    "mrr@10": 0.3226,
+    "n": 500
+   },
+   "stratified": {
+    "doclen:gold_in_top10pct_longest": {
+     "recall@10": 0.3029,
+     "n": 185
+    },
+    "doclen:gold_not_longest": {
+     "recall@10": 0.3209,
+     "n": 315
+    },
+    "qlen:long(>15)": {
+     "recall@10": 0.3148,
+     "n": 84
+    },
+    "qlen:medium(5-15)": {
+     "recall@10": 0.3168,
+     "n": 403
+    },
+    "qlen:short(<5)": {
+     "recall@10": 0.2308,
+     "n": 13
+    }
+   },
+   "latency": {
+    "cold_first20": {
+     "p50_ms": 7.13,
+     "p95_ms": 8.06,
+     "n": 20
+    },
+    "warm": {
+     "p50_ms": 6.75,
+     "p95_ms": 7.41,
+     "n": 500
+    }
+   },
+   "memory": {
+    "shards": {
+     "0": {
+      "rss_mb": 720.3,
+      "peak_rss_mb": 720.6
+     },
+     "1": {
+      "rss_mb": 721.6,
+      "peak_rss_mb": 722.0
+     },
+     "2": {
+      "rss_mb": 720.9,
+      "peak_rss_mb": 721.2
+     }
+    },
+    "max_shard_peak_rss_mb": 722.0
+   },
+   "name": "svc3-bm25-localidf",
+   "config": {
+    "mode": "service",
+    "name": "svc3-bm25-localidf",
+    "strategy": "bm25",
+    "model": "minilm",
+    "fusion": "rrf",
+    "alpha": 0.5,
+    "rerank_k": 0,
+    "bm25_stats": "global",
+    "split": "dev",
+    "limit": null,
+    "threads": 4
+   },
+   "startup_s": 0.7
+  }
+ }
+}

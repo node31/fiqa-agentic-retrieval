@@ -16,9 +16,13 @@ ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
 WORKDIR /app
 # WHY a separate torch step: the default PyPI torch wheel for Linux pulls ~2.5 GB of CUDA libraries.
 # The CPU wheel is ~200 MB, and the assignment is CPU-only.
-RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
+# WHY --no-deps + explicit deps: the CPU index links torch's dependencies to files.pythonhosted.org,
+# which some corporate networks block; this way only the torch wheel comes from download.pytorch.org
+# and everything else honours PIP_INDEX_URL.
+RUN pip install --no-deps torch --index-url https://download.pytorch.org/whl/cpu \
+ && pip install filelock typing-extensions sympy networkx jinja2 fsspec setuptools
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install -r requirements.txt && pip check
 
 # Bake the models into the image so containers start offline and identically every time.
 RUN python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; \

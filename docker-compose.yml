@@ -1,0 +1,92 @@
+# Router + 3 shards on one machine.
+#
+#   docker compose run --rm indexer      # once: download FiQA + build embedding caches (~30 min CPU)
+#                                        #  (or unzip the pre-built artifacts zip into ./artifacts)
+#   docker compose up -d                 # router on http://localhost:8000
+#   docker compose run --rm eval         # dev-set eval through the router -> results/runs/docker-*.json
+#   docker compose run --rm tools python src/search.py --url http://router:8000 --query "what is short selling?"
+#
+# data/raw and artifacts/ are bind mounts so indexes survive container restarts, and so the
+# host and containers share one cache. Shard WAL/state lives in artifacts/docker/shardN.
+
+x-shard: &shard
+  build: .
+  image: fiqa-retrieval:latest
+  command: ["python", "-m", "src.service.shard_server"]
+  volumes:
+    - ./data/raw:/app/data/raw
+    - ./artifacts:/app/artifacts
+  environment: &shard-env
+    N_SHARDS: "3"
+    HOST: "0.0.0.0"
+    PORT: "8101"
+    SHARD_MODELS: "minilm"
+    TORCH_THREADS: "4"
+    OMP_NUM_THREADS: "4"
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8101/health')"]
+    interval: 5s
+    timeout: 3s
+    retries: 60
+  restart: unless-stopped
+  mem_limit: 2g          # the assignment's per-shard memory constraint, enforced
+
+services:
+  shard0:
+    <<: *shard
+    environment: { <<: *shard-env, SHARD_ID: "0", STATE_DIR: /app/artifacts/docker/shard0 }
+  shard1:
+    <<: *shard
+    environment: { <<: *shard-env, SHARD_ID: "1", STATE_DIR: /app/artifacts/docker/shard1 }
+  shard2:
+    <<: *shard
+    environment: { <<: *shard-env, SHARD_ID: "2", STATE_DIR: /app/artifacts/docker/shard2 }
+
+  router:
+    build: .
+    image: fiqa-retrieval:latest
+    command: ["python", "-m", "src.service.router"]
+    ports: ["8000:8000"]
+    volumes:
+      - ./data/raw:/app/data/raw
+      - ./artifacts:/app/artifacts
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8000"
+      SHARD_URLS: "http://shard0:8101,http://shard1:8101,http://shard2:8101"
+      ROUTER_STATE: /app/artifacts/docker/router_state.json
+      SHARD_TIMEOUT_S: "0.5"
+      TORCH_THREADS: "4"
+      OMP_NUM_THREADS: "4"
+    depends_on:
+      shard0: { condition: service_healthy }
+      shard1: { condition: service_healthy }
+      shard2: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    restart: unless-stopped
+
+  # ---- one-shot tools (not started by `up`) --------------------------------
+  indexer:
+    image: fiqa-retrieval:latest
+    profiles: ["tools"]
+    command: ["sh", "-c", "python scripts/download_data.py && python -m src.index.build_index"]
+    volumes: ["./data/raw:/app/data/raw", "./artifacts:/app/artifacts"]
+
+  eval:
+    image: fiqa-retrieval:latest
+    profiles: ["tools"]
+    command: ["python", "-m", "src.eval", "--mode", "service", "--url", "http://router:8000",
+              "--strategy", "hybrid", "--fusion", "linear", "--alpha", "0.7",
+              "--name", "docker-hybrid-linear-minilm"]
+    volumes: ["./data/raw:/app/data/raw", "./artifacts:/app/artifacts", "./results:/app/results"]
+    depends_on: { router: { condition: service_healthy } }
+
+  tools:
+    image: fiqa-retrieval:latest
+    profiles: ["tools"]
+    environment: { ROUTER_URL: "http://router:8000" }
+    volumes: ["./data/raw:/app/data/raw", "./artifacts:/app/artifacts", "./results:/app/results", "./.env:/app/.env:ro"]

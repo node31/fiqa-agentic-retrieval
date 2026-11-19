@@ -1,0 +1,10 @@
+.venv
+.git
+.env
+.llm_cache
+.pytest_cache
+**/__pycache__
+data/raw
+artifacts
+dist
+results/runs

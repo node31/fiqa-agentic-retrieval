@@ -49,11 +49,20 @@ def main():
         lt = threading.Thread(target=lambda: load_result.update(run_load(c.router_url, None, 4, None, stop=stop)))
         lt.start()
 
+        import random
+
+        vocab = ("annuity ladder pension escrow dividend bond coupon yield rollover roth hedge margin "
+                 "futures warrant spinoff buyback leverage amortize refinance escrow deductible ira "
+                 "brokerage custodian fiduciary premium strike expiry collateral liquidity").split()
+        rng = random.Random(0)
+
         def writer():
             i = 0
             while not stop.is_set():
                 doc = f"mig-{i}"
-                text = f"Migration probe {i}: zygomorphic annuity ladder number {i} for retirement income planning."
+                # WHY distinct random words: near-duplicate probe texts would compete with each
+                # other in the dense top-k and make the dual-write check flaky.
+                text = f"Probe {i}: " + " ".join(rng.sample(vocab, 8))
                 r = http.post("/upsert", json={"doc_id": doc, "version": 1, "text": text})
                 if r.status_code == 200:
                     written.append((doc, text, time.time() - t0))
@@ -81,17 +90,22 @@ def main():
         lt.join()
         wt.join()
         log("load stopped")
-        # dual-write check: every doc written during the run must be in BOTH dense indexes
+        # dual-write check 1: per shard, both dense indexes hold exactly the same number of docs
+        st = http.get("/admin/status").json()
+        index_sizes = {i: {m: v["n"] for m, v in s["models"].items()} | {"docs": s["n_docs"]}
+                       for i, s in st["shards"].items()}
+        # dual-write check 2: every doc written during the run is retrievable by BOTH models
         missing = {}
         for model in (PRIMARY_MODEL, SECONDARY_MODEL):
             http.post("/admin/cutover", json={"model": model}).raise_for_status()
             miss = [d for d, text, _ in written
                     if d not in [r["doc_id"] for r in http.post("/search", json={
-                        "query": text, "strategy": "dense", "k": 3}).json()["results"]]]
+                        "query": text, "strategy": "dense", "k": 10}).json()["results"]]]
             missing[model] = miss
         http.post("/admin/cutover", json={"model": PRIMARY_MODEL})
     report = {"events": events, "load": load_result, "docs_written_during_run": len(written),
-              "written_docs_missing_from_dense": {m: len(v) for m, v in missing.items()},
+              "index_sizes_per_shard": index_sizes,
+              "written_docs_missing_from_dense_top10": {m: len(v) for m, v in missing.items()},
               "missing_examples": {m: v[:5] for m, v in missing.items()},
               "zero_failed_queries": load_result.get("failed") == 0}
     (ROOT / "results" / "migration_demo.json").write_text(json.dumps(report, indent=1))

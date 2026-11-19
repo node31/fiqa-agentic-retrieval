@@ -1,0 +1,81 @@
+{
+ "events": [
+  {
+   "t": 44.31,
+   "event": "cluster up, serving minilm"
+  },
+  {
+   "t": 59.31,
+   "event": "migrate -> bge-small (reencode=False, throttle=0.2s)"
+  },
+  {
+   "t": 76.1,
+   "event": "backfill complete on all shards"
+  },
+  {
+   "t": 91.1,
+   "event": "cutover"
+  },
+  {
+   "t": 106.29,
+   "event": "rollback"
+  },
+  {
+   "t": 121.74,
+   "event": "load stopped"
+  }
+ ],
+ "load": {
+  "total": 2045,
+  "failed": 0,
+  "failures": [],
+  "served_by_model": {
+   "minilm": 1711,
+   "bge-small": 334
+  },
+  "model_switches": [
+   {
+    "t": 0.508,
+    "model": "minilm"
+   },
+   {
+    "t": 46.951,
+    "model": "bge-small"
+   },
+   {
+    "t": 62.161,
+    "model": "minilm"
+   }
+  ],
+  "p50_ms": 142.21,
+  "p95_ms": 189.44,
+  "duration_s": 77.2
+ },
+ "docs_written_during_run": 116,
+ "index_sizes_per_shard": {
+  "0": {
+   "minilm": 19206,
+   "bge-small": 19206,
+   "docs": 19206
+  },
+  "1": {
+   "minilm": 19288,
+   "bge-small": 19288,
+   "docs": 19288
+  },
+  "2": {
+   "minilm": 19260,
+   "bge-small": 19260,
+   "docs": 19260
+  }
+ },
+ "written_docs_missing_from_dense_top10": {
+  "minilm": 0,
+  "bge-small": 0
+ },
+ "missing_examples": {
+  "minilm": [],
+  "bge-small": []
+ },
+ "zero_failed_queries": true
+}

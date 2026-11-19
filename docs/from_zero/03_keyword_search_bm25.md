@@ -66,8 +66,8 @@ number of postings, not the number of documents. FiQA has 54,807 distinct tokens
 | `N` | corpus size | number of documents | 57,638 |
 | `df(t)` | document frequency | how many docs contain token t | df(short) = 3,112 |
 | `tf(t,d)` | term frequency | how many times t appears in doc d | `short` appears 11× in doc 336018 |
-| `|d|` | document length | tokens in doc d | 271 |
-| `avgdl` | average doc length | mean of all `|d|` | 95.2 |
+| `len(d)` (in the formulas below it's written as d between two vertical bars) | document length | number of tokens in doc d | 271 |
+| `avgdl` | average doc length | mean of `len(d)` over all docs | 95.2 |
 | `k1` | saturation knob | how fast extra repeats stop helping | 1.2 |
 | `b` | length knob | how much long docs are penalised (0 = none, 1 = full) | 0.75 |
 
@@ -106,9 +106,9 @@ probably isn't; it just has room for lots of words. So BM25 should give a match 
 
 **Step 1: how long is this doc compared to an average one?** That's just the ratio `|d| / avgdl`:
 
-| doc length `|d|` (avgdl = 100) | 25 | 50 | 100 | 200 | 400 |
+| doc length `len(d)` (avgdl = 100) | 25 | 50 | 100 | 200 | 400 |
 |---|---|---|---|---|---|
-| ratio `|d| / avgdl` | 0.25 (¼ of average) | 0.5 | **1.0** (exactly average) | 2.0 (twice average) | 4.0 |
+| ratio `len(d) / avgdl` | 0.25 (¼ of average) | 0.5 | **1.0** (exactly average) | 2.0 (twice average) | 4.0 |
 
 **Step 2: blend that ratio with 1, using b as the mix.** `norm = 1 − b + b · ratio` is the same as
 `norm = (1 − b) · 1  +  b · ratio`, i.e. *"take (1−b) parts of 'ignore length' (=1) and b parts of 'the real ratio'"*:

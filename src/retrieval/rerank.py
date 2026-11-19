@@ -7,8 +7,8 @@ WHAT
     to every token of the passage. It is much more accurate, but it costs a full
     transformer pass PER (query, passage) pair, so it can only be used on the top-k.
 
-THE TRADE-OFF WE MEASURE (results/bench.json, ablation "rerank@k")
-    quality vs. rerank depth k ∈ {10, 20, 50, 100}, and latency grows ~linearly in k.
+THE TRADE-OFF WE MEASURE (results/ablation_rerank_minilm.json)
+    quality vs. rerank depth k ∈ {10, 20, 50}, and latency grows ~linearly in k.
     See docs/06_reranking.md and examples/09_bi_vs_cross_encoder.py.
 
 PITFALL

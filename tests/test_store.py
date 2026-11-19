@@ -144,3 +144,21 @@ def test_router_reports_partial_results_when_a_shard_fails():
     strict = Router(r.shards, query_embed=qembed, failure_policy="fail")
     with pytest.raises(Exception):
         asyncio.run(strict.search("short selling"))
+
+
+def test_wal_write_after_torn_tail_survives_next_restart(tmp_path):
+    """Regression: crash mid-append -> recover -> ack a new write -> restart. The new write must survive."""
+    from src.service.wal import WAL
+
+    p = tmp_path / "wal.jsonl"
+    w = WAL(p, fsync=False)
+    w.append({"op": "upsert", "doc_id": "a", "version": 1})
+    w.close()
+    with open(p, "ab") as f:  # simulate the crash: half a record, no newline
+        f.write(b'{"op":"upsert","doc_id":"b","ver')
+    w = WAL(p, fsync=False)  # recovery
+    assert w.truncated_bytes > 0
+    assert [r["doc_id"] for r in w.replay()] == ["a"]
+    w.append({"op": "upsert", "doc_id": "c", "version": 1})  # acked after recovery
+    w.close()
+    assert [r["doc_id"] for r in WAL(p, fsync=False).replay()] == ["a", "c"]

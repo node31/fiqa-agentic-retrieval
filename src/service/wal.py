@@ -92,7 +92,28 @@ class WAL:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.fsync = fsync
+        self.truncated_bytes = self._truncate_torn_tail()
         self._f = open(self.path, "a", encoding="utf-8")
+
+    def _truncate_torn_tail(self) -> int:
+        """Cut a partial final line left by a crash mid-append. Returns the bytes removed.
+
+        PITFALL (found by the toy audit): without this, the next append is glued onto the
+        fragment, e.g. ``{"op":"ups{"op":"upsert",...}\\n``. That whole line then fails to parse
+        on the NEXT replay, so a write that was acked AFTER recovery silently disappears.
+        The fragment itself was never acked, so dropping it loses nothing.
+        """
+        if not self.path.exists():
+            return 0
+        with open(self.path, "r+b") as f:
+            data = f.read()
+            if not data or data.endswith(b"\n"):
+                return 0
+            keep = data.rfind(b"\n") + 1  # 0 if the whole file is one torn line
+            f.truncate(keep)
+            f.flush()
+            os.fsync(f.fileno())
+            return len(data) - keep
 
     def append(self, record: dict) -> None:
         self._f.write(json.dumps(record, separators=(",", ":")) + "\n")

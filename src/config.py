@@ -85,8 +85,8 @@ CANDIDATE_DEPTH = 100  # per-component list depth fed into fusion
 RRF_K = 60  # Cormack et al. 2009 default; see docs/05_hybrid_fusion.md
 BM25_K1 = 1.2
 BM25_B = 0.75
-DEFAULT_FUSION = "rrf"
-DEFAULT_ALPHA = 0.5  # weight on dense for linear fusion
+DEFAULT_FUSION = "linear"  # tuned on dev: beats RRF here (results/ablation_fusion_minilm.json)
+DEFAULT_ALPHA = 0.7  # weight on dense; BM25 is much weaker than dense on FiQA, so dense dominates
 
 # --- Service defaults --------------------------------------------------------
 N_SHARDS = int(os.environ.get("N_SHARDS", "3"))

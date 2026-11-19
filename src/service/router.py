@@ -46,6 +46,7 @@ from src.config import (ARTIFACTS_DIR, CANDIDATE_DEPTH, DEFAULT_ALPHA, DEFAULT_F
 from src.index.sharding import shard_of
 from src.retrieval.bm25 import CorpusStats, tokenize
 from src.retrieval.hybrid import fuse, merge_shard_lists
+from pydantic import BaseModel
 
 log = logging.getLogger("router")
 
@@ -264,14 +265,37 @@ def single_node_router(models: Sequence[str] = (PRIMARY_MODEL,), **kw) -> Router
     return Router([LocalShardClient(store)], active_model=models[0], **kw)
 
 
+class SearchReq(BaseModel):
+    query: str
+    k: int = 10
+    strategy: str = "hybrid"
+    fusion: str = DEFAULT_FUSION
+    alpha: float = DEFAULT_ALPHA
+    include_text: bool = False
+    rerank_k: int = 0
+
+
+class WriteReq(BaseModel):
+    doc_id: str
+    version: int
+    text: str | None = None
+
+
+class ModelReq(BaseModel):
+    model: str
+
+
 def create_app():
-    """FastAPI app for the router process. Shards come from env SHARD_URLS."""
+    """FastAPI app for the router process. Shards come from env SHARD_URLS.
+
+    PITFALL: the request models above live at MODULE level. With
+    ``from __future__ import annotations``, FastAPI cannot resolve models defined
+    inside this function, and it silently treats the body as query params (HTTP 422).
+    """
     import os
 
     import httpx
     from fastapi import FastAPI, HTTPException
-    from pydantic import BaseModel
-
     urls = [u for u in os.environ.get("SHARD_URLS", "").split(",") if u]
     client = httpx.AsyncClient(limits=httpx.Limits(max_keepalive_connections=64, max_connections=128))
     router = Router([HttpShardClient(u, client) for u in urls],
@@ -281,23 +305,6 @@ def create_app():
                     state_path=Path(os.environ.get("ROUTER_STATE", ARTIFACTS_DIR / "router_state.json")))
     app = FastAPI(title="FiQA router")
     app.state.router = router
-
-    class SearchReq(BaseModel):
-        query: str
-        k: int = 10
-        strategy: str = "hybrid"
-        fusion: str = DEFAULT_FUSION
-        alpha: float = DEFAULT_ALPHA
-        include_text: bool = False
-        rerank_k: int = 0
-
-    class WriteReq(BaseModel):
-        doc_id: str
-        version: int
-        text: str | None = None
-
-    class ModelReq(BaseModel):
-        model: str
 
     async def guard(coro):
         try:

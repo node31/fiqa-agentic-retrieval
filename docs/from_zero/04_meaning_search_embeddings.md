@@ -121,11 +121,41 @@ sequenceDiagram
 
 (The scores in the diagram are illustrative. The real ones are computed inside the model.)
 
-**Where do the "weights" come from? Training.** MiniLM has **22.7 million numbers** (its *parameters*, also called
-weights): the starting-vector table plus the numbers inside each layer that decide the attention scores and the mixing.
-At first they're random. Training shows the model huge numbers of examples and nudges every number a tiny bit each time,
-so that its output gets closer to what we want. For MiniLM "what we want" is: related sentence pairs end up with close
-vectors (next paragraph).
+**Where do the "weights" come from? Training.** A model is a big pile of numbers, its **parameters** (also called
+**weights**). MiniLM has **22,713,216** of them. They start random, and training nudges each one a tiny bit, millions of
+times, until related sentence pairs end up with close vectors (next paragraph). After training they're frozen and saved:
+each is stored as a 4-byte number, so 22.7 million × 4 bytes ≈ 91 MB, the size of the file you download.
+
+You might guess "22.7 million = the starting-vector table, 30,522 × 384". That table is only **11.7 million, about half**.
+Here's where all of them are (counted from the real model, every line adds up):
+
+| part | shape | numbers | what it's for |
+|---|---|---|---|
+| **word table** (step 2 above) | 30,522 tokens × 384 | **11,720,448** | the starting vector of each token in the vocabulary |
+| position table | 512 positions × 384 | 196,608 | a vector for "1st word", "2nd word", …, added to each token's vector. Attention alone ignores word order ("dog bites man" = "man bites dog"), so position is mixed in |
+| sentence-type table + 1 normaliser | 2 × 384, and 2 × 384 | 768 + 768 | leftovers from BERT's training (marks sentence A vs B), plus a "keep the numbers in a sane range" step |
+| **each of the 6 layers**, see below | | **1,774,464** | |
+| **× 6 layers** | | **10,646,784** | |
+| pooler | 384 × 384 + 384 | 147,840 | a BERT leftover; *not used* for our embeddings (we average the token vectors instead) |
+| **total** | | **22,713,216** | 11,720,448 + 196,608 + 768 + 768 + 10,646,784 + 147,840 |
+
+**Inside one layer** (1,774,464 numbers). A "384 × 384 + 384" block is a matrix that turns one 384-number vector into another
+(384 × 384 numbers) plus 384 numbers added at the end (the *bias*): 147,456 + 384 = 147,840.
+
+| piece | numbers | what it does |
+|---|---|---|
+| **query** matrix | 147,840 | turns each token's vector into a *question*: "what kind of word am I looking for?" |
+| **key** matrix | 147,840 | turns each token's vector into a *label*: "this is what I am" |
+| **value** matrix | 147,840 | turns each token's vector into *what it hands over* if someone pays attention to it |
+| attention output | 147,840 | combines the 12 heads' results back into one 384-number vector |
+| normaliser | 768 | keeps numbers in a stable range |
+| feed-forward, part 1 | 384 × 1,536 + 1,536 = 591,360 | after mixing, each token "thinks on its own": expand to 1,536 numbers… |
+| feed-forward, part 2 | 1,536 × 384 + 384 = 590,208 | …and compress back to 384 |
+| normaliser | 768 | |
+
+So the attention score from the miniature above (how much "short" listens to "selling") is
+**"short"'s query · "selling"'s key** (a dot product, like cosine in §4.2), and what flows from "selling" into "short" is
+"selling"'s **value**. The query, key and value matrices are exactly the learned numbers that decide *who listens to whom*.
 
 **Transformers you'll meet in this project.** They're all the same building block, trained for different jobs:
 

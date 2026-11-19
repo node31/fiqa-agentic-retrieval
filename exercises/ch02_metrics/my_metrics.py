@@ -1,7 +1,30 @@
 """ch02: IR metrics, written by you. Standard library only.
 
-Run the checker:   python -m pytest ch02_metrics
-Run the demo:      python ch02_metrics/my_metrics.py
+Run the checker:   python -m pytest exercises\\ch02_metrics
+Run the demo:      python exercises\\ch02_metrics\\my_metrics.py
+
+The arguments, in plain words (every metric scores ONE query at a time):
+
+  ranked : Sequence[str]       YOUR system's answer for the query: doc ids, best first.
+                               e.g. ["9", "1", "22", "2"]          (a list of strings)
+  rel    : Mapping[str, int]   The ANSWER KEY for the same query, i.e. that query's row of the qrels:
+                               {doc_id: relevance score}.
+                               e.g. {"1": 1, "2": 1}               (a dict: docs "1" and "2" are correct)
+  k      : int                 Only look at the first k of `ranked` (k=10 → "@10").
+
+  Where `rel` comes from: your ch01 load_split() returns qrels = {query_id: {doc_id: score}}. For query "q1":
+      qrels["q1"]  ==  {"1": 1, "2": 1}      ← this inner dict is `rel`
+  A doc that isn't in `rel` is NOT relevant. Use rel.get(doc_id, 0) to get 0 for those.
+
+  The type hints: `Sequence[str]` = "a list (or tuple) of strings"; `Mapping[str, int]` = "a dict from str to int",
+  read-only (the function looks things up and never changes it). In practice: ranked is a list, rel is a dict.
+
+  Worked example: ranked=["9", "1", "22", "2"], rel={"1": 1, "2": 1}, k=10
+      position 1 "9"  → rel.get("9", 0) = 0 → wrong
+      position 2 "1"  → rel.get("1", 0) = 1 → correct
+      position 3 "22" → 0                  → wrong
+      position 4 "2"  → 1                  → correct
+      recall = 2 correct found / 2 correct in rel = 1.0 ;  first correct at rank 2 → MRR = 1/2 = 0.5
 """
 from __future__ import annotations
 

@@ -58,7 +58,7 @@ maintained model.
 
 **Q: A write fails halfway. What can a reader see?**
 Nothing half-applied: readers hold the shared lock, and writers apply BM25 + dense + doc store under the exclusive lock.
-Crash after the WAL append → restart replays it (idempotent). Torn WAL line → skipped (never acked).
+Crash after the WAL append → restart replays it (idempotent). Torn WAL line → truncated on reopen (never acked). We first only *skipped* it on replay; an audit showed the next append got glued onto the fragment, so a write acked after recovery vanished on the following restart. Regression test: `test_wal_write_after_torn_tail_survives_next_restart`.
 An exception inside apply → the shard marks itself unhealthy (503) and is restarted (crash-only).
 
 **Q: How does your migration avoid failed queries?**

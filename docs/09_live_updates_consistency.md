@@ -44,7 +44,7 @@ sequenceDiagram
 |---|---|---|
 | crash before WAL append | old version (write never happened; no ack) | client retries; idempotent |
 | crash after WAL append, before/while applying | old version until restart | restart replays WAL → new version (it may never have been acked, which is fine: at-least-once + idempotent) |
-| torn half-written WAL line | old version | replay skips it (it was never acked) |
+| torn half-written WAL line | old version | truncated on reopen (it was never acked); see the pitfall below |
 | exception inside apply (bug) | shard marks itself **unhealthy** → 503 → router reports it in `missing_shards` | restart (crash-only design): base + WAL |
 | reader during a write | before OR after, **never in between** (RW lock) | n/a |
 
@@ -76,6 +76,11 @@ missing_shards: [1]`, restarts it, and finds the acknowledged write again via WA
 - **Version source**: we trust the client's version (like Elasticsearch `version_type=external`).
   Wall-clock versions break under clock skew. A per-doc counter at the owner shard is the alternative.
 - **WAL growth**: the log is never truncated here. Production needs snapshots + truncation ([DRILLS](DRILLS.md) drill 6).
+- **Torn tail + append = lost write (a bug we shipped, then fixed).** A crash mid-append leaves half a line.
+  Our first version only *skipped* it during replay, but the reopened file kept the fragment, so the next record was
+  appended onto it: `{"op":"ups{"op":"upsert",...}`. That merged line fails to parse on the *next* restart, so a write
+  acked after recovery disappears. The fix is to truncate the file back to the last newline on open (`WAL._truncate_torn_tail`).
+  Lesson: test recovery **twice in a row** (crash → recover → write → restart), not once.
 - **Tombstone GC**: tombstones live forever here. They can be dropped once older than the max replay/redelivery window.
 - *Q: Is this linearizable?* Per document on a single shard, yes (one lock, total order). Across documents
   there are no multi-doc transactions.

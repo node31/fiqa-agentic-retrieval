@@ -18,7 +18,7 @@ stateDiagram-v2
   ServingA --> Migrating: make migrate (create B, dual-write ON, backfill)
   Migrating --> ReadyB: backfill done on ALL shards
   ReadyB --> ServingB: make cutover (router flag)
-  ServingB --> ServingA: make rollback (flag back; A still dual-written)
+  ServingB --> ServingA: make rollback (flag back, A still dual-written)
   ServingB --> Finalized: make finalize (drop A, stop dual-write)
 ```
 

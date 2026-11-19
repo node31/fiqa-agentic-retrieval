@@ -71,7 +71,7 @@ flowchart LR
     AG[agents: single / orchestrator]:::c
   end
   CLI & EV & AG -->|HTTP /search, /upsert, /delete, /admin/*| R[Router :8000<br/>tokenize + embed query once<br/>DFS stats · merge · fuse · fetch<br/>active_model flag]
-  R -->|/stats, /search, /docs| S0[Shard 0 :8101<br/>BM25 + dense[minilm(, bge-small)]<br/>doc store · versions · WAL]
+  R -->|/stats, /search, /docs| S0["Shard 0 :8101<br/>BM25 + dense (minilm, + bge-small during migration)<br/>doc store · versions · WAL"]
   R --> S1[Shard 1 :8102]
   R --> S2[Shard 2 :8103]
   IDX[src/index/build_index.py<br/>offline embedding cache] -.->|artifacts/emb_*.npy| S0 & S1 & S2

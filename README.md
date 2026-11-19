@@ -10,6 +10,10 @@ A retrieval system over **BEIR/FiQA** (57,638 finance Q&A passages):
 
 This repo is also built **to learn from**. Every module has a LEARN doc, a runnable toy example,
 exercises with solutions, ADRs and "live-modify" drills. Start at [docs/LEARNING_PATH.md](docs/LEARNING_PATH.md).
+
+> **New to search, embeddings and agents? Start at [docs/from_zero/](docs/from_zero/README.md).** It's a from-scratch guide
+> (no prior knowledge assumed) with many diagrams, hand-worked examples on real FiQA data, a "why we're doing this"
+> box for every step, and a milestone plan to rebuild the whole project yourself.
 Design, results and trade-offs are in [DESIGN.md](DESIGN.md).
 
 ## Headline numbers (dev split; full table in DESIGN.md)

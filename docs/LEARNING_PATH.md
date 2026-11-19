@@ -1,5 +1,8 @@
 # Learning path
 
+> **Starting from zero?** Read [from_zero/](from_zero/README.md) first: it explains every concept from scratch
+> and ends with a rebuild-it-yourself plan. This page is the deeper second pass.
+
 A suggested route through the repo. For every module use the same loop:
 
 > **read** the LEARN doc → **run** its toy → **read** the real code (start at the module docstring) →

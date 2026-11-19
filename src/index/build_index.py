@@ -15,8 +15,9 @@ WHY A CACHE
 
 PITFALLS
     * The row order MUST be stored next to the matrix. Never assume dict order.
-    * Anything that changes a vector (model, prefix, max_seq_length) must change
-      the cache. We store the spec in the meta file and check it on load.
+    * Anything that changes a DOCUMENT vector (model, max_seq_length) must change
+      the cache. We store the spec in the meta file and check it on load. The BGE
+      query prefix is NOT part of it: it is applied to queries only, never to documents.
 """
 from __future__ import annotations
 

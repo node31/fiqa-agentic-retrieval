@@ -34,6 +34,7 @@ candidate depth 100 per component, no reranker, served by a router over 3 shards
 | BM25, shard-local IDF (no DFS) | router + 3 shards | 0.2653 | 0.3142 | 0.3226 | 6.8 / 7.4 | 7.1 / 8.1 | 722 / shard |
 | dense MiniLM | router + 3 shards | 0.3881 | 0.4665 | 0.4532 | 22.2 / 27.0 | 22.8 / 24.3 | 723 / shard |
 | **hybrid linear α=0.7 (CHOSEN)** | **router + 3 shards** | **0.4190** | **0.4914** | **0.4872** | **28.6 / 40.5** | 29.5 / 33.0 | **723 / shard** |
+| hybrid linear α=0.7, **in Docker** (compose: router + 3 shard containers) | router + 3 shards | 0.4190 | 0.4914 | 0.4872 | 30.4 / 34.1 | 30.5 / 34.2 | ~505 MiB / shard container |
 | hybrid linear α=0.7 | router + 1 shard | 0.4190 | 0.4914 | 0.4872 | 23.4 / 26.3 | 22.9 / 25.1 | 775 |
 | **TEST split, 648 queries (run once)** | single node | **0.3968** | **0.4658** | **0.4788** | 21.5 / 24.9 | 21.2 / 25.9 | 813 |
 

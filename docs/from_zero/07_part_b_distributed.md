@@ -270,7 +270,8 @@ flowchart TB
 - Each shard reads `SHARD_ID`, `N_SHARDS`, `SHARD_MODELS` and `STATE_DIR` from its environment, loads *only its own* docs
   (`crc32 % 3 == SHARD_ID`) plus their vectors from the shared embeddings cache, then replays its WAL.
 - The router reads `SHARD_URLS`. Health checks (`GET /health`) gate start-up order.
-- Measured in Docker: stack up in ~60 s; dev nDCG **0.4190**, identical to native; ~505 MiB per shard container (2 GiB cap).
+- Measured in Docker: stack up in ~60 s; dev nDCG **0.4190**, identical to native; warm p50/p95 **30.4 / 34.1 ms** (native: 28.6 / 40.5);
+  ~505 MiB per shard container (2 GiB cap).
 
 ---
 

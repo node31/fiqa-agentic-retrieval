@@ -36,7 +36,7 @@ docker compose run --rm indexer            # download FiQA + embed corpus (~30 m
 #   or unzip the pre-built artifact zip (make package-index) into ./artifacts to skip embedding
 docker compose up -d                       # router on http://localhost:8000 (+ 3 shards, 2 GB limit each)
 docker compose run --rm tools python src/search.py --url http://router:8000 --query "what is short selling?"
-docker compose run --rm eval               # dev eval through the router
+docker compose run --rm eval               # dev eval through the router (ours: nDCG@10 0.4190, p50/p95 30.4/34.1 ms)
 ```
 
 ### Option B: local Python 3.11+

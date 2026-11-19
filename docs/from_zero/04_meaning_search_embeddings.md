@@ -68,6 +68,98 @@ flowchart LR
 
 > 🎯 **Why we're doing this:** You don't need to train a transformer, but you must know its limits (the 256-token cut-off, separate query and doc encoding, the BGE prefix). Each of those limits shows up later as a failure or a design choice.
 
+### What is a transformer? (from zero)
+
+**One sentence:** a transformer is a kind of neural network (invented in 2017, paper *"Attention Is All You Need"*)
+that reads a whole piece of text at once and lets **every word adjust its meaning by looking at the other words around
+it**. That "looking at the others" step is called **attention**.
+
+**Why that's needed: words change meaning with context.** You already met this problem in chapter 3. BM25 thought
+*"a **short** story about **selling** a house"* matched *"**short selling**"*, because it only sees matching words.
+Same with "bank":
+- "the river **bank**": land next to water
+- "a **bank** loan": a financial company
+
+A simple "one fixed vector per word" dictionary would give "short" the *same* vector in both sentences. A transformer
+gives each word a vector that depends on its neighbours. We measured this on the real MiniLM model:
+
+| word | sentence A | sentence B | cosine of the word's vector, A vs B, **before** the layers | **after** the 6 layers |
+|---|---|---|---|---|
+| short | "**short** selling a stock" | "a **short** story" | 1.000 (identical: it's a dictionary lookup) | **0.743** (now different) |
+| bank | "the river **bank**" | "a **bank** loan" | 1.000 | **0.791** |
+
+The word went in identical and came out different, because of its neighbours. That's the whole point.
+
+**How it works, in 4 steps** (for MiniLM; "short selling risk" as the example):
+
+```mermaid
+flowchart TD
+    A["1. SPLIT into tokens<br/>[CLS] short selling risk [SEP]<br/>(rare words are cut into pieces)"] --> B["2. LOOK UP a starting vector per token<br/>a fixed table: 30,522 tokens × 384 numbers<br/>'short' always starts with the same 384 numbers"]
+    B --> C["3. ATTENTION LAYER (repeated 6 times)<br/>each token asks: which other tokens matter to me?<br/>scores them, then mixes in their vectors<br/>'short' pulls in some of 'selling' → leans towards finance"]
+    C --> D["4. OUTPUT: one context-aware vector per token<br/>(for search we then average them into ONE vector:<br/>the 'mean pooling' step in the next diagram)"]
+```
+
+**Step 3 in miniature** (made-up 2-number vectors, just to show the arithmetic). Say "short" = [1, 0] and "selling" = [0, 1].
+Attention decides that, *for "short"*, its own vector matters 40% and "selling" matters 60% (the model computes these weights
+from the vectors themselves). The new "short" = 0.4 × [1, 0] + 0.6 × [0, 1] = **[0.4, 0.6]**: it moved towards "selling".
+In "a short story" the weights would point at "story" instead, so "short" moves somewhere else. A real layer does this
+with 384 numbers, 12 different "heads" (12 parallel ways of deciding who matters), and some extra mixing. Then it
+repeats the whole layer 6 times.
+
+```mermaid
+sequenceDiagram
+    participant S as short
+    participant L as selling
+    participant K as risk
+    Note over S,K: 1. every token starts with its dictionary vector
+    S->>L: 2. how relevant are you to me? (score 0.6)
+    S->>K: 2. how relevant are you to me? (score 0.3)
+    S->>S: 2. and myself? (score 0.1)
+    Note over S: 3. new 'short' = 0.1·short + 0.6·selling + 0.3·risk
+    Note over S,K: 4. every token does this at the same time, then the layer repeats (6 layers in MiniLM)
+```
+
+(The scores in the diagram are illustrative. The real ones are computed inside the model.)
+
+**Where do the "weights" come from? Training.** MiniLM has **22.7 million numbers** (its *parameters*, also called
+weights): the starting-vector table plus the numbers inside each layer that decide the attention scores and the mixing.
+At first they're random. Training shows the model huge numbers of examples and nudges every number a tiny bit each time,
+so that its output gets closer to what we want. For MiniLM "what we want" is: related sentence pairs end up with close
+vectors (next paragraph).
+
+**Transformers you'll meet in this project.** They're all the same building block, trained for different jobs:
+
+| model | what it outputs | used for | in this project |
+|---|---|---|---|
+| **MiniLM, BGE** (BERT-style *encoders*: read the whole text, both directions) | one vector per text | search (this chapter) | Part A, Part B |
+| **cross-encoder** (also BERT-style) | one relevance score for a (query, doc) *pair* | reranking | Chapter 5 |
+| **GPT-style** (*decoders*: predict the next word, again and again) | generated text | the LLM in the agents | Part C (`gpt-6-sol`) |
+
+**Why the 256-token limit?** Attention compares *every* token with *every other* token. 256 tokens means 256 × 256 =
+65,536 comparisons per head per layer. 2,048 tokens would be 4.2 million, 64× more. So small, fast models cap the length,
+and anything after token 256 is simply dropped (failure case 2 in Chapter 6).
+
+**See it yourself** (from the repo root, venv active, about 10 s):
+
+```python
+import numpy as np
+from sentence_transformers import SentenceTransformer
+m = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", device="cpu")
+sents = ["short selling a stock", "a short story"]
+vecs = m.encode(sents, output_value="token_embeddings")        # one 384-number vector PER TOKEN
+toks = [m.tokenizer.convert_ids_to_tokens(m.tokenizer(s)["input_ids"]) for s in sents]
+a = vecs[0][toks[0].index("short")].numpy(); b = vecs[1][toks[1].index("short")].numpy()
+print(toks)                                                    # [CLS] short selling a stock [SEP] ...
+print(a @ b / np.linalg.norm(a) / np.linalg.norm(b))           # ≈ 0.74: same word, different context
+```
+
+Try other pairs: "apple" (fruit vs company), "interest" (curious vs a loan's interest), "short" (selling vs height).
+
+**Want to go deeper?** *The Illustrated Transformer* (Jay Alammar, a blog post with pictures) and 3Blue1Brown's video
+*"Attention in transformers, visually explained"* are the two best beginner explanations.
+
+### MiniLM, the transformer we use
+
 **all-MiniLM-L6-v2** is a small **transformer** (the same family as GPT, but tiny: 6 layers, ~22 million weights,
 ~90 MB on disk). It was trained on over 1 billion pairs of related sentences (question ↔ answer, title ↔ post, ...)
 with one goal: *related pairs → vectors close together; random pairs → far apart.* After training, it places

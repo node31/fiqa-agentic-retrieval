@@ -194,11 +194,18 @@ class CopilotLLM(LLM):
     def _call(self, system, user, max_output_tokens):
         prompt = (f"{system}\n\n---\n{user}\n\n(Answer directly. Do not use tools. "
                   f"Keep the answer under {max_output_tokens} tokens.)")
-        with tempfile.TemporaryDirectory() as tmp:  # WHY empty cwd: the CLI must not see the repo
+        # WHY empty cwd: the CLI must not see the repo. PITFALL (Windows): a CLI helper process can
+        # outlive the call and keep the dir open, so deleting it raises; that must not fail the call.
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             cmd = [*_copilot_exe(), "-p", prompt, "-s", "--model", self.model, "--available-tools",
                    "--no-custom-instructions", "--disable-builtin-mcps", "--no-ask-user"]
-            out = subprocess.run(cmd, cwd=tmp, capture_output=True, text=True, encoding="utf-8",
-                                 timeout=self.timeout_s)
+            try:
+                out = subprocess.run(cmd, cwd=tmp, capture_output=True, text=True, encoding="utf-8",
+                                     timeout=self.timeout_s)
+            except subprocess.TimeoutExpired as e:  # PITFALL: NOT a subclass of TimeoutError
+                raise TimeoutError(f"copilot CLI timed out after {self.timeout_s}s") from e
+            except OSError as e:
+                raise RuntimeError(f"copilot CLI could not run: {e!r}") from e
         if out.returncode != 0:
             raise RuntimeError(f"copilot CLI failed: {out.stderr[-500:]}")
         # WHY estimate tokens: the CLI's usage file also counts its own ~26K-token harness

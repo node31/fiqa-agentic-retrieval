@@ -128,7 +128,13 @@ def main():
         items = sets[set_name]
         for system in a.systems.split(","):
             def one(it, system=system):
-                r = run_system(system, it, llm, tool, orch)
+                try:
+                    r = run_system(system, it, llm, tool, orch)
+                except SystemExit:
+                    raise
+                except Exception as e:  # noqa: BLE001  WHY: one bad query must not lose an hour-long run
+                    r = run_system("baseline", it, llm, tool, orch)
+                    r.errors.append(f"{system} crashed, served baseline: {e!r}"[:300])
                 spend.add(r)
                 return r
             with ThreadPoolExecutor(a.workers) as ex:

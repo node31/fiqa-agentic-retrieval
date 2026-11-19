@@ -55,6 +55,9 @@ def machine() -> dict:
         if os.name == "nt":
             cpu = subprocess.run(["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_Processor).Name"],
                                  capture_output=True, text=True).stdout.strip() or cpu
+        elif sys.platform == "darwin":  # WHY: macOS has no /proc; sysctl gives e.g. "Apple M2 Pro"
+            cpu = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"],
+                                 capture_output=True, text=True).stdout.strip() or cpu
         elif Path("/proc/cpuinfo").exists():
             cpu = next(l.split(":", 1)[1].strip() for l in open("/proc/cpuinfo") if l.startswith("model name"))
     except Exception:  # noqa: BLE001

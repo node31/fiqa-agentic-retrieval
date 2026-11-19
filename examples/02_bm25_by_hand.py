@@ -16,11 +16,13 @@ for tf in [1, 2, 5, 20, 100]:
     print(f"     tf={tf:3d} -> tf-part = {part:.3f}   (upper bound k1+1 = {k1 + 1})")
 note("Plain TF would give 100 for tf=100. BM25 caps it near 2.2, so keyword stuffing stops paying.")
 step(3, f"Length normalisation (b={b}): same tf=1, different document lengths (avgdl = 50)")
+parts = {}
 for dl in [10, 50, 200, 1000]:
-    part = 1 * (k1 + 1) / (1 + k1 * (1 - b + b * dl / 50))
+    parts[dl] = part = 1 * (k1 + 1) / (1 + k1 * (1 - b + b * dl / 50))
     print(f"     |d|={dl:5d} -> tf-part = {part:.3f}")
-note("A match in a 10-word doc is worth ~4x a match in a 1000-word doc: the short doc is more "
-     "likely to be ABOUT the word. b=0 turns this off and b=1 applies it fully.")
+note(f"A match in a 10-word doc is worth {parts[10] / parts[1000]:.0f}x a match in a 1000-word doc "
+     f"({parts[10] / parts[200]:.1f}x vs a 200-word doc): the short doc is more likely to be ABOUT the word. "
+     "b=0 turns this off and b=1 applies it fully.")
 step(4, "Hand computation vs our real index on a 3-doc corpus")
 docs = {"a": "loan loan loan rate", "b": "loan rate stock market investing ideas today", "c": "stock market"}
 ix = BM25Index(k1, b).build(list(docs), list(docs.values()))
@@ -33,4 +35,5 @@ for d, L, tf in [("a", 4, 3), ("b", 7, 1)]:
 note("Same numbers: the index is literally this formula, vectorised over the postings list.")
 try_this("Set k1=0. What does BM25 become? (hint: binary 'contains the word or not')",
          "FiQA passages vary from 1 to ~3000 words. Would you raise or lower b? Test on dev!",
-         "Write a doc that beats doc 'a' for query 'loan' using only ONE occurrence of 'loan'.")
+         "Write a doc with only ONE 'loan' that beats doc 'b'. Can any one-'loan' doc beat 'a'? (hint: with "
+         "tf=1 the tf-part can never exceed (k1+1)/(1+k1*(1-b)); compare with a's tf-part)")

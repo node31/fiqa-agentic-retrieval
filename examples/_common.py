@@ -42,7 +42,10 @@ def banner(title: str) -> None:
 
 
 def step(n, text: str) -> None:
-    print(f"\n--- Step {n}: " + textwrap.fill(text, 72, subsequent_indent="    "))
+    first, *rest = text.split("\n")  # wrap the headline; keep explicit extra lines (already indented) as-is
+    print(f"\n--- Step {n}: " + textwrap.fill(first, 72, subsequent_indent="    "))
+    for line in rest:
+        print(line)
 
 
 def note(text: str) -> None:

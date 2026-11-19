@@ -22,7 +22,8 @@ step(4, "Stem each token (Snowball English):")
 for t in kept:
     print(f"     {t:10s} -> {_stem(t)}")
 step(5, f"Final tokens from tokenize(): {tokenize(text)}")
-step(6, "Why it matters: query and document share NO raw words below, but match after stemming")
+step(6, "Why it matters: query and document share NO raw content words below (only the stopword 'in'), "
+        "but match after stemming")
 q, d = "investing in stocks", "He invests in a stock"
 print(f"     query {tokenize(q)}  vs  doc {tokenize(d)}  -> overlap {set(tokenize(q)) & set(tokenize(d))}")
 note("Synonyms ('equities' vs 'stocks') still never match. That gap is what dense retrieval fills (toy 04).")

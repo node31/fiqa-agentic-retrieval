@@ -34,8 +34,11 @@ step(2, f"doc_ids = {r.doc_ids}")
 step(3, "errors reported to the caller:")
 for e in r.errors:
     print(f"     - {e}")
-note("The healthy worker's results fill the slots, and the full-question search (always run for decomposed "
-     "questions) fills the rest. If EVERY worker fails, the orchestrator falls back to one direct search.")
+n_sub = sum(d.startswith("bonds") for d in r.doc_ids)
+note(f"Slots: {n_sub} from the healthy 'bonds' worker, {len(r.doc_ids) - n_sub} from the full-question search "
+     "('Tell-*', always run for decomposed questions). The full-question list only fills slots the sub-query "
+     "interleave leaves empty, so one surviving worker with 10 hits takes ALL slots and the crashed/slow topics get "
+     "none. If EVERY worker fails, the orchestrator falls back to one direct search.")
 note("PITFALL: Python threads can't be killed. The slow worker keeps running in the background after we stop "
      "waiting. In production, propagate a deadline into the tool call (e.g. an HTTP timeout) instead.")
 try_this("Make all three sub-queries crash. What does the user get?",

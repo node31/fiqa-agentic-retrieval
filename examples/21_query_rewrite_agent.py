@@ -17,7 +17,8 @@ ix = BM25Index().build(list(TOY_DOCS), list(TOY_DOCS.values()))
 tool = SearchTool(lambda q, s, k: [{"doc_id": d, "score": sc, "text": TOY_DOCS[d]}
                                    for d, sc in ix.search(list(dict.fromkeys(tokenize(q))), k)], k=5)
 q = "How does shorting work, and is paying off my mortgage early smart?"
-step(0, f"Question: {q}\n    Step 0 (no LLM): search(question) ->\n" + render_hits(tool(q))[:400])
+step(0, f"Question: {q}\n     Step 0 (no LLM): search(question) ->\n"
+        + "\n".join(f"       {line[:90]}" for line in render_hits(tool(q)).splitlines()))
 seen_prompts = []
 
 

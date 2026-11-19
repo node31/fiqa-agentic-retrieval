@@ -36,8 +36,12 @@ print(f"     replayed={s2.counters['replayed']}  w1={s2.docs.get('w1')!r}  w2 pr
 note("w3's torn record was never acknowledged (the crash happened BEFORE the ack), so dropping it is correct.")
 note("The WAL record also stores the embedding vectors, so replay does not need to re-run the model: "
      "recovery is fast and deterministic.")
-step(4, "Replay again (e.g. crash during recovery): idempotent, nothing changes")
-print(f"     upsert(w1, v1) again -> {s2.upsert('w1', 1, 'walrus pension plan')['applied']}")
+step(4, "Crash during/after recovery, restart AGAIN: replaying the same WAL a second time is idempotent")
+s2.wal.close()
+s3 = ShardStore(state_dir=state, embed=embed, use_cache=False).load(TOY_DOCS, ["minilm"])
+print(f"     replayed={s3.counters['replayed']}  same docs as after the 1st restart: {s3.docs == s2.docs}  "
+      f"same versions: {s3.versions == s2.versions}")
+print(f"     and a re-delivered upsert(w1, v1) on top -> applied={s3.upsert('w1', 1, 'walrus pension plan')['applied']}")
 try_this("Remove os.fsync from WAL.append and explain what can be lost on POWER loss (not process crash).",
          "The WAL grows forever. Design snapshotting: dump state + truncate the log (log compaction).",
          "Apply first, log second. Construct a crash timing that loses an ACKNOWLEDGED write.")

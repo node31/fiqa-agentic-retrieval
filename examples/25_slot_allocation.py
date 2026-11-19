@@ -21,7 +21,7 @@ strategies = {
 }
 for name, top in strategies.items():
     step(name, f"{top}")
-    print(f"     Coverage@10={coverage_at_k(top, gold):.0f}  Recall@10={recall_at_k(top, rel):.2f}")
+    print(f"     Coverage@10={coverage_at_k(top, gold):.2f}  Recall@10={recall_at_k(top, rel):.2f}")
 note("Score merge gives all 10 slots to the easy half: zero coverage. Scores from different sub-queries are "
      "NOT comparable (different queries, different score distributions).")
 note("RRF over two lists IS an interleave (rank r of each list gets the same 1/(60+r)), with ties broken by doc id. "

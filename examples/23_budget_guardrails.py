@@ -7,7 +7,7 @@ import json
 
 from _common import banner, note, step, try_this
 
-from src.agent.llm import Budget, BudgetExceeded, FakeLLM
+from src.agent.llm import Budget, BudgetExceeded, FakeLLM, estimate_tokens
 from src.agent.orchestrator import Orchestrator
 from src.agent.tools import SearchTool
 
@@ -21,8 +21,11 @@ for i in range(1, 5):
         print(f"     call {i}: OK      calls={b.calls} tokens={b.tokens}")
     except BudgetExceeded as e:
         print(f"     call {i}: REFUSED ({e}) - nothing was spent")
-note("reserve() counts the WORST case (max_output_tokens) before the call, so even parallel workers can't "
-     "jointly overshoot. A post-hoc check would only tell you AFTER the money is gone.")
+worst = b.tokens + estimate_tokens("sys" + "x" * 800) + 100
+note(f"Call 4 hit the call cap first, but it would ALSO fail the token check: reserve() counts the WORST case "
+     f"({b.tokens} spent + ~{estimate_tokens('sys' + 'x' * 800)} in + 100 max out = {worst} > {b.max_tokens}), even "
+     f"though the real reply would only use ~{b.output_tokens // b.calls} output tokens. Checking before the call means "
+     "even parallel workers can't jointly overshoot. A post-hoc check would only tell you AFTER the money is gone.")
 step(2, "The orchestrator degrades instead of failing: with max_llm_calls=1 the verifier is skipped")
 tool = SearchTool(lambda q, s, k: [{"doc_id": f"{q.split()[0]}{i}", "score": 1 / (i + 1), "text": q} for i in range(k)])
 plan = json.dumps({"simple": False, "subqueries": ["shorting risks", "mortgage payoff"]})

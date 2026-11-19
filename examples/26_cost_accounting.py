@@ -23,12 +23,16 @@ for name, chars, out in single:
     print(f"     {name}: ~{tin:5d} in + {out:3d} out tokens")
 print(f"     total ~{tot_in} in + {tot_out} out = ${cost_usd(tot_in, tot_out):.5f}/query")
 multi_in = estimate_tokens(prompts.PLANNER) + 40 + estimate_tokens(prompts.VERIFIER) + estimate_tokens("x" * 2 * 5 * 210)
+multi_usd, single_usd = cost_usd(multi_in, 250), cost_usd(tot_in, tot_out)
 step(3, f"Multi-agent: planner (~{estimate_tokens(prompts.PLANNER) + 40} in) + verifier on top-5 x 2 subs "
         f"(~{multi_in - estimate_tokens(prompts.PLANNER) - 40} in): ${cost_usd(multi_in, 250):.5f}/query")
-note("The multi-agent system is CHEAPER per call than the single agent here: the verifier sees only top-5 "
-     "snippets once, while the single agent re-reads its growing transcript. Structure beats verbosity.")
+note(f"The multi-agent system is {'CHEAPER' if multi_usd < single_usd else 'MORE EXPENSIVE'} per query than the "
+     f"single agent here (${multi_usd:.5f} vs ${single_usd:.5f}, {single_usd / multi_usd:.1f}x): 2 LLM calls vs 3, and "
+     "the verifier sees only top-5 snippets once, while the single agent re-reads its growing transcript. "
+     "Structure beats verbosity.")
 step(4, "Scale: 200 eval queries x 2 agentic systems x 2 runs (dev + debrief)")
-print(f"     ~${800 * cost_usd(tot_in, tot_out):.2f} at worst case, and the cache makes the 2nd identical run free")
+print(f"     ~${200 * 2 * (single_usd + multi_usd):.2f} at worst case (both runs uncached)")
+print(f"     ~${200 * (single_usd + multi_usd):.2f} if the 2nd run repeats the 1st: the cache makes an identical re-run free")
 note("Hidden costs: reasoning models bill 'reasoning tokens' as output, often 2-5x the visible answer. Always run "
      "`scripts/agent_eval.py --backend azure --dry-run` first and set --max-usd.")
 try_this("Cut snippet length from 200 to 100 chars. Re-run the agent eval: does recall drop?",

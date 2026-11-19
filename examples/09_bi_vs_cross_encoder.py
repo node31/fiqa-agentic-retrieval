@@ -28,6 +28,7 @@ t0 = time.perf_counter()
 s_bi = D @ bi.encode([q], normalize_embeddings=True)[0]
 t_bi = time.perf_counter() - t0
 step(1, f"Bi-encoder: docs embedded once ({t_docs * 1e3:.0f} ms, offline); query costs ONE encode: {t_bi * 1e3:.1f} ms")
+ce.predict([(q, texts[0])])  # warm-up: time the steady state, not first-call kernel setup
 t0 = time.perf_counter()
 s_ce = ce.predict([(q, t) for t in texts])
 t_ce = time.perf_counter() - t0
@@ -37,8 +38,10 @@ for i in np.argsort(-s_ce)[:5]:
     print(f"     {ids[i]:4s} {s_bi[i]:7.3f} {s_ce[i]:9.2f}  {texts[i][:55]}")
 note("The cross-encoder sees query and passage together, so 'risk' in the query can attend to 'loss is "
      "unlimited' in d2. Its scores are logits: only their ORDER means anything.")
-note(f"Cost scales with k: reranking 100 FiQA passages = 100 pair passes ~ {t_ce / len(texts) * 100 * 1e3:.0f} ms "
-     "here. That's why we rerank only the top-k and sweep k (results/ablation_rerank_minilm.json).")
+note(f"Cost scales with k: reranking 100 passages THIS short = 100 pair passes ~ {t_ce / len(texts) * 100 * 1e3:.0f} ms "
+     f"here. Real FiQA passages average ~770 chars vs {sum(map(len, texts)) / len(texts):.0f} here, and cost grows "
+     "with sequence length, so expect several times more. That's why we rerank only the top-k and sweep k "
+     "(results/ablation_rerank_minilm.json).")
 try_this("Rerank only the top-3 bi-encoder hits. Did the final #1 change?",
          "Time ce.predict with batch_size=1 vs 32. Why does batching help on CPU?",
          "Can a cross-encoder index a corpus offline the way a bi-encoder can? Why not?")

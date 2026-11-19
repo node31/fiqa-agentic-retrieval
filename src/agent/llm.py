@@ -34,6 +34,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -154,6 +155,33 @@ class FakeLLM(LLM):
         return text, estimate_tokens(system + user), estimate_tokens(text)
 
 
+def _copilot_exe() -> list[str]:
+    """argv prefix that runs the Copilot CLI with arguments passed through UNCHANGED.
+
+    PITFALL (we hit it): on Windows the npm install exposes ``copilot.cmd``, and cmd.exe cuts an
+    argument at its first newline. The model then saw only "You are a planner..." and replied
+    "Ready.". So we call the native binary (or node + the JS loader) behind the shim directly.
+    Override with COPILOT_BIN.
+    """
+    if os.environ.get("COPILOT_BIN"):
+        return [os.environ["COPILOT_BIN"]]
+    if os.name != "nt":
+        return ["copilot"]
+    shim = shutil.which("copilot.cmd")
+    if shim:
+        base = Path(shim).parent / "node_modules" / "@github"
+        native = base / "copilot-win32-x64" / "copilot.exe"
+        if native.exists():
+            return [str(native)]
+        loader = base / "copilot" / "npm-loader.js"
+        if loader.exists() and shutil.which("node"):
+            return [shutil.which("node"), str(loader)]
+    exe = shutil.which("copilot.exe")
+    if exe:
+        return [exe]
+    raise FileNotFoundError("Copilot CLI not found; set COPILOT_BIN to the copilot executable")
+
+
 class CopilotLLM(LLM):
     """GitHub Copilot CLI as a plain text-completion backend (free for development)."""
 
@@ -167,10 +195,8 @@ class CopilotLLM(LLM):
         prompt = (f"{system}\n\n---\n{user}\n\n(Answer directly. Do not use tools. "
                   f"Keep the answer under {max_output_tokens} tokens.)")
         with tempfile.TemporaryDirectory() as tmp:  # WHY empty cwd: the CLI must not see the repo
-            cmd = ["copilot", "-p", prompt, "-s", "--model", self.model, "--available-tools",
+            cmd = [*_copilot_exe(), "-p", prompt, "-s", "--model", self.model, "--available-tools",
                    "--no-custom-instructions", "--disable-builtin-mcps", "--no-ask-user"]
-            if os.name == "nt":
-                cmd[0] = "copilot.cmd"
             out = subprocess.run(cmd, cwd=tmp, capture_output=True, text=True, encoding="utf-8",
                                  timeout=self.timeout_s)
         if out.returncode != 0:

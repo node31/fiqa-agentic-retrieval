@@ -256,13 +256,16 @@ class Router:
         return {"dropped": model, "shards": ok, "missing_shards": sorted(missing)}
 
 
-def single_node_router(models: Sequence[str] = (PRIMARY_MODEL,), **kw) -> Router:
-    """Whole corpus in ONE in-process ShardStore: the single-node baseline."""
+def single_node_router(models: Sequence[str] = (PRIMARY_MODEL,), active_model: str | None = None, **kw) -> Router:
+    """Whole corpus in ONE in-process ShardStore: the single-node baseline.
+
+    ``models=()`` builds a BM25-only node (no embeddings needed).
+    """
     from src.beir_data import load_corpus
     from src.service.store import ShardStore
 
     store = ShardStore(0, 1).load(load_corpus(), models)
-    return Router([LocalShardClient(store)], active_model=models[0], **kw)
+    return Router([LocalShardClient(store)], active_model=active_model or (models[0] if models else PRIMARY_MODEL), **kw)
 
 
 class SearchReq(BaseModel):

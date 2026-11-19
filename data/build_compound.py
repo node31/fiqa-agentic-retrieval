@@ -39,8 +39,8 @@ REWRITES = ROOT / "data" / "compound_rewrites.json"
 THRESHOLD = 0.25
 
 
-def build(seed: int = SEED, n_queries: int = 200) -> list[dict]:
-    queries, qrels = load_split("dev")
+def build(seed: int = SEED, n_queries: int = 200, split: str = "dev") -> list[dict]:
+    queries, qrels = load_split(split)
     rng = random.Random(seed)
     qids = rng.sample(sorted(queries), n_queries)
     from src.retrieval.dense import get_embedder
@@ -58,7 +58,7 @@ def build(seed: int = SEED, n_queries: int = 200) -> list[dict]:
         j = rng.choice(cands) if cands else min(unpaired, key=lambda x: sims[i, x])
         unpaired.discard(j)
         pairs.append((i, j))
-    rewrites = json.loads(REWRITES.read_text(encoding="utf-8")) if REWRITES.exists() else {}
+    rewrites = json.loads(REWRITES.read_text(encoding="utf-8")) if REWRITES.exists() and split == "dev" else {}
     rows = []
     for n, (i, j) in enumerate(pairs):
         a, b = qids[i], qids[j]
@@ -75,10 +75,17 @@ def build(seed: int = SEED, n_queries: int = 200) -> list[dict]:
 
 
 def main() -> None:
-    rows = build()
-    OUT.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--split", default="dev", choices=["dev", "test"],
+                    help="test = held-out compound set (template rewrites; never tune on it)")
+    split = ap.parse_args().split
+    rows = build(split=split)
+    out = OUT if split == "dev" else OUT.with_name("compound_test.jsonl")
+    out.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
     cos = np.array([r["cos"] for r in rows])
-    print(f"wrote {len(rows)} compound queries -> {OUT} (pair cosine mean={cos.mean():.3f}, max={cos.max():.3f}; "
+    print(f"wrote {len(rows)} compound queries -> {out} (pair cosine mean={cos.mean():.3f}, max={cos.max():.3f}; "
           f"rewritten={sum(r['rewrite_source'] == 'copilot' for r in rows)})")
 
 

@@ -1,0 +1,30 @@
+# --- Secrets (NEVER commit) ---------------------------------------------
+# WHY: .env holds AZURE_OPENAI_API_KEY. It is listed first on purpose so the
+# rule exists before the file is ever created.
+.env
+*.key
+
+# --- Python -------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+
+# --- Large / regenerable artifacts --------------------------------------
+# WHY: the raw BEIR download (~100 MB) and the embedding/index caches
+# (~90 MB per model) are reproducible from scripts, so they stay out of git.
+data/raw/
+artifacts/
+dist/
+.cache/
+# LLM response cache (may contain model outputs; regenerable)
+.llm_cache/
+
+# --- OS / editor --------------------------------------------------------
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

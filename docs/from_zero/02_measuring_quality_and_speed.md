@@ -91,9 +91,38 @@ flowchart LR
     D --> E
 ```
 
-> **Detail you'll see in the code:** the general gain is `2^relevance − 1`. FiQA relevance is always 1, so the gain is
-> `2^1 − 1 = 1`, which is why we just wrote "1" above. **Pitfall:** IDCG uses *all* correct docs from the qrels, including
-> the ones you didn't find (C!). If you only used the found ones, a system that found just 1 doc at rank 1 would score a "perfect" 1.0.
+#### Two details, with numbers
+
+**Detail 1: where the "1" in Step 1 comes from (the *gain*).** The full formula gives each correct doc some
+*points* (the **gain**) and then shrinks those points by the rank's discount:
+
+```
+contribution of one doc = gain × 1/log2(rank + 1)        where   gain = 2^relevance − 1
+```
+
+The relevance is the `score` column of the qrels (chapter 1): 0 = not relevant, 1 = relevant, 2 = highly relevant, …
+
+| relevance (from the qrels) | gain = 2^rel − 1 | meaning |
+|---|---|---|
+| 0 | 2⁰ − 1 = **0** | a wrong doc earns nothing |
+| 1 | 2¹ − 1 = **1** | a correct doc earns 1 point |
+| 2 | 2² − 1 = **3** | a *highly* relevant doc earns 3 points (other datasets only) |
+
+**In FiQA every relevance is 1, so every gain is 1.** "gain × discount" is then just "1 × discount", which is why
+Step 1 simply says "add `1/log2(rank+1)`". You'll see `2 ** rel - 1` in the code because the code also works for graded datasets.
+
+**Detail 2 (pitfall): the ideal (IDCG) must include the docs you MISSED.** Ask: "what would a *perfect* system have
+scored on this query?" A perfect system finds **every** correct doc in the qrels and puts them at the top. So IDCG is
+built from *all* gold docs, not just the ones your system found. Here's why it matters. Gold = {A, B, C}, and system S
+finds only A, at rank 1:
+
+| | DCG of S | IDCG | nDCG | verdict |
+|---|---|---|---|---|
+| ✅ **right:** ideal = all 3 gold docs at ranks 1, 2, 3 | 1.000 | 1 + 0.631 + 0.5 = 2.131 | 1.000 / 2.131 = **0.469** | "found 1 of 3": a mediocre score, correct |
+| ❌ **wrong:** ideal = only the docs S found (just A, rank 1) | 1.000 | 1.000 | 1.000 / 1.000 = **1.0** | "perfect"?! It missed B and C |
+
+With the wrong version, S (1 of 3 found) and a truly perfect system (3 of 3 at the top) would *both* score 1.0, and you
+couldn't tell them apart. The ideal ranking is "everything correct, at the top", whether or not your system found it.
 
 **nDCG@10 is the headline metric** of BEIR and of this project.
 

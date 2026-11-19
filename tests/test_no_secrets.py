@@ -14,19 +14,34 @@ PATTERNS = [
     re.compile(r"(?i)api[_-]?key\s*[=:]\s*['\"]?[A-Za-z0-9]{24,}"),
 ]
 ALLOWED_SUFFIXES = {".py", ".md", ".txt", ".yml", ".yaml", ".toml", ".cfg", ".ini", ".example", ""}
+# Never-tracked folders, skipped when we have to walk the tree ourselves (no git available).
+UNTRACKED_DIRS = {".git", ".venv", "artifacts", "dist", ".cache", ".pytest_cache", "__pycache__", "raw", "node_modules"}
+
+
+def _git(*args: str) -> subprocess.CompletedProcess | None:
+    """Run git in the repo, or None if git is missing or this isn't a checkout (e.g. inside the Docker image)."""
+    try:
+        r = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True)
+    except OSError:
+        return None
+    return None if r.returncode == 128 else r   # 128 = "not a git repository"
 
 
 def tracked_files():
-    try:
-        out = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True).stdout
-    except (OSError, subprocess.CalledProcessError):
-        return []
-    return [ROOT / p for p in out.splitlines()]
+    r = _git("ls-files")
+    if r is not None and r.returncode == 0:
+        return [ROOT / p for p in r.stdout.splitlines()]
+    # WHY a fallback: without git (a source zip, the container) the guard must still look at the files.
+    return [p for p in ROOT.rglob("*") if p.name != ".env" and not (UNTRACKED_DIRS & set(p.relative_to(ROOT).parts))]
 
 
 def test_env_file_is_gitignored():
-    r = subprocess.run(["git", "check-ignore", ".env"], cwd=ROOT, capture_output=True, text=True)
-    assert r.returncode == 0, ".env must be gitignored"
+    r = _git("check-ignore", ".env")
+    if r is not None:
+        assert r.returncode == 0, ".env must be gitignored"
+    else:
+        lines = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+        assert ".env" in (line.strip() for line in lines), ".env must be listed in .gitignore"
 
 
 def test_no_secrets_in_tracked_files():

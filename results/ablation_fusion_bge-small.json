@@ -1,0 +1,90 @@
+{
+ "split": "dev",
+ "model": "bge-small",
+ "rows": [
+  {
+   "method": "rrf",
+   "alpha_dense": 0.5,
+   "ndcg@10": 0.3699,
+   "recall@10": 0.4359,
+   "mrr@10": 0.4471
+  },
+  {
+   "method": "rrf",
+   "alpha_dense": 0.6,
+   "ndcg@10": 0.3843,
+   "recall@10": 0.4611,
+   "mrr@10": 0.4601
+  },
+  {
+   "method": "rrf",
+   "alpha_dense": 0.7,
+   "ndcg@10": 0.3943,
+   "recall@10": 0.469,
+   "mrr@10": 0.4735
+  },
+  {
+   "method": "rrf",
+   "alpha_dense": 0.8,
+   "ndcg@10": 0.4056,
+   "recall@10": 0.4798,
+   "mrr@10": 0.487
+  },
+  {
+   "method": "rrf",
+   "alpha_dense": 0.9,
+   "ndcg@10": 0.4082,
+   "recall@10": 0.475,
+   "mrr@10": 0.4936
+  },
+  {
+   "method": "linear",
+   "alpha_dense": 0.1,
+   "ndcg@10": 0.2875,
+   "recall@10": 0.3367,
+   "mrr@10": 0.3507
+  },
+  {
+   "method": "linear",
+   "alpha_dense": 0.3,
+   "ndcg@10": 0.3339,
+   "recall@10": 0.3857,
+   "mrr@10": 0.4097
+  },
+  {
+   "method": "linear",
+   "alpha_dense": 0.5,
+   "ndcg@10": 0.3931,
+   "recall@10": 0.4597,
+   "mrr@10": 0.4746
+  },
+  {
+   "method": "linear",
+   "alpha_dense": 0.6,
+   "ndcg@10": 0.4108,
+   "recall@10": 0.4795,
+   "mrr@10": 0.4948
+  },
+  {
+   "method": "linear",
+   "alpha_dense": 0.7,
+   "ndcg@10": 0.4155,
+   "recall@10": 0.4856,
+   "mrr@10": 0.4953
+  },
+  {
+   "method": "linear",
+   "alpha_dense": 0.8,
+   "ndcg@10": 0.4083,
+   "recall@10": 0.4744,
+   "mrr@10": 0.492
+  },
+  {
+   "method": "linear",
+   "alpha_dense": 0.9,
+   "ndcg@10": 0.4038,
+   "recall@10": 0.4709,
+   "mrr@10": 0.485
+  }
+ ]
+}

@@ -33,10 +33,11 @@ ALPHAS_LIN = [0.1, 0.3, 0.5, 0.6, 0.7, 0.8, 0.9]
 
 def first_stage(router, queries):
     """Per query: global BM25 top-100 and dense top-100 (what the router fuses)."""
+    loop = asyncio.new_event_loop()  # PITFALL: asyncio.run per query leaks executor threads + torch state
     out = {}
     for qid, q in queries.items():
-        b = asyncio.run(router.search(q, k=100, strategy="bm25"))["results"]
-        d = asyncio.run(router.search(q, k=100, strategy="dense"))["results"]
+        b = loop.run_until_complete(router.search(q, k=100, strategy="bm25"))["results"]
+        d = loop.run_until_complete(router.search(q, k=100, strategy="dense"))["results"]
         out[qid] = ([(r["doc_id"], r["score"]) for r in b], [(r["doc_id"], r["score"]) for r in d])
     return out
 
@@ -53,19 +54,21 @@ def fusion_sweep(lists, qrels):
 
 
 def rerank_sweep(router, queries, qrels, method, alpha, ks=(10, 20, 50, 100)):
+    loop = asyncio.new_event_loop()
     rows = []
     for k in ks:
         run, lat = {}, []
         for qid, q in queries.items():
             t0 = time.perf_counter()
-            res = asyncio.run(router.search(q, k=10, strategy="hybrid", fusion=method, alpha=alpha, rerank_k=k))
+            res = loop.run_until_complete(
+                router.search(q, k=10, strategy="hybrid", fusion=method, alpha=alpha, rerank_k=k))
             lat.append((time.perf_counter() - t0) * 1e3)
             run[qid] = [r["doc_id"] for r in res["results"]]
         m = evaluate_run(run, qrels)
         rows.append({"rerank_k": k, **{x: round(v, 4) for x, v in m.items() if x != "n"},
                      "p50_ms": round(percentile(lat, 50), 1), "p95_ms": round(percentile(lat, 95), 1)})
         print(f"  rerank@{k:<3d} nDCG@10={m['ndcg@10']:.4f} R@10={m['recall@10']:.4f} "
-              f"p50/p95={rows[-1]['p50_ms']}/{rows[-1]['p95_ms']}ms")
+              f"p50/p95={rows[-1]['p50_ms']}/{rows[-1]['p95_ms']}ms", flush=True)
     return rows
 
 
@@ -75,6 +78,7 @@ def main():
     ap.add_argument("--rerank", action="store_true")
     ap.add_argument("--method", default="linear")
     ap.add_argument("--alpha", type=float, default=0.7)
+    ap.add_argument("--ks", default="10,20,50", help="rerank depths (k=100 costs ~3 s/query on CPU)")
     a = ap.parse_args()
     import torch
 
@@ -82,7 +86,7 @@ def main():
     queries, qrels = load_split("dev")
     router = single_node_router(models=(a.model,))
     if a.rerank:
-        rows = rerank_sweep(router, queries, qrels, a.method, a.alpha)
+        rows = rerank_sweep(router, queries, qrels, a.method, a.alpha, ks=[int(k) for k in a.ks.split(",")])
         (RESULTS_DIR / f"ablation_rerank_{a.model}.json").write_text(json.dumps(
             {"split": "dev", "model": a.model, "first_stage": {"fusion": a.method, "alpha": a.alpha}, "rows": rows},
             indent=1))

@@ -109,7 +109,7 @@ flowchart LR
 |---|---|---|---|
 | 🧸 A | run `python examples/NN_*.py`, read the narrated output, try the `TRY THIS` edits | this repo + venv | you can predict what the toy prints before running it |
 | 🏭 B | read the pointed-to code, run the pointed-to command on the real data | the FiQA download + embedding cache | you can explain each step of the flow diagram in your own words |
-| ✍️ C | paper first, then a fresh file in your own folder (e.g. `my_attempt/`) | plain Python (+ numpy) | your numbers equal the toy's numbers |
+| ✍️ C | paper first, then the ready-made stub in [`exercises/`](../../exercises/README.md); check with `python -m pytest exercises\chNN_*` (seconds), then `--full` (real FiQA, minutes) | plain Python (+ numpy) | toy: your numbers equal the toy's; `--full`: your code reproduces our real numbers. Answers in `exercises/solutions/` |
 | 🔧 D | build your own version from scratch in your own repo | Python, numpy/scipy, sentence-transformers, faiss, (FastAPI, Docker) | your metrics are within ~0.005 of ours (quality) and similar order of magnitude (speed) |
 
 **Chapter 9** strings all the 🔧 D parts together into one ordered build plan (18 milestones, M0–M17), so at the end you

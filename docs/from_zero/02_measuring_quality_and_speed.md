@@ -220,7 +220,7 @@ short queries (< 5 words) Recall 0.385 vs long (> 15 words) 0.510. The average h
 1. **On paper**, for the ranking `[X, A, Y, B, Z, C, ...]` with gold `{A, B, C, D}`: compute Recall@5, RR@5 and nDCG@5.
    (Answer: hits at ranks 2 and 4 → Recall 2/4 = 0.5; RR 0.5; DCG = 0.631 + 0.431 = 1.062; IDCG(4 gold, k = 5) =
    1 + 0.631 + 0.5 + 0.431 = 2.562; nDCG = **0.414**.)
-2. **In code** (`my_attempt/metrics.py`, no repo imports): write the 4 functions + `percentile`. Test them on §2.5's table
+2. **In code** (`exercises/ch02_metrics/my_metrics.py`, no repo imports; check with `python -m pytest exercises\ch02_metrics`): write the 4 functions + `percentile`. Test them on §2.5's table
    and on toy 07's three queries. **Check:** you reproduce 0.613 / 0.501 / 0.000 for nDCG@5.
 3. Write 3 edge-case tests yourself: duplicate doc ids in a ranking, a query with zero gold docs, and k larger than the list.
 

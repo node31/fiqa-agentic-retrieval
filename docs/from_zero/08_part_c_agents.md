@@ -224,7 +224,7 @@ free search; each `LLM action` line is one parsed JSON reply; the final line sho
 
 ## ✍️ C. The toy, by you
 
-1. Write `my_attempt/agent_loop.py` with a **fake LLM**: a function that returns scripted strings in order
+1. Fill in `exercises/ch08_agents/agent_loop.py` (check: `python -m pytest exercises\ch08_agents`) with a **fake LLM**: a function that returns scripted strings in order
    (`'{"action":"search","query":"..."}'`, then `'{"action":"finish","doc_ids":[...]}'`). Write the loop: parse JSON,
    call your toy BM25 from Ch. 3, append results to the transcript, stop at finish or 3 steps.
 2. Add guardrails one by one, each with a scripted reply that triggers it: invalid JSON, an unknown action, an invented doc id,

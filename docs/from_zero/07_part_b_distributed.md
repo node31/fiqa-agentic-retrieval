@@ -314,7 +314,7 @@ Or with Docker: `docker compose build`, `docker compose up -d`, `docker compose 
 
 ## ✍️ C. The toy, by you
 
-Build a **2-shard system inside one Python process** (`my_attempt/mini_shards.py`, no HTTP yet):
+Build a **2-shard system inside one Python process** (`exercises/ch07_shards/mini_shards.py`, no HTTP yet; check: `python -m pytest exercises\ch07_shards`):
 1. 10 docs; assign each with `zlib.crc32(id.encode()) % 2`; give each shard its own BM25 (your Ch. 3 code).
 2. Write `router_search(query)`: (a) collect each shard's N / total_len / df, sum them; (b) each shard scores with the global
    stats and returns its top-5; (c) merge by score → top-5.

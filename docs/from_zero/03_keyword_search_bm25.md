@@ -225,7 +225,7 @@ Build time: ~9 s for 57,638 docs (54,807 distinct tokens).
    |d|, avgdl, then BM25 for d1 and d2. Which wins, and why? (d2 has tf(sell) = 2, but it's longer...)
    *Answer:* d1 = `[short, sell, mean, borrow, share]` (5 tokens), d2 = `[short, stori, about, sell, hous, sell, car]` (7 tokens);
    **d2 wins narrowly, 0.985 vs 0.940**: the second "sell" outweighs the length penalty here.
-2. **In code** (`my_attempt/bm25_toy.py`, ~50 lines, only `math`, `re`, `collections`):
+2. **In code** (`exercises/ch03_bm25/my_bm25.py`, ~50 lines, only `math`, `re`, `collections`; check with `python -m pytest exercises\ch03_bm25`):
    `tokenize` (lowercase + regex + stopword set + use `snowballstemmer`), `build_index(docs) -> {token: [(doc, tf)]}`,
    `bm25_search(query, index, ...)`. **Check:** your scores equal the real one for the same 3 docs:
    ```powershell

@@ -202,7 +202,7 @@ Run on FiQA: `python -m src.eval --mode local --strategy dense --name my-dense` 
 
 1. **On paper:** normalise `a = (3, 4)` and `b = (4, 3)`, then compute their cosine. (Answer: (0.6, 0.8)·(0.8, 0.6) = **0.96**.)
    Then `c = (−3, −4)`: cosine with `a` = **−1** (opposite).
-2. **In code** (`my_attempt/dense_toy.py`):
+2. **In code** (`exercises/ch04_dense/my_dense.py`; check with `python -m pytest exercises\ch04_dense`):
    ```python
    from sentence_transformers import SentenceTransformer
    import numpy as np

@@ -196,7 +196,7 @@ Also play with single queries interactively:
 
 ## ✍️ C. The toy, by you
 
-Write `my_attempt/mini_pipeline.py` (~80 lines, your own Chapter 2–5 code, no repo imports):
+Fill in `exercises/ch06_pipeline/mini_pipeline.py` (check: `python -m pytest exercises\ch06_pipeline`) (~80 lines, your own Chapter 2–5 code, no repo imports):
 1. Take the 24-doc `tests/fixtures/tinyfiqa` corpus and its queries/qrels.
 2. Build your BM25 and dense (MiniLM) indexes over the 24 docs; implement linear fusion.
 3. Evaluate BM25 vs dense vs hybrid with your metrics. With 24 docs you can **read every ranking** and say why each doc

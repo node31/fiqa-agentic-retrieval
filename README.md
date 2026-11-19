@@ -14,6 +14,9 @@ exercises with solutions, ADRs and "live-modify" drills. Start at [docs/LEARNING
 > **New to search, embeddings and agents? Start at [docs/from_zero/](docs/from_zero/README.md).** It's a from-scratch guide
 > (no prior knowledge assumed) with many diagrams, hand-worked examples on real FiQA data, a "why we're doing this"
 > box for every step, and a milestone plan to rebuild the whole project yourself.
+> Its hands-on part lives in **[exercises/](exercises/README.md)**: a stub, a worksheet and an automatic checker per chapter.
+> Toy checks take seconds (`python -m pytest exercises`); `--full` runs your code on the real 57,638 docs and compares it
+> with our numbers. The answer key is in `exercises/solutions/`.
 Design, results and trade-offs are in [DESIGN.md](DESIGN.md).
 
 ## Headline numbers (dev split; full table in DESIGN.md)

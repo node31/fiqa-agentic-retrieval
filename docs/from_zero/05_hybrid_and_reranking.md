@@ -58,7 +58,7 @@ By hand with α = 0.7:
 | doc | BM25 norm | dense norm | 0.7·dense + 0.3·bm25 |
 |---|---|---|---|
 | C | (10.7−2.1)/16.1 = 0.534 | (0.83−0.50)/0.33 = 1.000 | 0.700 + 0.160 = **0.860** |
-| E | – (0) | (0.81−0.50)/0.33 = 0.939 | **0.657** |
+| E | – (0) | (0.81−0.50)/0.33 = 0.939 | **0.658** |
 | A | 1.000 | (0.52−0.50)/0.33 = 0.061 | 0.042 + 0.300 = **0.342** |
 | B | 0.553 | 0.000 | **0.166** |
 | D | 0.000 | – (0) | **0.000** |
@@ -194,7 +194,7 @@ The sweep: `python scripts/ablations.py` (fusion) and `python scripts/ablations.
 
 1. **On paper:** redo §5.2's linear table for α = 0.5. Which doc is #1? (Answer: C = 0.5·1 + 0.5·0.534 = 0.767.)
    Then compute RRF with k = 1 instead of 60. Does the tie survive? (A = 1/2 + 1/4 = 0.75, C = 1/4 + 1/2 = 0.75: still tied.)
-2. **In code** (`my_attempt/fusion.py`, ~30 lines): `minmax`, `linear`, `rrf`. **Check** against toy 08's printed numbers.
+2. **In code** (`exercises/ch05_fusion/my_fusion.py`, ~30 lines; check with `python -m pytest exercises\ch05_fusion`): `minmax`, `linear`, `rrf`. **Check** against toy 08's printed numbers.
 3. Edge cases to handle: a list where all scores are equal (division by zero in min-max!), a doc in only one list, an empty list.
 
 ## 🔧 D. The real thing, by you

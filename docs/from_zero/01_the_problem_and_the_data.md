@@ -103,6 +103,21 @@ query-id	corpus-id	score
 > **"qrels"** = "query relevance judgments". The word is ugly, but you'll see it in every IR paper.
 > A qrel is a human judgment: "this passage answers this query".
 
+**What does the `score` column mean?** It's *how relevant* a human judged that doc to be for that query:
+
+| score | meaning | where you see it |
+|---|---|---|
+| `0` | judged and **not** relevant (a human looked and rejected it) | some datasets list these; counts the same as "not listed" |
+| `1` | relevant | **FiQA: every single row is 1** (train 14,166 · dev 1,238 · test 1,706). FiQA is *binary* |
+| `2`, `3`, … | *graded*: more relevant ("partially" vs "highly") | other BEIR sets, e.g. TREC-COVID uses 0/1/2 |
+
+- Docs **not listed** for a query are treated as score 0 ("unjudged = not relevant"). That's why the answer key is incomplete (see below).
+- **Recall and MRR only ask "is score > 0?"**, so the grade doesn't matter for them. **nDCG uses the grade**: gain = 2^score − 1,
+  so a score-2 doc is worth 3, a score-1 doc 1 (Ch. 2). On FiQA all gains are 1.
+- **Not a float**: in BEIR the score is an integer label, and our loader does `int(score)` on purpose, so a `0.5` would raise an error
+  instead of being silently misread. The nDCG math would work with fractional grades, but supporting them would be a deliberate format change.
+- Every metric filters with `score > 0`, never "is listed", precisely so that explicit `0` rows don't count as hits.
+
 ### A real example from the dev set
 
 > 🎯 **Why we're doing this:** One concrete example shows the core difficulty of FiQA, *answers don't reuse the question's words*, which motivates Chapters 3 to 5.
@@ -325,7 +340,7 @@ sequenceDiagram
 ## ✍️ C. The toy, by you
 
 1. **On paper:** pick 3 docs and 1 query from `tinyfiqa`. Write your own qrels for them.
-2. **In code** (new folder `my_attempt/`, no repo imports): write `load_jsonl(path) -> dict` and
+2. **In code** (`exercises/ch01_data/loader.py`, no repo imports; check with `python -m pytest exercises\ch01_data`): write `load_jsonl(path) -> dict` and
    `load_qrels(path) -> dict[qid, dict[docid, int]]` (skip the header line, split on tab).
 3. Print: number of docs, number of queries, average relevant docs per query. **Check:** your numbers equal what
    `src/beir_data.py` gives for the same folder.

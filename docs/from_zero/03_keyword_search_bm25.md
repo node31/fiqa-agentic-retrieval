@@ -100,9 +100,42 @@ If we used tf directly, a spammy doc repeating "loan" 100 times would win. BM25 
 | tf-part | 1.00 | 1.38 | 1.77 | 2.08 | 2.17 (max is k1 + 1 = 2.2) |
 
 ### Length normalisation: a match in a short doc means more
-`norm` grows with document length. A 10-word doc mentioning "loan" once is probably *about* loans; a 1,000-word doc
-mentioning it once probably isn't. With b = 0.75 and avgdl = 50: tf = 1 gives a tf-part of 1.49 for a 10-word doc and 0.11 for a
-1,000-word doc (toy 02 prints exactly this).
+**The idea:** a 10-word doc mentioning "loan" once is probably *about* loans. A 1,000-word doc mentioning "loan" once
+probably isn't; it just has room for lots of words. So BM25 should give a match in a **long** doc **less** credit.
+`norm` is the number that does this. Read it in three steps.
+
+**Step 1: how long is this doc compared to an average one?** That's just the ratio `|d| / avgdl`:
+
+| doc length `|d|` (avgdl = 100) | 25 | 50 | 100 | 200 | 400 |
+|---|---|---|---|---|---|
+| ratio `|d| / avgdl` | 0.25 (¼ of average) | 0.5 | **1.0** (exactly average) | 2.0 (twice average) | 4.0 |
+
+**Step 2: blend that ratio with 1, using b as the mix.** `norm = 1 − b + b · ratio` is the same as
+`norm = (1 − b) · 1  +  b · ratio`, i.e. *"take (1−b) parts of 'ignore length' (=1) and b parts of 'the real ratio'"*:
+- **b = 0**: norm = 1 for every doc. Length is ignored completely.
+- **b = 1**: norm = the ratio itself. Fully proportional to length.
+- **b = 0.75** (the default): mostly the ratio, softened a bit towards 1, so very long docs aren't punished *quite* as hard.
+
+**Step 3: norm sits in the *denominator* of the tf-part**, `tf · (k1+1) / (tf + k1 · norm)`. So **bigger norm → bigger denominator → smaller score**.
+Here's the tf-part for one mention (tf = 1, k1 = 1.2):
+
+| doc length (avgdl = 100) | 25 | 50 | 100 | 200 | 400 |
+|---|---|---|---|---|---|
+| **b = 0** → norm | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| tf-part | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 ← length makes no difference |
+| **b = 0.75** → norm | 0.438 | 0.625 | **1.000** | 1.750 | 3.250 |
+| tf-part | **1.443** | 1.257 | **1.000** | 0.710 | **0.449** ← short doc: bonus; long doc: penalty |
+| **b = 1** → norm | 0.250 | 0.500 | 1.000 | 2.000 | 4.000 |
+| tf-part | 1.692 | 1.375 | 1.000 | 0.647 | 0.379 ← strongest effect |
+
+How to read the b = 0.75 row:
+- An **average-length** doc gets norm = 1: no bonus, no penalty (tf-part 1.0).
+- A doc **¼ as long** as average gets norm 0.44, so the same single mention is worth **1.44**, a 44% bonus.
+- A doc **4× longer** gets norm 3.25, so the same mention is worth **0.45**, less than half.
+
+**On the real data** (avgdl = 95.21): doc 336018 has 271 tokens → ratio 271/95.21 = 2.85 →
+norm = 1 − 0.75 + 0.75 × 2.85 = **2.385**. It's almost 3× longer than average, so each of its matches is discounted (§3.5 below).
+(Toy 02 prints the same effect with avgdl = 50: one mention scores 1.49 in a 10-word doc and 0.11 in a 1,000-word doc.)
 
 ## 3.4 The full formula
 

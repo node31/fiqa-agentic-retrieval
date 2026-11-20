@@ -128,6 +128,9 @@ def dispatch(store, op: str, p: dict) -> dict:
         return store.upsert(p["doc_id"], int(p["version"]), p["text"])
     if op == "delete":
         return store.delete(p["doc_id"], int(p["version"]))
+    if op == "flush":
+        # Wait until every acked write is searchable (a no-op in sync mode). Load tests use it.
+        return {"drained": store.flush(float(p.get("timeout", 10)))}
     if op == "build_model":
         return store.start_build(p["model"], reencode=bool(p.get("reencode")), throttle_s=float(p.get("throttle_s", 0)))
     if op == "drop_model":
@@ -403,6 +406,16 @@ class Router:
         return {"active_model": self.active_model, "previous_model": self.previous_model,
                 "shards": {str(i): ok[i] for i in sorted(ok)}, "missing_shards": sorted(missing)}
 
+    async def flush(self, timeout: float = 10.0) -> dict:
+        """Wait until every shard has applied every acked write (instant in sync mode).
+
+        Only meaningful for APPLY_MODE=async (ADR 0013): returns once each shard's background
+        applier has drained its queue, so tests and load scripts can measure "everything visible".
+        """
+        ok, missing = await self._fan("flush", self._all({"timeout": timeout}), timeout=timeout + 2.0)
+        return {"drained": all(r.get("drained") for r in ok.values()) and not missing,
+                "missing_shards": sorted(missing)}
+
     async def migrate(self, target: str, reencode: bool = False, throttle_s: float = 0.0) -> dict:
         """Start building ``target`` on every shard (dual-write begins immediately).
 
@@ -580,6 +593,11 @@ def create_app():
     @app.get("/admin/status")
     async def status():
         return await router.status()
+
+    # Wait until every shard has applied every acked write (async apply mode, ADR 0013).
+    @app.post("/admin/flush")
+    async def flush(timeout: float = 10.0):
+        return await router.flush(timeout)
 
     @app.post("/admin/migrate")
     async def migrate(req: ModelReq):

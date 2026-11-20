@@ -21,6 +21,9 @@ x-shard: &shard
     HOST: "0.0.0.0"
     PORT: "8101"
     SHARD_MODELS: "minilm"
+    # sync (default) = apply before ack; async = ack after the WAL, apply in the background (ADR 0013).
+    # Try:  APPLY_MODE=async docker compose up
+    APPLY_MODE: "${APPLY_MODE:-sync}"
     TORCH_THREADS: "4"
     OMP_NUM_THREADS: "4"
   healthcheck:

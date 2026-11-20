@@ -162,3 +162,112 @@ def test_wal_write_after_torn_tail_survives_next_restart(tmp_path):
     w.append({"op": "upsert", "doc_id": "c", "version": 1})  # acked after recovery
     w.close()
     assert [r["doc_id"] for r in WAL(p, fsync=False).replay()] == ["a", "c"]
+
+
+# ---------------------------------------------------------------- async apply mode (ADR 0013)
+def make_async_store(tmp_path=None, embed_fn=embed, **kw):
+    return ShardStore(0, 1, state_dir=tmp_path, embed=embed_fn, use_cache=False, apply_mode="async",
+                      **kw).load(CORPUS, ("minilm",))
+
+
+def test_async_versions_compare_with_accepted_not_applied(tmp_path):
+    s = make_async_store(tmp_path)
+    assert s.upsert("a1", 1, "zebra bonds yield")["applied"]
+    assert not s.upsert("a1", 1, "zebra bonds yield")["applied"]  # retry, maybe still queued
+    assert s.upsert("a1", 3, "giraffe stocks")["applied"]
+    late = s.upsert("a1", 2, "OLD text must not win")
+    assert not late["applied"] and late["current_version"] == 3
+    assert s.flush(5)
+    assert s.docs["a1"] == "giraffe stocks"
+    bm, dn = search_ids(s, "giraffe stocks")
+    assert "a1" in bm and dn[0] == "a1"  # both indexes updated together
+    s.close()
+
+
+def test_async_acked_write_survives_crash_before_apply(tmp_path):
+    s = make_async_store(tmp_path)
+    s._applier.stop()  # simulate a crash: the applier never runs again
+    assert s.upsert("c1", 1, "walrus pension crash probe")["applied"]  # acked = in the WAL
+    assert s.delete("x-never", 1)["applied"]
+    assert "c1" not in s.docs  # acked but not applied
+    s.wal.close()
+    s2 = make_store(tmp_path)  # restart (any mode): WAL replay embeds the text-only records
+    assert s2.docs["c1"] == "walrus pension crash probe"
+    bm, dn = search_ids(s2, "walrus pension crash probe")
+    assert "c1" in bm and dn[0] == "c1"
+
+
+def test_async_rejects_bad_payload_before_ack(tmp_path):
+    s = make_async_store(tmp_path)
+    with pytest.raises(ValueError):
+        s.upsert("bad", 1, "   ")
+    assert s._applier.counters["accepted"] == 0
+    s.close()
+
+
+def test_async_backpressure_keeps_visible_lag_under_one_second(tmp_path):
+    import threading
+    import time as _t
+
+    def slow_embed(model, texts):  # ~50 ms per batch: the applier is the bottleneck
+        _t.sleep(0.05)
+        return embed(model, texts)
+
+    # No WAL (state_dir=None): writers are instant, so only back-pressure can hold them back.
+    s = make_async_store(None, embed_fn=slow_embed, max_lag_s=0.2, batch_max=4)
+
+    def writer(w):
+        for i in range(25):
+            s.upsert(f"bp-{w}-{i}", 1, f"backpressure probe {w} {i}")
+
+    threads = [threading.Thread(target=writer, args=(w,)) for w in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert s.flush(10)
+    st = s._applier.stats()
+    assert st["applied"] == 100 and st["backpressure_waits"] > 0  # writers were slowed down...
+    assert st["lag_ms"]["max"] < 1000, st  # ...so every write became searchable within 1 s
+    s.close()
+
+
+def test_async_migration_with_concurrent_writes_covers_every_doc(tmp_path):
+    """Migration under async apply: queued writes, dual-write and backfill must cover every doc,
+    and each doc's vector in the NEW index must be the vector of its LATEST text."""
+    import threading
+    import time as _t
+
+    def slow_embed(model, texts):  # slow enough that writes queue up during the build
+        _t.sleep(0.01)
+        return embed(model, texts)
+
+    s = make_async_store(tmp_path, embed_fn=slow_embed, batch_max=8)
+    stop = threading.Event()
+
+    def writer(w):
+        i = 0
+        while not stop.is_set():
+            s.upsert(f"mig-{w}-{i % 15}", i // 15 + 1, f"migration writer {w} doc {i % 15} round {i // 15}")
+            i += 1
+
+    threads = [threading.Thread(target=writer, args=(w,)) for w in range(3)]
+    for t in threads:
+        t.start()
+    _t.sleep(0.2)
+    assert s.start_build("bge-small", batch=8)["status"] == "started"
+    deadline = _t.time() + 10
+    while not s.ready["bge-small"] and _t.time() < deadline:
+        _t.sleep(0.02)
+    _t.sleep(0.2)  # keep writing after the build is ready (dual-write only from here)
+    stop.set()
+    for t in threads:
+        t.join()
+    assert s.ready["bge-small"] and s.flush(10)
+    new, old = s.dense["bge-small"], s.dense["minilm"]
+    assert len(new) == len(old) == len(s.docs)
+    for d, text in s.docs.items():
+        assert d in new
+        top = new.search(qembed("bge-small", text), 1)
+        assert top[0][1] == pytest.approx(1.0, abs=1e-5), d  # an exact match exists for the latest text
+    s.close()

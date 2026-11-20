@@ -22,6 +22,11 @@ WRITE PATH (upsert/delete), docs/09_live_updates_consistency.md
        dense indexes, and release the lock.
     4. Ack. The write is now searchable, so freshness lag = 0 after the ack.
 
+    That is the DEFAULT, "sync" apply mode (ADR 0007). ``apply_mode="async"`` (ADR 0013,
+    src/service/async_apply.py) is the alternative kept for comparison: version check -> WAL +
+    fsync -> ack, and a background thread embeds in batches and applies; searchable within
+    ~1 s (enforced by back-pressure). scripts/write_load.py compares both under heavy writes.
+
     Readers hold the shared lock, so they see the state before or after a
     write, never in between. That is what keeps lexical and dense consistent.
 
@@ -103,7 +108,10 @@ class ShardUnhealthy(RuntimeError):
 
 class ShardStore:
     def __init__(self, shard_id: int = 0, n_shards: int = 1, state_dir: Path | None = None,
-                 embed: EmbedFn | None = None, use_cache: bool = True):
+                 embed: EmbedFn | None = None, use_cache: bool = True, apply_mode: str = "sync",
+                 max_lag_s: float = 0.5, batch_max: int = 32, max_pending: int = 2000):
+        if apply_mode not in ("sync", "async"):
+            raise ValueError(f"apply_mode must be 'sync' or 'async', not {apply_mode!r}")
         self.shard_id, self.n_shards = shard_id, n_shards
         self.docs: dict[str, str] = {}
         # versions layout: {"42": (7, False), "99": (3, True)}
@@ -131,6 +139,12 @@ class ShardStore:
         # use_cache=False: never touch artifacts/emb_*.npy, always call the embedder
         # (toy corpora in tests/examples, where loading the 57K-row FiQA cache is wasted work).
         self._use_cache = use_cache
+        # apply_mode: "sync" (default, ADR 0007) applies before the ack; "async" (ADR 0013) acks
+        # after the WAL and applies in a background thread (src/service/async_apply.py). The
+        # applier is created at the end of load(), after WAL replay, so replay stays single-threaded.
+        self.apply_mode = apply_mode
+        self._async_cfg = {"max_lag_s": max_lag_s, "batch_max": batch_max, "max_pending": max_pending}
+        self._applier = None
 
     # ------------------------------------------------------------------ loading
     def load(self, corpus: dict[str, str], models: Sequence[str]) -> "ShardStore":
@@ -170,6 +184,10 @@ class ShardStore:
                     vecs = {m: decode_vec(s) for m, s in rec.get("vecs", {}).items()}
                     self._apply(rec["op"], rec["doc_id"], rec["version"], rec.get("text"), vecs)
                     self.counters["replayed"] += 1
+        if self.apply_mode == "async" and self._applier is None:
+            from src.service.async_apply import AsyncApplier
+
+            self._applier = AsyncApplier(self, **self._async_cfg).start()
         return self
 
     def _vectors_for(self, model: str, items: Sequence[tuple[str, str]]) -> np.ndarray:
@@ -260,10 +278,25 @@ class ShardStore:
     # Elasticsearch "external" versions), which is what lets the shard tell a retry (same
     # version) from a genuinely new write.
     def upsert(self, doc_id: str, version: int, text: str) -> dict:
+        if self._applier:  # async mode: WAL -> ack, applied later (async_apply.py)
+            return self._applier.submit("upsert", doc_id, version, text)
         return self._write("upsert", doc_id, version, text)
 
     def delete(self, doc_id: str, version: int) -> dict:
+        if self._applier:
+            return self._applier.submit("delete", doc_id, version, None)
         return self._write("delete", doc_id, version, None)
+
+    def flush(self, timeout: float = 10.0) -> bool:
+        """Wait until every acked write is searchable. Always True at once in sync mode."""
+        return self._applier.flush(timeout) if self._applier else True
+
+    def close(self) -> None:
+        """Stop the async applier (after draining it) and close the WAL file."""
+        if self._applier:
+            self._applier.stop()
+        if self.wal:
+            self.wal.close()
 
     def _write(self, op: str, doc_id: str, version: int, text: str | None) -> dict:
         """The write path from the module docstring (steps 1-4). Returns the ack dict."""
@@ -416,7 +449,8 @@ class ShardStore:
             "shard_id": self.shard_id, "healthy": self.healthy, "n_docs": len(self.docs),
             "models": {m: {"ready": self.ready.get(m, False), "progress": round(self.progress.get(m, 0), 3),
                            "n": len(idx)} for m, idx in self.dense.items()},
-            "counters": dict(self.counters), **rss_mb(),
+            "counters": dict(self.counters), "apply_mode": self.apply_mode,
+            **({"async": self._applier.stats()} if self._applier else {}), **rss_mb(),
         }
 
 

@@ -1,0 +1,72 @@
+{
+ "threads": 4,
+ "n_queries": 500,
+ "depth": 100,
+ "shard_sizes": [
+  19167,
+  19254,
+  19217
+ ],
+ "steps_ms": {
+  "encode": {
+   "p50": 11.212,
+   "p95": 13.84,
+   "mean": 11.404
+  },
+  "single.bm25": {
+   "p50": 1.283,
+   "p95": 2.202,
+   "mean": 1.37
+  },
+  "single.faiss": {
+   "p50": 6.245,
+   "p95": 8.18,
+   "mean": 6.442
+  },
+  "single.fuse": {
+   "p50": 0.242,
+   "p95": 0.311,
+   "mean": 0.25
+  },
+  "single.search_total": {
+   "p50": 7.905,
+   "p95": 9.71,
+   "mean": 8.062
+  },
+  "sharded.dfs_stats": {
+   "p50": 0.041,
+   "p95": 0.059,
+   "mean": 0.043
+  },
+  "sharded.bm25_per_shard_max": {
+   "p50": 0.736,
+   "p95": 1.21,
+   "mean": 0.768
+  },
+  "sharded.faiss_per_shard_max": {
+   "p50": 2.367,
+   "p95": 3.082,
+   "mean": 2.448
+  },
+  "sharded.search_parallel": {
+   "p50": 3.086,
+   "p95": 3.931,
+   "mean": 3.172
+  },
+  "sharded.search_sequential": {
+   "p50": 8.916,
+   "p95": 10.846,
+   "mean": 9.087
+  },
+  "sharded.merge_and_fuse": {
+   "p50": 0.583,
+   "p95": 0.712,
+   "mean": 0.595
+  },
+  "sharded.total_parallel": {
+   "p50": 3.738,
+   "p95": 4.608,
+   "mean": 3.81
+  }
+ }
+}

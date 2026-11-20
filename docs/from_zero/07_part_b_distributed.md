@@ -196,20 +196,75 @@ flowchart LR
 | router + **1** shard (HTTP) | 23.4 ms | 26.3 ms |
 | router + **3** shards (HTTP) | 28.6 ms | 40.5 ms |
 
-**Why 3 shards are slower here: a fixed cost vs a saving that grows with the data.**
+#### Where the time goes: search vs merge vs network (measured)
 
-| | grows with the data? | at 57K docs (p50) |
-|---|---|---|
-| **saving**: each shard searches only 1/3 of the docs | yes, linearly (flat faiss and BM25 posting lists are O(N)) | the splittable work is ~5.3 ms faiss + ~1 ms BM25 ≈ 6.3 ms, so 3 shards save at most ⅔ of it ≈ **4.2 ms** |
-| **cost**: the DFS round trip, 3× the HTTP calls, waiting for the **slowest of 3** (tail amplification, Chapter 2) | no, roughly fixed per query | 3 shards vs 1 shard: 28.6 − 23.4 ≈ **5.2 ms** |
+The table above only gives end-to-end totals. To split them, `scripts/latency_breakdown.py` times every step **inside
+one process (no HTTP at all)**, using the real BM25 / faiss / merge / fuse code and the 500 dev queries:
+- one index over all 57,638 docs, versus
+- the 3 crc32 shards, each with its own BM25 and faiss index.
 
-The query encode (~8 ms) happens **once at the router** either way, so sharding can't save any of it. Saving 4.2 ms
-while paying 5.2 ms makes the result slower. That's the expected outcome for a small corpus.
+Whatever end-to-end time is left over after subtracting that compute is the **network and coordination** cost. All
+numbers are p50 in ms, from the same session (`results/latency_breakdown.json` plus fresh end-to-end runs). This session
+ran about 10% slower than the table above (e.g. encode 11.2 vs 8.2 ms), so compare the rows **with each other**.
 
-**Where it would flip (rough estimate).** Assume the splittable work W grows linearly with the number of docs and the
-overhead stays ~5 ms. Sharding wins once ⅔ × W > ~5.2 ms, i.e. W > ~8 ms of search work: about **70K docs** with
-flat search, or ~110K if you compare against the in-process baseline (≈ 7.9 ms of overhead). At 10M docs, a flat index
-would spend roughly a second per query on one node, and splitting it would obviously pay.
+| setup | encode query | search | DFS stats | merge + fuse | network & coordination | other in-process | **end-to-end** |
+|---|---|---|---|---|---|---|---|
+| single process (no HTTP) | 11.2 | **7.5** (BM25 1.3 + faiss 6.2) | 0 (not needed) | 0.24 (fuse only) | **0** | 3.7 | **22.6** |
+| router + 1 shard (HTTP) | 11.2 | 7.5 | 0 (skipped for 1 shard) | 0.24 | **3.8** | 3.7 | **26.4** |
+| router + 3 shards (HTTP) | 11.2 | **3.1** (slowest shard: BM25 ≤ 0.7 + faiss ≤ 2.4) | 0.04 | **0.58** | **13.8** | 3.7 | **32.4** |
+
+How each column was obtained:
+- **encode, search, DFS stats, merge + fuse:** measured directly by the script. For 3 shards, "search" is the
+  **slowest of the 3** shards, because 3 processes run at the same time and the router waits for the last one.
+- **other in-process:** the single-process total minus its compute (22.6 − 11.2 − 7.5 − 0.24). It covers the router's
+  async/thread hand-offs, fetching the top-10 texts and building the response. It's assumed to be the same for every
+  setup.
+- **network & coordination:** what's left of the end-to-end time: HTTP + JSON for every call, 2 round trips for
+  3 shards (DFS, then search) instead of 1, 3× the result payload (100 BM25 + 100 dense hits per shard), and waiting for
+  the slowest shard.
+- **Caveats:**
+  - The script runs the 3 shard searches one after another and takes the slowest as the "parallel" time. That assumes
+    3 real processes don't slow each other down, which is reasonable here (3 × 4 threads on 32 cores).
+  - The router overlaps the query encode with the DFS round trip, so the columns are not a perfect sum. Treat the
+    network column as ≈.
+
+**Does "split search + merge" beat "search everything"? Yes, measured:**
+
+| | search | + DFS stats | + merge / fuse | **compute total** |
+|---|---|---|---|---|
+| one index, 57,638 docs | 7.5 | 0 | 0.24 | **7.8 ms** |
+| 3 shards **in parallel** (3 processes) | 3.1 | 0.04 | 0.58 | **3.7 ms**: 2.1× faster |
+| 3 shards **one after another** (one process) | 8.9 | 0.04 | 0.58 | **9.5 ms**: slower than one index! |
+
+So splitting the search does save about **4 ms**, and the extra merge costs only about 0.3 ms more than a plain fuse.
+Two lessons:
+- It only works **if the shards really run in parallel**. Searching 3 small indexes one after another is *slower* than one
+  big one, because each search call has fixed costs and small faiss searches use threads less efficiently.
+- The 3 shards aren't 3× faster (3.1 ms, not 2.5 ms), because the router waits for the **slowest** shard and each
+  search has a fixed cost.
+
+**Why the end-to-end result is still slower.** 3 shards vs 1 shard (both over HTTP):
+- **saved:** 7.5 − 3.1 ≈ **4.4 ms** of search
+- **paid:** ≈ **10.4 ms** extra. That's 13.8 − 3.8 = 10.0 ms of extra network/coordination, plus 0.34 ms of extra merging
+  (0.58 vs 0.24) and 0.04 ms for DFS.
+- **net:** ≈ +6.0 ms, which matches the measured 32.4 − 26.4 = 6.0 ms.
+
+The query encode (11.2 ms here) happens **once at the router** either way, so sharding can't save any of it.
+
+**Where it would flip (rough estimate).** The network cost is roughly **fixed** per query: each shard always returns
+100 + 100 hits, whatever the corpus size. The search saving, though, **grows with the data**, because flat faiss and
+BM25 posting lists are O(N). Measured, the 3-shard search takes about 41% of the single-index search (3.1 / 7.5), so it
+saves about 59% of W, where W is the single-index search time. Sharding wins once 0.59 × W is larger than the fixed
+extra cost:
+
+| compared with | fixed extra cost | break-even search time W (today 7.5 ms) | ≈ corpus size (flat search) |
+|---|---|---|---|
+| router + 1 shard (HTTP) | ≈ 10.4 ms | ≈ 18 ms (2.3× today) | ≈ **135K docs** |
+| single process (no HTTP) | ≈ 14.2 ms (13.8 network + 0.38 merge/DFS) | ≈ 24 ms (3.2× today) | ≈ **185K docs** |
+
+So roughly **2–3× today's corpus**. Below that, sharding is expected to be slower. At 10M docs, a flat index would
+spend roughly a second per query on one node, and splitting it would obviously pay. (The estimate assumes search time
+grows linearly with the number of docs and the network cost stays fixed. It's a ballpark, not a promise.)
 
 **Two refinements for large scale:**
 1. **At 10M+ docs you'd switch to an approximate index (HNSW / IVF, `docs/03_vector_indexes.md` and `docs/15_scaling_to_100M.md`).**

@@ -10,7 +10,10 @@
 # host and containers share one cache. Shard WAL/state lives in artifacts/docker/shardN.
 
 x-shard: &shard
-  build: .
+  build:
+    context: .
+    # PyPI mirror for corporate networks (pypi.org blocked/slow); scripts/bootstrap.* set it automatically.
+    args: { PIP_INDEX_URL: "${PIP_INDEX_URL:-https://pypi.org/simple}" }
   image: fiqa-retrieval:latest
   command: ["python", "-m", "src.service.shard_server"]
   volumes:
@@ -46,7 +49,9 @@ services:
     environment: { <<: *shard-env, SHARD_ID: "2", STATE_DIR: /app/artifacts/docker/shard2 }
 
   router:
-    build: .
+    build:
+      context: .
+      args: { PIP_INDEX_URL: "${PIP_INDEX_URL:-https://pypi.org/simple}" }
     image: fiqa-retrieval:latest
     command: ["python", "-m", "src.service.router"]
     ports: ["8000:8000"]

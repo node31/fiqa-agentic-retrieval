@@ -5,7 +5,9 @@ Every term used in this repo, in plain words, with where to see it.
 | Term | Meaning | Where |
 |---|---|---|
 | **ANN** | Approximate nearest neighbour search: faster than exact, may miss some true neighbours | [03](03_vector_indexes.md), toy 06 |
+| **Async apply** | Write mode that acks after the WAL and applies (embeds + indexes) in the background; searchable within 1 s, not instantly. Opposite: *sync apply* (apply, then ack) | [09](09_live_updates_consistency.md), ADR 0013 |
 | **avgdl** | Average document length (in tokens) across the corpus; BM25 normalises by it | [01](01_lexical_retrieval_bm25.md) |
+| **Back-pressure** | Slowing producers down when the consumer falls behind; here the async ack waits while the predicted apply time is > 0.5 s | [09](09_live_updates_consistency.md), `src/service/async_apply.py` |
 | **Backfill** | Filling a newly created index with all existing documents, in the background | [10](10_model_migration.md) |
 | **BEIR** | A benchmark suite of retrieval datasets; FiQA is one of them | [00](00_rag_primer.md) |
 | **Bi-encoder** | Embeds query and passage *separately*; enables pre-computed passage vectors | [02](02_dense_retrieval.md), toy 09 |
@@ -44,6 +46,7 @@ Every term used in this repo, in plain words, with where to see it.
 | **Postings list** | The docs (and term frequencies) for one term | toy 03 |
 | **PQ (product quantisation)** | Compress vectors into a few bytes for huge indexes | [15](15_scaling_to_100M.md) |
 | **RAG** | Retrieval-augmented generation | [00](00_rag_primer.md) |
+| **Read-your-writes** | A client always sees its own completed write in its next read. Sync mode gives it; async mode gives it after `POST /admin/flush` | [09](09_live_updates_consistency.md) |
 | **Recall@k** | Fraction of relevant docs found in the top k | toy 07 |
 | **Reranking** | Rescoring a short candidate list with a stronger, slower model | [06](06_reranking.md) |
 | **Rollback** | Switching back to the previous version | [10](10_model_migration.md) |
@@ -54,9 +57,12 @@ Every term used in this repo, in plain words, with where to see it.
 | **Shard** | A process holding a slice of the corpus and its own indexes | [08](08_sharding_scatter_gather.md) |
 | **Stemming** | Reducing words to a common stem ("investing" → "invest") | toy 00 |
 | **Tail latency / amplification** | Slow outliers; with fan-out, the slowest shard dominates | toy 10 |
+| **Time split (`timings_ms`)** | Per-query breakdown in every `/search` response (stats, embed wait, shard compute, network, merge, fuse, …); parts add up to `latency_ms` | [08](08_sharding_scatter_gather.md), [scenarios](scenarios.md) §4.1 |
 | **Tombstone** | A marker recording that a doc was deleted (at some version) | toy 16 |
 | **Token** | Unit of text an LLM bills by (~4 English characters) | toy 26 |
 | **Tool calling** | An LLM requesting a function call via structured output; code executes it | [11](11_llm_tool_calling.md), toy 20 |
+| **Vector database** | Software around stored embeddings: nearest-neighbour index + inserts/deletes + durability + sharding + API (e.g. Qdrant, Milvus, pgvector). Our router + shards is a small hand-made one | [00](00_rag_primer.md) §4.1 |
 | **Verifier** | Agent that checks retrieved results address each sub-question | [13](13_multi_agent_orchestration.md) |
+| **Visible lag** | Time from a write's ack until a search finds it: 0 in sync mode, < 1 s promised in async (measured p95 466 ms under load) | [09](09_live_updates_consistency.md) |
 | **WAL** | Write-ahead log: durable record of a write, made before applying it | [09](09_live_updates_consistency.md), toy 17 |
 | **Warmup** | Requests sent before measuring, to exclude cold-start effects | [07](07_benchmarking_latency_memory.md) |

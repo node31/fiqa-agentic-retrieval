@@ -29,9 +29,13 @@ Time estimates assume you are new to IR and agents but comfortable with Python.
 ## Stage 2: distributed service (Part B, 2 days)
 - [ ] [08 Sharding](08_sharding_scatter_gather.md): toys 12, 13, 14, 15 · `src/service/router.py`
 - [ ] Run it: `python -m src.service.cluster` then `python src/search.py --query "what is short selling?"`
-- [ ] [09 Live updates](09_live_updates_consistency.md): toys 16, 17, 18 · `src/service/store.py`, `wal.py`
-- [ ] `pytest -q tests/test_store.py tests/test_integration_service.py`, then read every test
+- [ ] [09 Live updates](09_live_updates_consistency.md): toys 16, 17, 18 · `src/service/store.py`, `wal.py`, `async_apply.py`
+- [ ] `pytest -q tests/test_store.py tests/test_integration_service.py tests/test_integration_async.py`, then read every test
+- [ ] Sync vs async under load: `python -m scripts.write_load --mode both --duration 30` ([ADR 0013](adr/0013-async-apply-mode.md))
 - [ ] [10 Migration](10_model_migration.md): toy 19 · `python scripts/migration_demo.py`
+- [ ] [Scenarios](scenarios.md): script writes/searches/migrations, then watch the HTML replay (with each query's time split)
+- [ ] Docker: `python -m scripts.docker_check` (functional checks; tears the stack down afterwards unless `--keep`) and
+  `python -m scripts.docker_trace` (proof the containers really talk; add `--failover` to stop a shard)
 - [ ] Read [walkthroughs/part_b_results.md](walkthroughs/part_b_results.md)
 
 ## Stage 3: agents (Part C, 2 days)
@@ -39,6 +43,7 @@ Time estimates assume you are new to IR and agents but comfortable with Python.
 - [ ] [12 Single agent](12_single_agent.md): toy 21 · `src/agent/single_agent.py`
 - [ ] [13 Multi-agent](13_multi_agent_orchestration.md): toys 22–25 · `src/agent/orchestrator.py`
 - [ ] [14 Agent evaluation and cost](14_agent_evaluation_cost.md): toy 26 · `python scripts/agent_eval.py --backend fake`
+- [ ] Read DESIGN.md §7: the haiku dev run vs the final Azure gpt-6-sol run, and why the routing decision changed
 - [ ] Hand-check 10 compound queries: [data/compound_review_sheet.md](../data/compound_review_sheet.md)
 
 ## Stage 4: system thinking + Project FAQ (1 day)

@@ -40,7 +40,35 @@ embedded documents too) would be ~150 MB. That's a real design option for memory
   per shard are equal across models (19,206 / 19,288 / 19,260 docs, i.e. the fresh 19,167 / 19,254 / 19,217 plus the
   116 docs written during the run). All 116 written docs are found by both models.
 
+## 5. Two write modes under heavy load (`results/write_load.json`)
+
+`scripts/write_load.py`: real corpus, 3 shards, 8 writers + 2 readers, 30 s, once per mode (ADR 0013).
+
+| | sync (apply, then ack) | async (ack, then apply) |
+|---|---|---|
+| writes acked / s | 57.8 | **94.2** |
+| ack ms p50 / p95 | 128 / 181 | **78 / 120** |
+| visible lag ms p95 / max | **0 / 0** | 466 / 583 (promise < 1,000) |
+| search ms p50 under load | **131** | 184 |
+
+How to read it:
+- Async takes embedding (~25 ms per doc) off the ack path, so writers get answers faster and push 1.6× more writes.
+- Freshness is the price: a write becomes searchable ~0.2–0.6 s after its ack instead of immediately.
+- Searches slow down in async **because more writes get through**, and the shards spend that CPU embedding them.
+  Lock waits were ≈ 0, so it isn't contention.
+- The first async version lost to sync (47 writes/s, lag up to 1.3 s). Embedding in batches doesn't help on a CPU,
+  and a single applier thread was serial. Measuring it is how we found out.
+
+## 6. One query's time, split (`timings_ms`)
+
+Every `/search` response splits the router's time into parts that add up to `latency_ms`. Hybrid, 3 shards,
+scenario 04 (real corpus, light load): stats round trip ~15 ms · query-encode overhang 0–15 ms · slowest shard
+compute ~4–5 ms · network/queue ~8–12 ms · merge + fuse < 1 ms. The shards' own search work is the smallest part, so
+§2's "+5 ms p50 for 3 shards" is round trips, not search. Details: [../scenarios.md](../scenarios.md) §4.1.
+
 ## Questions to test yourself
 1. Where would you look first if sharded nDCG were 0.4185 instead of 0.4190?
 2. The load test's p50 was ~140 ms, but the benchmark's 28.6 ms. Both are "true". Explain.
 3. How would memory per shard change if you moved document embedding to the router? What would get worse?
+4. Async made searches slower under load, yet lock waits were ≈ 0. Where did the time go, and how would you test
+   your answer? (Hint: compare the two modes at the *same* write rate.)

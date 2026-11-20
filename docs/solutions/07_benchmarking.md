@@ -8,4 +8,4 @@ Try the exercise before reading. Several answers point to *your own* run output,
 
 **3.** Run it; typically 1 thread → ~2× slower encode; 16 threads → no better than 4 for single queries. Explain via work per batch vs thread overhead.
 
-**4.** Add `'p99_ms': percentile(ms, 99)`. With 500 samples, p99 = the 5th-slowest value: very noisy. You'd want several thousand samples, or report p99 with a bootstrap CI.
+**4.** Add `'p99_ms': percentile(ms, 99)`. With 500 samples, nearest-rank p99 (`src/util.py`: rank ceil(0.99 × 500) = 495 of 500) is the 6th-slowest value: very noisy. You'd want several thousand samples, or report p99 with a bootstrap CI.

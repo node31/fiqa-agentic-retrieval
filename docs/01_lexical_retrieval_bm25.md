@@ -95,7 +95,7 @@ paraphrase ("pay off early" vs "prepay").
 1. (Concept) Why does tf saturation make BM25 robust to keyword stuffing?
 2. (Predict) If you set k1 = 0, what ranking do you get for the query "loan" in toy 02?
 3. (Predict) A term appears in every document. What is its IDF, roughly?
-4. (Do) Sweep b ∈ {0.3, 0.5, 0.75, 0.9} on dev (edit `config.BM25_B`, run `python -m src.eval --strategy bm25 --name b03`). Which wins?
+4. (Do) Sweep b ∈ {0.3, 0.5, 0.75, 0.9} on dev (edit `BM25_B` in `src/config.py`, run `python -m src.eval --strategy bm25 --name b03`). Which wins?
 5. (Do, harder) Implement `BM25Index.compact()` (see [DRILLS](DRILLS.md) drill 5).
 
 Solutions: [solutions/01_bm25.md](solutions/01_bm25.md)

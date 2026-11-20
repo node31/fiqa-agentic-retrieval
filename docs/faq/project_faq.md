@@ -52,9 +52,33 @@ scale (memory, write throughput), not for latency at this size.
 missing_shards: [i]`. Policy `fail` gives 503. Tested by hard-killing a shard (integration test).
 
 **Q: What exactly is your freshness guarantee?**
-Searchable by the first query issued after the ack: synchronous apply under the write lock. Proven
-by an integration test over 3 processes with no sleeps. The cost: write latency ≈ one embedding per
-maintained model.
+It depends on the write mode (`APPLY_MODE`, per shard; ADRs 0007 and 0013).
+- **sync (default):** searchable by the first query issued after the ack: apply under the write lock, then ack.
+  Proven by an integration test over 3 processes with no sleeps. Cost: write latency ≈ one embedding per maintained
+  model (~25 ms MiniLM).
+- **async:** the ack means "durable in the WAL, not yet searchable" (`"visible": false`). Promise: searchable
+  within 1 s. Back-pressure delays the ack whenever the predicted apply time exceeds 0.5 s, so overload slows writers
+  instead of silently breaking the promise. `POST /admin/flush` gives read-your-writes on demand.
+
+**Q: Why build an async mode at all? Which is better?**
+To compare them under heavy writes (`scripts/write_load.py`, real corpus, 8 writers + 2 readers): async acked
+**94 writes/s vs 58** for sync, ack p50 78 vs 128 ms, visible lag p95 466 / max 583 ms (promise < 1 s). The price:
+searches got slower under that load (p50 184 vs 131 ms), because shards spend more CPU embedding the extra writes.
+Neither is "better": sync if users must see their own edit immediately, async for write-heavy feeds.
+Surprise worth telling: the first async version was *slower* than sync (47 writes/s, lag up to 1.3 s). Batched embedding
+does not save time on CPU (8 docs per call cost 31.5 ms each vs 25.6 ms one at a time), and one applier thread embedded
+serially while sync's requests embed in parallel. The fix: 8 parallel single-doc embed workers + a per-doc cost model.
+
+**Q: Where does one query's time go?**
+`/search` returns `timings_ms` (parts sum exactly to `latency_ms`). Hybrid, 3 shards, real corpus: stats round trip
+~15 ms, query-encode overhang 0–15 ms, slowest shard's compute ~4–5 ms, network/queue ~8–12 ms, merge + fuse < 1 ms.
+The shards' search work is a few ms; round trips dominate. That's the per-query view of "sharding made it slower".
+
+**Q: How do you know the containers really talk to each other?**
+`scripts/docker_trace.py`: it checks container IPs and DNS, sends writes and confirms with `docker exec` that each one landed in the
+shard its `crc32(doc_id) % 3` predicts, and reads each shard's kernel TCP table to show connections from the router.
+With `--failover` it stops one shard container and shows searches coming back `partial: true`.
+`scripts/docker_check.py` runs the functional checks (18/18 in each write mode).
 
 **Q: A write fails halfway. What can a reader see?**
 Nothing half-applied: readers hold the shared lock, and writers apply BM25 + dense + doc store under the exclusive lock.

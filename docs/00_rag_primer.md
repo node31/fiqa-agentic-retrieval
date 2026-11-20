@@ -122,9 +122,13 @@ that you know what such a system does underneath, and so you can judge one, size
 ## 5. Run it
 
 ```bash
-python -m src.service.cluster --shards 3            # terminal 1: router + 3 shards
+python -m src.service.cluster --shards 3            # terminal 1: router + 3 shards, as local processes
 python src/search.py --query "what is short selling?" --top-k 5   # terminal 2
 ```
+
+Or run the same system in Docker: `docker compose up -d` (router + 3 shard containers), then the same `search.py`
+command. `search.py` is only an HTTP client for `http://127.0.0.1:8000`, so it talks to whichever router owns that
+port. **Run one or the other, not both:** both routers want port 8000.
 
 ## 6. Pitfalls / interview questions
 

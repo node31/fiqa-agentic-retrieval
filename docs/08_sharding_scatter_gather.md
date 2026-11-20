@@ -41,7 +41,7 @@ sequenceDiagram
   opt include_text
     R->>S: POST /docs {ids on that shard}
   end
-  R-->>C: {results, partial, missing_shards, model, latency_ms}
+  R-->>C: {results, partial, missing_shards, model, latency_ms, timings_ms}
 ```
 
 ## 4. How this repo implements it
@@ -87,6 +87,25 @@ skewed shards (topic-based sharding, small shards, recent-docs shards). The trad
 
 **Latency: 1 shard vs 3 shards (hybrid, through the router):** p50 23.4 → 28.6 ms, p95 26.3 → 40.5 ms.
 Sharding made it *slower*. See [07](07_benchmarking_latency_memory.md) and DESIGN.md §8.
+
+**Where one query's time goes.** Every `/search` response carries `timings_ms`, a split of the router's time into
+sequential parts that add up exactly to `latency_ms` (shards also report their own `took_ms`). Typical values on the real
+corpus, hybrid, 3 shards (scenario 04 run, light concurrent load; [scenarios.md](scenarios.md) §4.1):
+
+| part | what it is | typical |
+|---|---|---|
+| stats (DFS) | phase 1 round trip: global BM25 statistics | ~15 ms |
+| embed wait | query encoding still running after phase 1 (it runs in parallel with it) | 0–15 ms |
+| shard compute | the slowest shard's own BM25 + faiss work | ~4–5 ms |
+| network/queue | the rest of the phase-2 round trip: HTTP, JSON, thread hand-offs | ~8–12 ms |
+| merge + fuse | at the router | < 1 ms |
+
+So the shards' actual search work is a few ms; most of a sharded query is **round trips**. That is the per-query view
+of "sharding made it slower". To see it yourself (needs a router built after `timings_ms` was added; rebuild an older
+Docker image first), or run any scenario and open its replay page:
+```bash
+python -c "import httpx; print(httpx.post('http://127.0.0.1:8000/search', json={'query': 'what is short selling?', 'k': 5}).json()['timings_ms'])"
+```
 
 ## 7. Pitfalls and interview questions
 

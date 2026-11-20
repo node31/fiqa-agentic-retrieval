@@ -49,6 +49,11 @@ queries ──> router(active=A) ──> index A          ...cutover...  router(
 - Shard restart mid-migration: `models.json` lists both models, so `load()` rebuilds both
   (cache + WAL vectors; WAL records lacking a vector for B are embedded on replay).
 - `make migrate` → `scripts/migration.py migrate --wait`, `make cutover`, `make rollback`, `make finalize`.
+- **Works in both write modes.** In async mode (`APPLY_MODE=async`, [09](09_live_updates_consistency.md)) the
+  background applier does the dual-write: it embeds each queued write for every maintained model. Tested by
+  `tests/test_integration_async.py::test_migration_under_async_writes` (writes keep flowing through
+  migrate → cutover → rollback; docs written during the build are found by the new model) and
+  `tests/test_store.py::test_async_migration_with_concurrent_writes_covers_every_doc`.
 
 ## 5. Run the toy
 

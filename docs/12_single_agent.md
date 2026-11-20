@@ -72,7 +72,8 @@ Look at `per_query[...].trace` to see the actual rewrites.
 ## 8. Exercises
 
 1. (Concept) Why does step 0 not count as one of the 3 steps? Is that within the assignment's rules? Argue.
-2. (Predict) On plain FiQA queries, will the agent beat plain hybrid? Check your prediction in DESIGN.md.
+2. (Predict) On plain FiQA queries, will the agent beat plain hybrid? Does your answer depend on the LLM? Check it in
+   DESIGN.md §7: compare the haiku dev run with the Azure gpt-6-sol run.
 3. (Do) Make the agent finish with `doc_ids: []` always (pure RRF). Compare recall and MRR vs letting it choose.
 4. (Do) Add confidence gating: skip the LLM if top-1 hybrid score > τ. Tune τ on dev.
 

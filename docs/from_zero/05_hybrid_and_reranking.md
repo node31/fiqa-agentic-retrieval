@@ -122,6 +122,32 @@ A **cross-encoder** reads the query and a passage **together** in one transforme
 so it can notice that "risk" relates to "loss is unlimited". It's usually more accurate than a bi-encoder (Chapter 4),
 but **nothing can be precomputed**: one full model pass per (query, passage) pair.
 
+**What's a bi-encoder, then?** It's what MiniLM and BGE are (Chapter 4). "Bi" means **two separate encodings**: the query
+goes through the model on its own, the passage goes through on its own, each becomes a vector of 384 numbers, and
+the score is just the **cosine** of the two vectors. Inside the model, the query and the passage **never see each
+other**. That one difference decides everything else:
+
+- **What can be done ahead of time.** A bi-encoder's passage vector doesn't depend on the question, so every passage is
+  encoded **once, in advance**. We did all 57,638 (about 10 minutes, saved as `artifacts/emb_minilm.npy`, 88 MB). At query time
+  we only encode the query (~8 ms) and take dot products with all stored vectors (~5 ms for 57,638). That's why it can
+  search the **whole corpus**. A cross-encoder's score depends on the *pair*, so nothing can be prepared, and every
+  candidate needs its own full model pass. That's only affordable for a **short list** of candidates the fast retrievers already found.
+- **Why the bi-encoder is usually less accurate.** The passage's vector is made **without knowing the question**. All its
+  possible meanings must be squeezed into 384 numbers in advance, and detail gets lost. Its words never attend to the
+  query's words, so it can't notice, the way the cross-encoder can, that the "risk" in *this* question is answered by
+  "loss is unlimited" in *this* passage.
+
+| | bi-encoder (MiniLM, BGE) | cross-encoder (the reranker) |
+|---|---|---|
+| input | query alone; passage alone | query + passage together |
+| output | one vector each → cosine | one relevance score |
+| precompute the passages? | **yes**, once, offline | **no** |
+| work per query | 1 encode (~8 ms) + dot products (~5 ms over 57,638) | 1 full model pass **per candidate** (~29 ms each) |
+| can search | the whole corpus | a short list only, i.e. reranking (top 10 → ~340 ms, top 50 → ~1.2 s) |
+| typical accuracy | good | usually better (but not on our data, see below) |
+
+(Measured: `results/microbench.json` and `results/ablation_rerank_minilm.json`.)
+
 ```mermaid
 flowchart LR
     subgraph BI["Bi-encoder (Chapter 4)"]

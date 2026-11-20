@@ -18,6 +18,7 @@ warm) and **memory** (peak RAM).
 8. [Recipes](#8-recipes-copy-paste-commands)
 9. [Pitfalls](#9-pitfalls)
 10. [Code map](#10-code-map-whats-where-in-srcevalpy)
+11. [Sample explanations: a real results file, line by line](#11-sample-explanations-a-real-results-file-line-by-line)
 
 ---
 
@@ -311,3 +312,63 @@ Real example: the toy run of the shipped system, shortened.
 
 Related: `src/metrics.py` (the metric formulas), `scripts/bench.py` (runs every configuration), and guide chapter 6 §6.3
 (`docs/from_zero/06_part_a_end_to_end.md`), which walks through running each configuration yourself on the toy data.
+
+---
+
+## 11. Sample explanations: a real results file, line by line
+
+### Sample 1: BM25 on the tiny dataset (`toy_runs\pranav_results\runs\bm25.json`)
+
+Made with the toy variables from §5 and: `python -m src.eval --name bm25 --strategy bm25`
+
+**The file, section by section:**
+
+| section | value in the file | what it says |
+|---|---|---|
+| `split` | `"dev"` | the 4 dev questions of the tiny set were graded |
+| `overall` | `ndcg@10 0.9343`, `recall@10 1.0`, `mrr@10 1.0`, `n 4` | the average over the 4 questions (worked out below) |
+| `stratified` | `gold_in_top10pct_longest: 1.0 (n 1)`, `gold_not_longest: 1.0 (n 3)`, `qlen:medium(5-15): 1.0 (n 4)` | Recall@10 per group. Every group is perfect, and with n = 1 or 3 these groups prove nothing. See "stratified" below |
+| `latency.cold_first20` | p50 0.31 ms, p95 **0.72** ms, n 4 | only 4 questions exist, so "first 20" = all 4. The first search is the slow one (0.72 ms) |
+| `latency.warm` | p50 0.31 ms, p95 0.33 ms, n 4 | no warmup happened (the tiny set has no train split), but the cold first search is already behind us, so the tail shrinks |
+| `memory.process` | rss 236.1 MB, peak 236.1 MB | RAM used: almost all of it is Python + numpy/scipy + PyTorch libraries, not the 24 docs (see below) |
+| `run` | `q1: [1, 9, 2]`, `q2: [5, 6, 12, …]`, … | **the raw answers**: the ranked doc ids per question. Everything above is computed from these lists |
+| `name`, `config` | `strategy bm25`, `model minilm`, `fusion rrf`, `alpha 0.5`, … | the exact settings. `model`, `fusion`, `alpha` are recorded but **unused** for `strategy bm25` (they're just the defaults) |
+| `startup_s` | 0.7 | seconds to load 24 docs and build the BM25 index. No embedding model is loaded for BM25 |
+
+**How `overall` was computed, question by question:**
+
+| question | after tokenising | gold docs | BM25 returned | gold at ranks | DCG | IDCG | nDCG@10 | Recall@10 | RR |
+|---|---|---|---|---|---|---|---|---|---|
+| q1 "how does short selling work" | how, doe, short, sell, work | 1, 2 | `1, 9, 2` | 1 and 3 | 1 + 0.500 = 1.500 | 1 + 0.631 = 1.631 | **0.9197** | 2/2 = 1 | 1/1 = 1 |
+| q2 "roth ira vs traditional 401k taxes" | roth, ira, vs, tradit, 401k, tax | 5, 6 | `5, 6, 12, 13, 15, 24, 10, 9` | 1 and 2 | 1.631 | 1.631 | **1.0000** | 1 | 1 |
+| q3 "how big should an emergency fund be" | how, big, should, emergenc, fund | 7 | `7, 14, 20, 5, 4` | 1 | 1.000 | 1.000 | **1.0000** | 1 | 1 |
+| q4 "pay off mortgage early or invest" | pay, off, mortgag, earli, invest | 3, 4 | `3, 11, 17, 19, 23, 14, 4` | 1 and 7 | 1 + 0.333 = 1.333 | 1.631 | **0.8175** | 1 | 1 |
+| **average = `overall`** | | | | | | | **(0.9197 + 1 + 1 + 0.8175) / 4 = 0.9343** | **1.0** | **1.0** |
+
+How to read it:
+- **Recall and MRR are perfect**: every gold doc is somewhere in the top 10 (recall 1), and every question's first result
+  is gold (MRR 1). **nDCG is not perfect** because two gold docs are *lower than they could be*: doc 2 at rank 3 in q1
+  (doc 9, "…when you **sell** shares", only matches "sell" but got in front of it), and doc 4 at rank 7 in q4. nDCG is
+  the only one of the three metrics that notices *order* beyond the first hit.
+- **Why are the lists shorter than 10?** BM25 only returns docs that contain **at least one** query token
+  (score > 0). In q1 only 3 of the 24 docs contain *short*, *sell*, *how*, *doe* or *work*. Dense search would always
+  return 10, because every doc has *some* cosine with the query.
+- **Stratified:** the "10% longest" docs are 2 docs here (10% of 24, rounded down): doc 2 (17 words) and doc 1 (15 words).
+  Both are q1's gold docs, so q1 lands in `gold_in_top10pct_longest` (n = 1) and the other 3 questions in
+  `gold_not_longest` (n = 3). All 4 questions have 5–15 words, hence `qlen:medium(5-15)` with n = 4 and no short or long groups.
+- **Memory with no model:** BM25 loads no embedding model, but `src.eval` still imports PyTorch (to set threads), numpy
+  and scipy. Those libraries are most of the 236 MB. The index for 24 docs is a few kilobytes.
+
+### Sample 2: the same file on the real FiQA (`results\runs\bm25.json`), for comparison
+
+| | tiny (24 docs, 4 questions) | real FiQA (57,638 docs, 500 questions) | why they differ |
+|---|---|---|---|
+| nDCG@10 / Recall@10 / MRR@10 | 0.934 / 1.000 / 1.000 | **0.264 / 0.314 / 0.322** | 24 hand-written docs with obvious answers vs a real, messy forum. **Toy scores say nothing about real quality**: they only show the pipeline works |
+| questions per group | 1–4 | 13–403 | real groups are big enough to compare. E.g. **short questions (<5 words, n = 13) get recall 0.231 vs ~0.315** for the rest: BM25 has little to match on |
+| length of each `run` list | 3–8 | always 10 | with 57K docs there are always ≥ 10 docs containing some query word |
+| warm p50 / p95 | 0.31 / 0.33 ms | 1.17 / 1.97 ms | the posting lists for "how", "tax" … are thousands of docs long, not 3 |
+| peak memory | 236 MB | 511 MB | the real index (57K docs) plus loading the corpus text |
+| startup | 0.7 s | 9.3 s | tokenising and indexing 57,638 passages |
+
+**Takeaway:** use the toy run to understand **what each field means and how it's computed** (every number can be checked
+by hand, as above). Use the real run for **what the numbers are**.

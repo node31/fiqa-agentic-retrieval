@@ -25,6 +25,29 @@ An **LLM** (large language model: GPT, Claude, ...) is a function: **text in →
 
 Cost formula: `$ = input_tokens × price_in + output_tokens × price_out` (prices are per 1M tokens).
 
+**Input vs output tokens.** Input = everything you *send* on a call; output = everything the model *writes back*.
+
+| | Input tokens | Output tokens |
+|---|---|---|
+| What | system prompt (rules, tool descriptions) + user request + any history/passages you include | the model's reply, e.g. `{"action":"search","query":"..."}` or the final 10 doc ids |
+| Who controls the size | **you**: shorter prompts, truncated passages (we cut each to 200 chars, `snippet_chars` in `src/agent/tools.py`) | the model, capped by `max_output_tokens` (we pass 200–250 per call: planner 200, agent/verifier 250) |
+| Why priced differently | read in one parallel pass, so cheap | generated **one token at a time**, each a full forward pass, so usually **3–5× pricier** |
+| Paid again? | **yes**: the system prompt + history are re-sent on **every** call, so a 3-step agent pays for them 3× | once |
+
+**Worked example from our own run** (`results/agent_eval_dev_copilot.json`, single agent, plain queries): 1.67 LLM calls,
+~1,789 tokens and ~$0.002 per query. With our prices ($1/M input, $4/M output, `src/config.py`) that solves to roughly
+**1,720 input + 70 output** tokens (an estimate: the file stores only the total and a rounded cost, not the split):
+
+```
+1,720 × $1/1M + 70 × $4/1M = $0.00172 + $0.00028 ≈ $0.002 per query
+```
+
+So ~96% of the tokens are input. **For agents the bill is mostly prompt re-reading**, which is why compact prompts,
+passing only ids/snippets between agents, and caching matter more than capping the answer length.
+
+> ⚠️ The prices are **placeholders** (the real `gpt-6-sol` price is unknown). Override them with the env vars
+> `PRICE_PER_1M_INPUT` / `PRICE_PER_1M_OUTPUT`.
+
 ## 8.2 Tool calling: the LLM asks, *your code* acts
 
 > 🎯 **Why we're doing this:** an LLM can't search our index by itself. It can only *write text*. Tool calling is the

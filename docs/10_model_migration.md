@@ -34,11 +34,39 @@ Key invariants:
 
 ## 3. Diagram: during migration
 
+Three flows run at the same time while index B is being built:
+
+```mermaid
+flowchart TB
+  subgraph W["1. Live writes (dual-write)"]
+    direction LR
+    WR["upsert / delete"] --> SH["owner shard"]
+    SH --> EM["embed with A AND B"]
+    EM --> WAL[("WAL")]
+    WAL --> IA1["index A"]
+    WAL --> IB1["index B (new)"]
+  end
+  subgraph BF["2. Backfill (background thread)"]
+    direction LR
+    SNAP["snapshot of existing docs"] --> BAT["256-doc batches,<br/>optional throttle"]
+    BAT --> IB2["index B (new)"]
+  end
+  subgraph Q["3. Queries"]
+    direction LR
+    QQ["query"] --> RT{"router:<br/>active_model?"}
+    RT -->|"A (before cutover)"| IA2["index A"]
+    RT -->|"B (after cutover)"| IB3["index B"]
+  end
+  W ~~~ BF ~~~ Q
 ```
-writes ──> shard ──> embed with A and B ──> WAL ──> index A  +  index B (new)
-backfill thread ──(snapshot, 256-doc batches, throttled)──────────> index B
-queries ──> router(active=A) ──> index A          ...cutover...  router(active=B) ──> index B
-```
+
+In words:
+1. **Writes:** every new or changed doc is embedded with **both** models, logged in the WAL and added to both indexes.
+   So B never misses a recent write.
+2. **Backfill:** a background thread copies all *existing* docs into B, 256 at a time, with an optional pause between
+   batches so searches stay fast. It skips any doc a newer write has already put there (invariant 2).
+3. **Queries:** the router reads `active_model` once per request. Before cutover it sends queries to A, afterwards
+   to B. `rollback` just flips the flag back, because A was kept up to date the whole time.
 
 ## 4. How this repo implements it
 

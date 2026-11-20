@@ -23,10 +23,11 @@ score(d) = α·dense'(d) + (1 − α)·bm25'(d). Needs α tuned.
 
 ## 3. Diagram
 
-```
-BM25 top-100 ──┐
-               ├── fuse (RRF or α-linear) ──> top-10
-dense top-100 ─┘        ↑ at the ROUTER, after the global merge (ADR 0003)
+```mermaid
+flowchart LR
+  B["BM25 top-100<br/>(merged across shards)"] --> F["fuse: RRF or α-linear<br/>at the ROUTER, after the global merge<br/>(ADR 0003)"]
+  D["dense top-100<br/>(merged across shards)"] --> F
+  F --> T["top-10"]
 ```
 
 ## 4. How this repo implements it

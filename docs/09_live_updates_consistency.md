@@ -67,7 +67,7 @@ sequenceDiagram
   participant C as Client
   participant R as Router
   participant S as Owner shard
-  participant Q as Queue + applier thread
+  participant Q as Applier
   C->>R: POST /upsert {doc_id, version, text}
   R->>S: forward
   S->>S: 1. validate payload (nothing may fail after the ack)
@@ -77,8 +77,8 @@ sequenceDiagram
   S->>Q: 5. enqueue
   S-->>R: {applied: true, visible: false}
   R-->>C: ack (fast: no embedding on this path)
-  Q->>Q: 6. take up to 32 writes, embed in parallel (8 workers, outside the lock)
-  Q->>Q: 7. short write lock: apply in queue order  ==> now searchable (within 1 s of the ack)
+  Q->>Q: 6. take up to 32 writes, embed them (8 workers)
+  Q->>Q: 7. apply under a short lock ==> searchable
 ```
 
 **Back-pressure, in one sentence:** the shard predicts how long a new write would wait in the queue (docs queued

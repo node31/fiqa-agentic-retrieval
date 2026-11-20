@@ -18,12 +18,23 @@ are anecdotes.
 
 ## 3. Diagram: what one timed query includes (service mode)
 
-```
-client ──HTTP──> router: tokenize + embed (8 ms)  ┐
-                     ├─ DFS stats  ──> 3 shards ──┤ ~2-3 ms (parallel)
-                     ├─ search     ──> 3 shards ──┤ ~3-5 ms (parallel, slowest wins)
-                     └─ merge + fuse (<1 ms) ─────┘
-client <──────────────── JSON ────────────────────  total p50 28.6 ms, p95 40.5 ms
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant R as Router
+  participant S as 3 shards
+  C->>R: HTTP POST /search
+  par
+    R->>R: tokenize + embed the query (~8 ms)
+  and
+    R->>S: DFS stats (all 3 in parallel, ~2-3 ms)
+    S-->>R: df, N, total length per shard
+  end
+  R->>S: search (all 3 in parallel, the slowest wins, ~3-5 ms)
+  S-->>R: top-100 BM25 + top-100 dense from each shard
+  R->>R: merge + fuse (under 1 ms)
+  R-->>C: JSON results
+  Note over C,S: total p50 28.6 ms, p95 40.5 ms. The rest is HTTP, JSON and thread hand-offs.
 ```
 
 ## 4. How this repo implements it

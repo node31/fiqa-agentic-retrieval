@@ -125,6 +125,26 @@ def run(mode: str, do_eval: bool, keep: bool) -> None:
     if not keep:
         compose("down", mode=mode)
 
+
+def pip_index_url() -> str | None:
+    """The PyPI mirror to build with: $PIP_INDEX_URL, else the host's pip config (like the bootstrap).
+
+    WHY: docker-compose.yml falls back to pypi.org when PIP_INDEX_URL is unset. On a network where
+    pypi.org is blocked the build then fails, and because the build arg differs from the one the
+    bootstrap used, Docker's layer cache misses too.
+    """
+    if os.environ.get("PIP_INDEX_URL"):
+        return os.environ["PIP_INDEX_URL"]
+    # PITFALL: ``pip config get global.index-url`` can answer "No such key" for a value that
+    # ``pip config list`` shows (it lives in a file ``get`` doesn't look at), so parse ``list``.
+    p = subprocess.run([sys.executable, "-m", "pip", "config", "list"], capture_output=True, text=True)
+    for line in (p.stdout or "").splitlines():
+        key, _, val = line.partition("=")
+        if key.strip().endswith("index-url") and val.strip():
+            return val.strip().strip("'\"")
+    return None
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--mode", choices=["sync", "async", "both"], default="sync")
@@ -133,6 +153,10 @@ def main() -> None:
     ap.add_argument("--build", action="store_true", help="rebuild the image first (needed after code changes)")
     a = ap.parse_args()
     if a.build:
+        mirror = pip_index_url()
+        if mirror:
+            os.environ["PIP_INDEX_URL"] = mirror  # compose passes it to the build as a build arg
+            print(f"  building with PIP_INDEX_URL={mirror}")
         compose("build", mode="sync")
     modes = ["sync", "async"] if a.mode == "both" else [a.mode]
     for i, m in enumerate(modes):

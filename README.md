@@ -29,6 +29,16 @@ Design, results and trade-offs are in [DESIGN.md](DESIGN.md).
 
 The sharded service reproduces single-node quality exactly (0.0% difference) for every strategy.
 
+**Live writes, two modes** (`APPLY_MODE`; real corpus, 8 writers + 2 readers, `results/write_load.json`):
+- **sync** (default): searchable on the very next query, 58 writes/s.
+- **async**: 94 writes/s, searchable within 1 s (measured max 583 ms).
+
+**Agents** (Azure `gpt-6-sol`, 100 plain + 100 compound dev questions, `results/agent_eval.json`):
+- **Compound questions:** Recall@10 goes from 0.204 with one search to 0.400 with the single agent (p95 9.3 s) and
+  0.355 with the multi-agent (p95 4.7 s, ~¼ of the tokens).
+- **Plain questions:** stay on plain search by default.
+- **Spend:** $0.79 for the whole eval, at placeholder prices. Details: DESIGN.md §7.
+
 ## Setup
 
 **One command, from a fresh clone (Docker only):** `./scripts/bootstrap.sh` (Linux/macOS) or `.\scripts\bootstrap.ps1`
@@ -42,6 +52,7 @@ docker compose build                       # corporate PyPI mirror? add --build-
 docker compose run --rm indexer            # download FiQA + embed corpus (~30 min CPU), once
 #   or unzip the pre-built artifact zip (make package-index) into ./artifacts to skip embedding
 docker compose up -d                       # router on http://localhost:8000 (+ 3 shards, 2 GB limit each)
+#   APPLY_MODE=async docker compose up -d  # same stack with async writes (default: sync)
 docker compose run --rm tools python src/search.py --url http://router:8000 --query "what is short selling?"
 docker compose run --rm eval               # dev eval through the router (ours: nDCG@10 0.4190, p50/p95 30.4/34.1 ms)
 ```
@@ -54,7 +65,7 @@ pip install torch --index-url https://download.pytorch.org/whl/cpu   # CPU-only 
 pip install -r requirements.txt
 python scripts/download_data.py
 python -m src.index.build_index                        # embedding caches -> artifacts/ (~30 min CPU)
-python -m src.service.cluster --shards 3               # router :8000 + shards :8101-8103
+python -m src.service.cluster --shards 3               # router :8000 + shards :8101-8103 (stop Docker first: same port)
 python src/search.py --query "what is short selling?" --top-k 10 --strategy hybrid
 ```
 
@@ -96,15 +107,18 @@ fails if a key-like string is ever committed. The default backend is the free `f
 src/            search.py (CLI) · eval.py · metrics.py · config.py · beir_data.py · util.py
   retrieval/    bm25.py · dense.py · hybrid.py · rerank.py
   index/        build_index.py (embedding cache) · sharding.py
-  service/      router.py · shard_server.py · store.py · wal.py · cluster.py
+  service/      router.py · shard_server.py · store.py · async_apply.py (async write mode) · wal.py · cluster.py
   agent/        llm.py · tools.py · prompts.py · single_agent.py · orchestrator.py · fake_policies.py
 data/           build_compound.py · compound_dev.jsonl · compound_rewrites.json · compound_review_sheet.md
 scripts/        bench.py · ablations.py · failure_cases.py · migration.py · query_load.py · migration_demo.py · agent_eval.py · scenario.py (+ replay_html.py)
+                write_load.py (sync vs async) · docker_check.py · docker_trace.py · bootstrap.sh / bootstrap.ps1
 scenarios/      runnable JSONL scenarios for scripts/scenario.py (freshness, migration, shard failure, ...)
 tests/          unit, in-process and multi-process integration, toy smoke tests
-results/        bench.json · ablation_*.json · migration_demo.json · agent_eval*.json · failures.md
+results/        bench.json · runs/ (incl. the one TEST run) · ablation_*.json · migration_demo.json · write_load.json · agent_eval*.json · failures.md
 examples/       27 narrated toy scripts (offline, seconds each)
-docs/           LEARN docs 00-15 · GLOSSARY · LEARNING_PATH · adr/ · DRILLS · project_faq · solutions/ · walkthroughs/
+docs/           LEARN docs 00-15 · from_zero/ (study guide) · GLOSSARY · LEARNING_PATH · adr/ · DRILLS · project_faq · scenarios · solutions/ · walkthroughs/
+exercises/      per-chapter stubs + checkers for docs/from_zero (answer key in exercises/solutions/)
+agent_context/  machine-readable handoff for AI agents (see AGENTS.md)
 ```
 
 ## Measured on

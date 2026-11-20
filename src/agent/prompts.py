@@ -5,8 +5,33 @@ Design rules (docs/11_llm_tool_calling.md):
   * The exact output format is shown as literal JSON. Exactly ONE JSON object per reply.
   * Tell the model what it CAN'T do (only ids it has seen, a hard action limit).
   * Keep them short: the system prompt is paid on every call.
+
+How they are used (a "prompt" here = the system prompt, i.e. the fixed instructions; the
+per-call question and search results are sent separately as the user prompt):
+  * SINGLE_AGENT  run_single_agent, once per step.     Output: a search OR a finish action.
+  * PLANNER       Orchestrator, once per compound question.  Output: simple, or 2-3 sub-queries.
+  * VERIFIER      Orchestrator, once after the workers.   Output: per sub-query relevant/rewrite.
+
+PITFALL: these are plain strings, not f-strings or str.format templates, because they contain
+literal JSON braces. The single "{remaining}" placeholder is filled with str.replace() in
+single_agent.py; calling .format() on these strings would raise on the JSON braces.
+PITFALL: the fake backend (fake_policies.py) dispatches on the first line ("ROLE: ...") and
+the user-prompt line prefixes ("Question:", "Search N", "Sub-question N:"). Keep them in sync.
 """
 
+# SINGLE_AGENT: the system prompt for the one-LLM, one-tool loop.
+# WHY each part is there:
+#   * corpus description: tells the model what kind of text it is searching (informal forum
+#     answers about personal finance), which shapes how it words rewritten queries.
+#   * strategy menu with a one-phrase meaning each: lets the model pick bm25 for exact terms
+#     (tickers, form names) without having to know what BM25 is.
+#   * "already been searched once": the question was searched in step 0, so the model should
+#     not waste an action repeating it.
+#   * the two literal JSON shapes: the "tool calling" protocol. Showing the exact object is
+#     more reliable than describing fields in prose.
+#   * "ids you have SEEN": discourages hallucinated ids (the code drops them anyway).
+#   * "Search again only if ...": the default should be finish; extra searches cost tokens.
+#   * "{remaining}": the step cap, made visible so the model can plan (replaced in code).
 SINGLE_AGENT = """ROLE: single_agent
 You are a search agent over FiQA, a corpus of answers from a personal-finance Q&A forum.
 Goal: the 10 passages that best answer the user's question.
@@ -19,6 +44,15 @@ or
 Search again only if the results miss part of the question (e.g. a second topic) or are off-topic.
 You may take at most {remaining} more action(s)."""
 
+# PLANNER: the "decomposition" step of the multi-agent orchestrator. It only splits the
+# question; it never searches (the retrieval workers do that with the strings it writes).
+# WHY each part is there:
+#   * an explicit "simple" escape hatch: most questions need no split, and splitting a single
+#     topic would waste slots on near-duplicate searches.
+#   * "2-3 distinct needs": capped because every sub-query shares the same 10 result slots.
+#   * "standalone (no 'it'/'that')": each sub-query is searched on its own, so a pronoun that
+#     points back to another part would match nothing useful.
+#   * "<= 15 words": short, keyword-dense queries retrieve better than long sentences.
 PLANNER = """ROLE: planner
 You decide whether a personal-finance question needs to be split before searching a Q&A corpus.
 If it asks about ONE thing, reply {"simple": true, "subqueries": []}.
@@ -27,6 +61,14 @@ If it combines 2-3 distinct needs (different topics or steps), reply
 Each subquery must be standalone (no "it"/"that"), short (<= 15 words) and cover one need.
 Reply with exactly ONE JSON object and nothing else."""
 
+# VERIFIER: a quality check after the workers searched. One call covers ALL sub-queries.
+# WHY each part is there:
+#   * numbered sub-questions ("sub": 0, 1, ...): the code maps each check back to a sub-query
+#     by this index (and ignores indexes it did not show).
+#   * a "rewrite" field: the verifier does not just complain, it proposes the fix, so a
+#     drifted sub-query can be re-searched without another LLM call.
+#   * "ONLY if none of the shown results is on-topic": a high bar on purpose. Each false alarm
+#     costs a re-search and could replace a decent list with a worse one.
 VERIFIER = """ROLE: verifier
 You check whether search results actually address each sub-question.
 For each numbered sub-question you see its top results (id + snippet).

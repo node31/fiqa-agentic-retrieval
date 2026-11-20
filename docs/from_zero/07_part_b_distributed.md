@@ -184,9 +184,11 @@ flowchart LR
     A -- "no, policy=fail" --> F["HTTP 503"]
 ```
 
-### What sharding cost in latency (the counter-intuitive finding)
+### What sharding cost in latency (slower at this scale, and that's expected)
 
-> 🎯 **Why we're doing this:** Sharding is not a free speed-up. Measuring it (instead of assuming) is what the assignment's "counter-intuitive finding" question is about.
+> 🎯 **Why we're doing this:** Sharding is not a free speed-up. Measuring it (instead of assuming) is what the
+> assignment's "counter-intuitive finding" question is about. The result only *looks* counter-intuitive next to the naive
+> belief "more shards = faster". Once you do the arithmetic below, it's exactly what you should expect at 57K docs.
 
 | setup | p50 | p95 |
 |---|---|---|
@@ -194,9 +196,32 @@ flowchart LR
 | router + **1** shard (HTTP) | 23.4 ms | 26.3 ms |
 | router + **3** shards (HTTP) | 28.6 ms | 40.5 ms |
 
-You'd expect 3 shards to be faster (each searches a third). But each shard's work is tiny (~1.4 ms faiss + ~1 ms BM25), so
-there's little to parallelise, while 3 shards add the DFS round trip, 3× the HTTP calls, and **waiting for the slowest of 3**
-(tail amplification, Chapter 2). At this size, sharding buys **capacity and isolation, not speed**.
+**Why 3 shards are slower here: a fixed cost vs a saving that grows with the data.**
+
+| | grows with the data? | at 57K docs (p50) |
+|---|---|---|
+| **saving**: each shard searches only 1/3 of the docs | yes, linearly (flat faiss and BM25 posting lists are O(N)) | the splittable work is ~5.3 ms faiss + ~1 ms BM25 ≈ 6.3 ms, so 3 shards save at most ⅔ of it ≈ **4.2 ms** |
+| **cost**: the DFS round trip, 3× the HTTP calls, waiting for the **slowest of 3** (tail amplification, Chapter 2) | no, roughly fixed per query | 3 shards vs 1 shard: 28.6 − 23.4 ≈ **5.2 ms** |
+
+The query encode (~8 ms) happens **once at the router** either way, so sharding can't save any of it. Saving 4.2 ms
+while paying 5.2 ms makes the result slower. That's the expected outcome for a small corpus.
+
+**Where it would flip (rough estimate).** Assume the splittable work W grows linearly with the number of docs and the
+overhead stays ~5 ms. Sharding wins once ⅔ × W > ~5.2 ms, i.e. W > ~8 ms of search work: about **70K docs** with
+flat search, or ~110K if you compare against the in-process baseline (≈ 7.9 ms of overhead). At 10M docs, a flat index
+would spend roughly a second per query on one node, and splitting it would obviously pay.
+
+**Two refinements for large scale:**
+1. **At 10M+ docs you'd switch to an approximate index (HNSW / IVF, `docs/03_vector_indexes.md` and `docs/15_scaling_to_100M.md`).**
+   Its search time grows only slowly with N, so a 10M-doc single node can still answer in a few ms. At that size,
+   sharding is mainly about **memory and throughput**: 10M × 384 floats ≈ 15 GB, and 100M ≈ 154 GB doesn't fit on one
+   machine. Lower latency is a side effect. BM25 keeps benefiting from the split, because its posting lists grow with N.
+2. **The slowest-shard wait never goes away; it gets worse with more shards.** You can already see it in p95: 40.5 vs
+   26.3 ms. Big systems fight it with replicas and *hedged requests*: send a backup copy of a slow request to another
+   replica and take whichever answers first (DESIGN.md, "Availability").
+
+**Takeaway:** at 57K docs, sharding buys **capacity and fault isolation, not speed**. The speed benefit appears only once
+per-shard search work is larger than the fixed coordination overhead.
 
 ## 7.4 Live updates: changing documents while serving
 

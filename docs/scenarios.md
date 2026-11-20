@@ -321,6 +321,40 @@ t = 0; press Space (or `play`). The page reads like a story of **who does what**
 URL options (append to the file URL): `#t=5.2` opens paused at 5.2 s (used for screenshots),
 `?autoplay=1` starts playing, `?howto=0` collapses the explanation section.
 
+### 4.1 A search card, line by line
+
+```text
+🤖 probe-bot bot                                                  line 105 · 105.3 ms   ← client-measured round trip
+🔎 Search "what is an etf"  hybrid k=10
+10 hits  minilm  all 3 shards answered ✓                                                ← partial = false
+[▇▇ ▇▇▇▇▇▇▇▇▇ ▇▇▇▇▇▇ ▇▇▇▇▇▇▇ ▇▇▇▇▇ ▏]                                                    ← the time split, to scale
+client↔router 7.2 · stats (DFS) 32.0 · embed wait 24.3 · shards compute 23.5 · network/queue 17.2 · merge + fuse 0.8 · other 0.3
+per shard compute: s0 7.5 ms, s1 23.5 ms, s2 8.2 ms · encoder 51.0 ms (overlaps stats)
+```
+
+- **"all 3 shards answered"** (replay pages generated before this change say "complete ✓"; re-render them with
+  `--replay-only`) means the answer is **not partial**: every shard
+  replied in time. It does *not* mean "the request finished": every card you see is a finished request (an
+  in-flight one shows a spinner). With a dead shard the card says `PARTIAL: shard 1 missing` instead.
+- **The time split** comes from the router (`timings_ms` in every `/search` response, measured in
+  `Router.search`). The segments are **sequential** and add up exactly to the card's time:
+
+| segment | what it is | typical, real corpus, hybrid (scenario 04) |
+|---|---|---|
+| client↔router | HTTP hop client → router → client (= client time − router time) | ~3 ms |
+| stats (DFS) | phase 1: every shard returns term counts → global BM25 statistics. 0 for dense-only | ~15 ms |
+| embed wait | waiting for the query embedding *after* the stats phase. The encoder runs **in parallel** with phase 1, so only its overhang shows (`encoder` = its full time) | ~0–15 ms |
+| shards compute | phase 2: the **slowest** shard's own BM25 + faiss time (`took_ms` reported by each shard; all shards run in parallel) | ~4–5 ms |
+| network/queue | the rest of the phase-2 round-trip: HTTP, JSON, thread hand-offs. With a dead shard it also contains the wait until that shard's timeout | ~8–12 ms |
+| merge + fuse | phases 3-4 at the router | < 1 ms |
+| fetch/rerank | phase 5 (only with `include_text` / `rerank_k`) | 0 here |
+| other | router bookkeeping | < 0.5 ms |
+
+What this teaches (it is ch07's "sharding latency" finding, per query): the shards' actual search work is a few ms; most of a
+query's time is **round-trips** (stats phase + network) and the query encoder. In the card above, shard 1 took 23.5 ms
+instead of ~8 because it was building the bge-small index at that moment (the migration), and the split shows it at a glance.
+Recordings made before this field existed have no bar (`timings_ms` was added to `/search` later).
+
 Everything is derived from the recorded events (op type, actor, lane, request, response, status
 samples), so ANY scenario file renders and animates with no per-scenario code: unknown lane names,
 any number of shards, nested lanes, unknown op types. Old recordings without actor fields are shown

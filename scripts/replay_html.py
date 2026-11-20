@@ -247,6 +247,13 @@ TEMPLATE = r"""<!DOCTYPE html>
   .check { font-size: 12px; margin-top: 2px; }
   .tag { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 11px; margin-left: 4px;
          background: rgba(88,166,255,.15); color: var(--blue); }
+  /* per-query time split (search cards) */
+  .split { margin-top: 4px; font-size: 11px; }
+  .split .sbar { display: flex; height: 8px; border-radius: 3px; overflow: hidden; background: #0b0f14; margin: 2px 0; }
+  .split .sbar > i { display: block; height: 100%; min-width: 1px; }
+  .split .sleg { display: flex; flex-wrap: wrap; gap: 2px 10px; color: var(--muted, #8b949e); }
+  .split .sleg b { color: #c9d1d9; font-weight: 600; }
+  .split .dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 3px; vertical-align: -1px; }
   .row.label-row { display: block; }
   .banner { margin: 8px 0 2px; padding: 7px 12px; border-radius: 8px; font-weight: 600; font-size: 14px;
             background: linear-gradient(90deg, rgba(188,140,255,.25), rgba(188,140,255,.04)); border-left: 4px solid var(--purple); }
@@ -447,6 +454,38 @@ function lagText(r, q, ok) {
   const budget = r.lag_ms < 1000 ? `<span class="ok-t">freshness budget 1 s &#10003;</span>` : `<span class="bad-t">OVER the 1 s freshness budget</span>`;
   return `<span class="ok-t">&#10003; ${q.absent ? "GONE" : "VISIBLE"} after <b>${fmtMs(r.lag_ms)}</b></span> <span class="muted">(${polls})</span> &middot; ${budget}`;
 }
+// Where one search's time went (router-measured timings_ms, see Router.search). The segments are
+// SEQUENTIAL and add up to the client-measured latency:
+//   client<->router HTTP = client time - router time; then, inside the router:
+//   stats (DFS round-trip) -> embed wait (encoder still running after the stats phase; it overlaps
+//   phase 1) -> shards compute (slowest shard) + network/queueing (rest of the scatter round-trip)
+//   -> merge + fuse -> fetch/rerank -> other.
+const SPLIT = [
+  ["http", "client\u2194router", "#6e7681", "HTTP hop from the client to the router and back (client time - router time)"],
+  ["stats", "stats (DFS)", "#58a6ff", "phase 1: ask every shard for term counts -> global BM25 statistics (skipped for dense-only / 1 shard)"],
+  ["embed_wait", "embed wait", "#bc8cff", "waiting for the query embedding after the stats phase (the encoder runs IN PARALLEL with phase 1)"],
+  ["shard_compute", "shards compute", "#3fb950", "phase 2: the slowest shard's own BM25 + faiss time (shards run in parallel)"],
+  ["network", "network/queue", "#d29922", "phase 2 round-trip minus the slowest shard's compute: HTTP, JSON, thread hand-offs (and the timeout wait for a dead shard)"],
+  ["mergefuse", "merge + fuse", "#39c5cf", "phases 3-4 at the router: merge the shard lists, then fuse BM25 + dense"],
+  ["fetchrr", "fetch/rerank", "#f778ba", "phase 5: fetch passage texts / cross-encoder rerank (0 unless asked)"],
+  ["other", "other", "#30363d", "router bookkeeping: tokenising, building the JSON response"],
+];
+function timeSplit(r, clientMs) {
+  const t = r.timings;
+  if (!t) return "";
+  const v = { http: Math.max(0, (clientMs ?? 0) - (r.server_ms ?? 0)), stats: t.stats, embed_wait: t.embed_wait,
+              shard_compute: t.shard_compute, network: t.network, mergefuse: (t.merge || 0) + (t.fuse || 0),
+              fetchrr: (t.fetch || 0) + (t.rerank || 0), other: t.other };
+  const total = SPLIT.reduce((s, [k]) => s + (v[k] || 0), 0) || 1;
+  const bar = SPLIT.filter(([k]) => v[k] > 0).map(([k, , c, tip]) =>
+    `<i style="width:${(100 * v[k] / total).toFixed(2)}%;background:${c}" title="${esc(tip)}"></i>`).join("");
+  const leg = SPLIT.filter(([k]) => v[k] >= 0.05).map(([k, name, c, tip]) =>
+    `<span title="${esc(tip)}"><span class="dot" style="background:${c}"></span>${name} <b>${fmtMs(v[k])}</b></span>`).join("");
+  const per = t.per_shard ? Object.entries(t.per_shard).map(([s, m]) => `s${s} ${fmtMs(m)}`).join(", ") : "";
+  const emb = t.embed ? ` &middot; encoder ${fmtMs(t.embed)} (overlaps stats)` : "";
+  return `<div class="split"><div class="sbar">${bar}</div><div class="sleg">${leg}</div>`
+    + `<div class="muted">per shard compute: ${per || "-"}${emb}${(r.missing_shards || []).length ? " &middot; network includes waiting for the missing shard" : ""}</div></div>`;
+}
 // "What this actor does in this scenario", from its op counts.
 function actorSummary(a) {
   const c = a.counts, out = [];
@@ -551,7 +590,10 @@ function shardRow(n, cx, y, w, h, gap, ownerIdx = -1) {
       <ol><li>router tokenises + embeds the query once (active model)</li>
       <li><b>stats phase</b>: every shard returns term counts &rarr; global BM25 statistics</li>
       <li><b>search phase</b>: every shard returns its top BM25 + dense lists</li>
-      <li><b>merge + fuse</b> at the router &rarr; top-k back to the client. A dead shard &rarr; <i>partial</i> answer, flagged</li></ol></div>
+      <li><b>merge + fuse</b> at the router &rarr; top-k back to the client. A dead shard &rarr; <i>partial</i> answer, flagged</li></ol>
+      <p class="muted" style="font-size:12px;margin:4px 0 0">Each search card shows a coloured bar: where that query's time went
+      (client&harr;router HTTP, stats phase, embedding wait, slowest shard's compute, network/queueing, merge + fuse). Hover a colour for its meaning.
+      <b>"all ${N_SHARDS} shards answered"</b> = the answer is complete (not partial); it does not mean "finished": every card is a finished request.</p></div>
     <div class="flow"><h4 style="color:var(--green)">WRITE: only the ONE owner shard</h4>${flowSvg("write")}
       <ol><li>router picks the owner: <code>crc32(doc_id) % ${N_SHARDS}</code></li>
       <li>owner checks the version (older or same = no-op), appends to its <b>WAL</b> + fsync</li>
@@ -776,7 +818,8 @@ function reaction(st, en) {
       if (fail) return [start, fail];
       if (st.op === "wait_visible") return [start, en ? (en.ok ? `${r.absent ? "gone" : "visible"} after <b>${p.lag_ms != null ? fmtMs(p.lag_ms) : "?"}</b> (${p.first_poll || p.polls === 1 ? "first poll" : p.polls + " polls"}) &middot; visibility lag` : `<span class="bad-t">timeout</span>`) : ""];
       const miss = (p.missing_shards || []).length ? ` <span class="soft-t">&#9888; partial: shard ${p.missing_shards.join(",")} missing</span>` : "";
-      return [start, en ? `${p.n} hits &middot; ${fmtMs(en.latency_ms)}${miss}` : ""];
+      const t = p.timings, split = t ? ` <span class="muted">(router ${fmtMs(p.server_ms)}: shards ${fmtMs(t.shard_compute)} + net ${fmtMs(t.network)} + stats ${fmtMs(t.stats)} + merge/fuse ${fmtMs((t.merge || 0) + (t.fuse || 0))})</span>` : "";
+      return [start, en ? `${p.n} hits &middot; ${fmtMs(en.latency_ms)}${split}${miss}` : ""];
     }
     case "upsert": case "delete": {
       const start = `router &rarr; shard ${st.shard} only (owner)`;
@@ -825,7 +868,9 @@ function endHtml(st, ev) {
       // or when the answer is partial; otherwise the one summary line is enough.
       const showHits = expect.size || absent.size || r.partial;
       const okCheck = (ev.checks || []).find((c) => c.kind === "ok");
-      if (okCheck && okCheck.pass) h += ` <span class="ok-t" title="expect_ok: no error, not partial, non-empty">complete &#10003;</span>`;
+      if (okCheck && okCheck.pass) h += ` <span class="ok-t" title="expect_ok passed: the answer is NOT partial (every shard answered), had no error and is non-empty. It does not mean 'finished'; every card is a finished request.">all ${N_SHARDS} shards answered &#10003;</span>`;
+      else if (!r.partial && !ev.error) h += ` <span class="muted" title="partial = false: every shard answered">&middot; all ${N_SHARDS} shards answered</span>`;
+      h += timeSplit(r, ev.latency_ms);
       const rows = !showHits ? [] : (r.results || []).map((x, i) => ({ ...x, rank: i + 1 }))
         .filter((x) => x.rank <= 3 || expect.has(x.doc_id) || absent.has(x.doc_id));
       let li = rows.map((x) => {

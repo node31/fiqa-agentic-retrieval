@@ -911,6 +911,8 @@ class Runner:
                                     "model": body.get("model")}
         resp = {"n": len(ids), "partial": partial, "missing_shards": body.get("missing_shards", []),
                 "server_ms": body.get("latency_ms"), "model": body.get("model"),
+                # Per-phase split of server_ms (Router.search docstring); the replay draws it as a bar.
+                **({"timings": body["timings_ms"]} if body.get("timings_ms") else {}),
                 "results": [{"doc_id": r["doc_id"], "score": round(float(r.get("score", 0.0)), 4)}
                             for r in body.get("results", [])], **({"saved_as": name} if name else {})}
         return {"resp": resp, "checks": checks}

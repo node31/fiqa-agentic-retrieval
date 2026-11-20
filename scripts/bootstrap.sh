@@ -112,8 +112,9 @@ step "2/6 build the image (first time ~5-10 min: CPU torch + models baked in; la
 docker compose build
 ok "image fiqa-retrieval:latest ready ($(docker image inspect fiqa-retrieval:latest --format '{{.Architecture}}'))"
 
-# GitHub repo slug (owner/name) from the clone's origin, for release downloads.
-SLUG="$(git config --get remote.origin.url 2>/dev/null | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##' || true)"
+# GitHub repo slug (owner/name) from the clone's origin, for release downloads. Handles
+# https://github.com/o/r(.git), git@github.com:o/r.git and https://user:token@github.com/o/r.
+SLUG="$(git config --get remote.origin.url 2>/dev/null | sed -E 's#^.*github\.com[:/]##; s#\.git$##; s#/$##' || true)"
 
 # fetch_release_asset <file> <dest_dir>: 1) public URL, 2) GitHub API with a token (GITHUB_TOKEN /
 # GH_TOKEN, or the gh CLI's login) for PRIVATE repos, using only curl/awk. 0 = success.

@@ -92,7 +92,7 @@ Step "2/6 build the image (first time ~5-10 min; later runs use the cache)"
 Run "docker compose build" { docker compose build }
 Ok "image fiqa-retrieval:latest ready"
 
-$slug = (git config --get remote.origin.url 2>$null) -replace '^(git@github\.com:|https://github\.com/)', '' -replace '\.git$', ''
+$slug = (git config --get remote.origin.url 2>$null) -replace '^.*github\.com[:/]', '' -replace '\.git$', '' -replace '/$', ''
 # Download a release asset: 1) public URL, 2) GitHub API with a token (GITHUB_TOKEN / GH_TOKEN, or the
 # gh CLI's login) for PRIVATE repos. Returns $true on success.
 function Fetch-ReleaseAsset([string]$name, [string]$dest) {

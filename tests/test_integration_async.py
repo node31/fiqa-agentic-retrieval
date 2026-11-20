@@ -60,6 +60,13 @@ def test_shards_report_async_mode(cluster):
     assert {s["apply_mode"] for s in shards.values()} == {"async"}
 
 
+def test_empty_text_is_rejected_by_the_router_not_reported_as_unavailable(cluster):
+    t0 = time.perf_counter()
+    r = cluster.http.post(f"{cluster.router_url}/upsert", json={"doc_id": "empty-1", "version": 1, "text": "  "})
+    assert r.status_code == 422  # a client error, answered at once...
+    assert time.perf_counter() - t0 < 1.0  # ...not retried 3x and turned into "503 shards unavailable"
+
+
 def test_acked_write_is_searchable_within_one_second(cluster):
     lags = []
     for i in range(5):

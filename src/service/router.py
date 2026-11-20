@@ -575,8 +575,12 @@ def create_app():
 
     @app.post("/upsert")
     async def upsert(req: WriteReq):
-        if req.text is None:
-            raise HTTPException(422, "text required")
+        # Validate HERE, before routing: a shard would answer 400, which _fan counts as "shard
+        # missing", so the router would retry a request that can never succeed and then report
+        # a misleading "503 shards unavailable" (seen in scripts/write_load.py: FiQA has 38 empty
+        # passages).
+        if req.text is None or not req.text.strip():
+            raise HTTPException(422, "text required (non-empty)")
         return await guard(router.write("upsert", req.doc_id, req.version, req.text))
 
     @app.post("/delete")

@@ -314,7 +314,7 @@ sequenceDiagram
     C->>R: POST /upsert {doc_id, version, text}
     R->>S: /upsert (retries on timeout: safe, idempotent)
     S->>S: version newer? if not → "noop", stop
-    S->>S: embed text with EVERY active model (OUTSIDE the lock, ~8 ms)
+    S->>S: embed text with EVERY active model (OUTSIDE the lock, ~25 ms per passage on an idle CPU)
     S->>S: take WRITE lock (readers wait briefly)
     S->>S: re-check version (another writer may have won)
     S->>W: append JSON line {op, doc_id, version, text, vectors} + fsync
@@ -352,6 +352,86 @@ flowchart TB
   next write got glued onto it and was lost on the *next* restart. Now the WAL truncates the torn tail when it opens.
   Lesson: test recovery **twice in a row**.
 - The WAL stores the **vectors** too, so replay doesn't need to run the model: fast and deterministic.
+
+### Two write modes: sync (default) vs async (measured under heavy writes)
+
+> 🎯 **Why we're doing this:** Sync makes every client wait for the embedding (~25 ms of model time, far more under
+> load). The industry-standard alternative (Kafka-fed indexers, Elasticsearch's translog + refresh) is **log → ack →
+> apply later**: faster acks, but a write is not visible the instant it's acked. We built both to *measure* the trade,
+> and promised async writes are **searchable within 1 s**.
+
+Switch per shard with `APPLY_MODE=sync|async` (Docker: `./scripts/bootstrap.sh --mode async`). Code:
+`src/service/async_apply.py`. Decision record: [ADR 0013](../adr/0013-async-apply-mode.md).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant S as Owner shard
+    participant W as WAL file
+    participant A as Applier thread + 8 embed workers
+    C->>S: upsert(doc, v, text)
+    S->>S: version newer than the latest ACCEPTED one?
+    S->>S: back-pressure - would this write be visible within 0.5 s? if not, WAIT
+    S->>W: append text (no vectors yet) + fsync
+    S-->>C: ack {applied: true, visible: false}
+    A->>A: take up to 32 queued writes
+    A->>A: embed them in parallel, one doc per model call (outside the lock)
+    A->>S: WRITE lock, apply in queue order, unlock
+    Note over C,A: the doc becomes searchable here, typically ~0.2 s after the ack
+```
+
+| | sync | async |
+|---|---|---|
+| The ack means | durable **and searchable** | durable; searchable **within 1 s** |
+| Client waits for | version check + embedding + WAL + apply | version check + WAL (+ back-pressure if the applier is behind) |
+| Crash after the ack | WAL has text **and vectors** → fast replay | WAL has text only → replay re-embeds |
+| Extra machinery | none | accepted-version map, queue, applier + embed pool, cost model, back-pressure, `POST /admin/flush` |
+
+**The measurement** (`python -m scripts.write_load`, real corpus, 3 shards, 8 writers + 2 readers + 1 freshness probe,
+30 s per mode; `results/write_load.json`):
+
+| | sync | async |
+|---|---|---|
+| writes acked / s | 57.8 | **94.2** (1.6×) |
+| ack ms p50 / p95 | 128 / 181 | **78 / 120** |
+| visible lag ms p50 / p95 / max | 0 / 0 / 0 | 203 / 466 / **583** (< 1 s ✓) |
+| freshness probes found by the 1st search after the ack | 55 / 55 | 1 / 39 (expected: async isn't instant) |
+| search ms p50 / p95 under this load | **131 / 165** | 184 / 244 |
+| write errors | 0 | 0 |
+
+How to read it: async takes **63% more writes per second** with faster acks, and pays in freshness (~0.2 s typical,
+0.58 s worst) and in **search latency**. Searches are slower because the shards spend far more CPU embedding 94 writes/s
+than 58, on the same cores. It's not lock contention: the measured lock wait was ≈ 0 ms. Sync stays the default
+because "searchable at ack" is the simpler promise. Async is the right choice when write throughput matters more.
+
+**The first async version failed this test, and why is the real lesson.**
+
+| | async v1 | async v2 (now) |
+|---|---|---|
+| writes acked / s | 47.1 (*slower than sync!*) | 94.2 |
+| visible lag ms p95 / max | 1,071 / **1,306** ❌ broke the 1 s promise | 466 / 583 ✓ |
+
+1. **"Batching is async's big win" turned out false on CPU.** v1 embedded each batch in ONE model call on ONE thread.
+   We measured the same 256 FiQA passages at different batch sizes (MiniLM, 4 threads):
+
+   | docs per model call | 1 | 2 | 4 | 8 | 16 | 32 | 256 |
+   |---|---|---|---|---|---|---|---|
+   | ms per doc | 25.6 | 26.1 | 27.6 | 31.5 | 30.9 | 32.3 | 24.7 |
+
+   A batch is **padded to its longest passage**, so a small batch of random-length docs costs *more* per doc. A huge
+   batch (sorted by length inside the library) saves only ~4%. Meanwhile sync's 8 concurrent requests embedded **in
+   parallel**, and v1's single thread embedded **one batch after another**. Fix: 8 embed workers, one doc per call.
+2. **The back-pressure predicted with the wrong unit.** v1 estimated "batches ahead × average batch time", but a batch of
+   18 docs costs ~6× a batch of 3. A big batch after small ones blew through the estimate. Fix: predict per **doc**:
+   remaining in-flight time + `ceil(docs ahead / 8 workers)` rounds × measured round time. The estimate **rises fast,
+   falls slowly**.
+3. **Measure before you optimise.** A per-batch timing breakdown (`/admin/status` → `async.batch_timing`) showed
+   embed ≈ 100% of the applier's time (lock wait ≤ 8 ms, apply ≤ 26 ms). Without it we would have guessed "lock
+   contention" and fixed the wrong thing.
+4. **A side bug:** FiQA has **38 empty passages**. Async rejected an empty upsert (400), but the router counted the 400
+   as "shard missing", retried 3×, and returned a misleading **503 "shards unavailable"**. Now both modes reject empty
+   text and the router answers **422** immediately.
 
 ## 7.5 Model migration with zero downtime ("blue/green")
 

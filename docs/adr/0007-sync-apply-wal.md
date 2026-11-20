@@ -10,6 +10,8 @@ Version check -> embed outside lock -> write lock -> re-check -> WAL append+fsyn
 
 ## Alternatives considered
 Async apply with a refresh interval (higher write throughput); apply-then-log.
+Async apply was later implemented as a second, switchable mode for comparison: see
+[ADR 0013](0013-async-apply-mode.md). This ADR's sync mode remains the default.
 
 ## Consequences
 Guarantee: searchable by the first query after the ack. Cost: write latency = one embedding per maintained model (~15-30 ms) + fsync. Apply-then-log can lose acked writes (toy 17 exercise).

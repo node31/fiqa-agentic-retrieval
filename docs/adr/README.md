@@ -14,3 +14,4 @@ Short records of *why* each major choice was made. Format: context, decision, al
 - [0010-slot-allocation](0010-slot-allocation.md): Round-robin interleave of sub-query lists for the 10 slots
 - [0011-llm-backends-and-cost](0011-llm-backends-and-cost.md): Free backends for development, Azure only for final numbers
 - [0012-linear-fusion-default](0012-linear-fusion-default.md): Linear fusion alpha=0.7 as the default hybrid
+- [0013-async-apply-mode](0013-async-apply-mode.md): Async apply (WAL → ack → batched background apply) as a switchable second write mode

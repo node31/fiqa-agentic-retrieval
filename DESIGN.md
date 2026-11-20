@@ -97,6 +97,9 @@ timeout (safe: idempotent).
 - **Freshness guarantee: a write is searchable by the first query issued after its ack** (synchronous apply).
   `tests/test_integration_service.py::test_freshness_write_searchable_immediately_after_ack` proves it across
   3 shard processes over HTTP for all three strategies, with no sleeps or retries.
+- **Optional async mode** (`APPLY_MODE=async`, [ADR 0013](docs/adr/0013-async-apply-mode.md)): ack after the WAL fsync, apply in
+  batches in the background. Weaker guarantee: **searchable within 1 s** (enforced by back-pressure), proven by
+  `tests/test_integration_async.py`; `scripts/write_load.py` compares both modes under heavy writes. Sync stays the default.
 - **What can go wrong and recovery:** crash before the WAL append = the write never happened (no ack; the client retries).
   Crash after the append = applied on restart by WAL replay (at-least-once + idempotent). A torn final WAL line is truncated when the WAL is reopened
   (it was never acked). An exception inside apply → the shard marks itself unhealthy (503 → the router reports it

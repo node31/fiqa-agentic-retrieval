@@ -24,6 +24,9 @@ param(
 # "Continue", not "Stop": in Windows PowerShell 5.1, native commands that write progress to stderr
 # (docker does) would otherwise abort the script. Failures are detected via $LASTEXITCODE instead.
 $ErrorActionPreference = "Continue"
+# PITFALL: Windows PowerShell 5.1 redraws a progress bar for every chunk Invoke-WebRequest receives,
+# making a 166 MB download 10-50x slower. Silence it.
+$ProgressPreference = "SilentlyContinue"
 Set-Location (Split-Path -Parent $PSScriptRoot)   # repo root, wherever the script is called from
 $env:APPLY_MODE = $Mode
 $ReleaseTag = "index-artifacts-v1"
@@ -163,7 +166,8 @@ else {
 Step "5/6 start: 3 shard containers + router (waits until every healthcheck passes, ~1-2 min)"
 docker compose up -d --wait --wait-timeout 900
 if ($LASTEXITCODE -ne 0) { docker compose ps; docker compose logs --tail 40; Die "the stack did not become healthy (logs above)" }
-docker compose ps --format "table {{.Service}}`t{{.State}}`t{{.Health}}`t{{.Ports}}"
+Write-Host ("    {0,-8} {1,-9} {2,-9} {3}" -f "SERVICE", "STATE", "HEALTH", "PORTS")
+docker compose ps --format '    {{printf "%-8s" .Service}} {{printf "%-9s" .State}} {{printf "%-9s" .Health}} {{.Ports}}'
 
 # --------------------------------------------------------------------------------------------------
 Step "6/6 verify (inside a container, against http://router:8000)"

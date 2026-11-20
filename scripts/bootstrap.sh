@@ -182,7 +182,8 @@ fi
 # ---------------------------------------------------------------------------------------------------
 step "5/6 start: 3 shard containers + router (waits until every healthcheck passes, ~1-2 min)"
 docker compose up -d --wait --wait-timeout 900 || { docker compose ps; docker compose logs --tail 40; die "the stack did not become healthy (logs above)"; }
-docker compose ps --format 'table {{.Service}}\t{{.State}}\t{{.Health}}\t{{.Ports}}'
+printf '    %-8s %-9s %-9s %s\n' SERVICE STATE HEALTH PORTS
+docker compose ps --format '    {{printf "%-8s" .Service}} {{printf "%-9s" .State}} {{printf "%-9s" .Health}} {{.Ports}}'
 
 # ---------------------------------------------------------------------------------------------------
 step "6/6 verify (inside a container, against http://router:8000)"

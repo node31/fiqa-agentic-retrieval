@@ -21,9 +21,16 @@ def main() -> int:
     RAW.mkdir(parents=True, exist_ok=True)
     zpath = RAW / "fiqa.zip"
     print(f"downloading {URL} ...")
-    urllib.request.urlretrieve(URL, zpath)
-    with zipfile.ZipFile(zpath) as z:
-        z.extractall(RAW)
+    try:
+        urllib.request.urlretrieve(URL, zpath)
+        with zipfile.ZipFile(zpath) as z:
+            z.extractall(RAW)
+    except (OSError, zipfile.BadZipFile) as e:  # URLError, SSL errors, timeouts, truncated zip
+        # One clear line instead of a traceback: the bootstrap scripts then fall back to the copy
+        # attached to the GitHub release. Remove a partial file so a re-run starts clean.
+        zpath.unlink(missing_ok=True)
+        print(f"download failed: {e.__class__.__name__}: {e}", file=sys.stderr)
+        return 1
     print(f"done: {RAW / 'fiqa'}")
     return 0
 

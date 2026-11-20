@@ -167,7 +167,14 @@ Step "5/6 start: 3 shard containers + router (waits until every healthcheck pass
 docker compose up -d --wait --wait-timeout 900
 if ($LASTEXITCODE -ne 0) { docker compose ps; docker compose logs --tail 40; Die "the stack did not become healthy (logs above)" }
 Write-Host ("    {0,-8} {1,-9} {2,-9} {3}" -f "SERVICE", "STATE", "HEALTH", "PORTS")
-docker compose ps --format '    {{printf "%-8s" .Service}} {{printf "%-9s" .State}} {{printf "%-9s" .Health}} {{.Ports}}'
+# JSON + PowerShell formatting (not a Go template): Windows PowerShell 5.1 strips embedded double quotes
+# from native-command arguments, which breaks templates like {{printf "%-8s" .Service}}.
+$raw = (docker compose ps --format json) -join "`n"
+$rows = if ($raw.TrimStart().StartsWith("[")) { ($raw | ConvertFrom-Json) | ForEach-Object { $_ } } else { $raw -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { $_ | ConvertFrom-Json } }
+foreach ($r in $rows) {
+    $ports = (@($r.Publishers | ForEach-Object { $_.PublishedPort }) | Where-Object { $_ } | Select-Object -Unique) -join ","
+    Write-Host ("    {0,-8} {1,-9} {2,-9} {3}" -f $r.Service, $r.State, $r.Health, $ports)
+}
 
 # --------------------------------------------------------------------------------------------------
 Step "6/6 verify (inside a container, against http://router:8000)"

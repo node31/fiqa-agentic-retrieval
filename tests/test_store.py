@@ -205,6 +205,39 @@ def test_async_rejects_bad_payload_before_ack(tmp_path):
     s.close()
 
 
+def test_sync_rejects_empty_text_like_async(tmp_path):
+    # Both modes must accept exactly the same writes (FiQA has 38 empty passages; scripts/write_load.py
+    # once wrote one and only async rejected it).
+    s = make_store(tmp_path)
+    with pytest.raises(ValueError):
+        s.upsert("bad", 1, "   ")
+    assert "bad" not in s.docs and "bad" not in s.versions
+
+
+def test_async_parallel_embedding_keeps_each_doc_with_its_own_vector(tmp_path):
+    import random
+    import time as _t
+
+    rnd = random.Random(0)
+
+    def jittery_embed(model, texts):  # calls finish in a scrambled order
+        _t.sleep(rnd.random() * 0.02)
+        return embed(model, texts)
+
+    s = make_async_store(None, embed_fn=jittery_embed, embed_workers=4)
+    s._applier.stop()  # queue everything first, so one batch holds all 12 docs
+    s._applier = type(s._applier)(s, embed_workers=4)
+    texts = {f"par-{i}": f"parallelprobe{i} unique token{i * 7}" for i in range(12)}
+    for d, t in texts.items():
+        s.upsert(d, 1, t)
+    s._applier.start()
+    assert s.flush(10)
+    assert s._applier.counters["batches"] == 1  # one batch, embedded by 4 workers in parallel
+    for d, t in texts.items():
+        assert search_ids(s, t)[1][0] == d  # the doc's dense vector is the one of ITS text
+    s.close()
+
+
 def test_async_backpressure_keeps_visible_lag_under_one_second(tmp_path):
     import threading
     import time as _t

@@ -24,8 +24,9 @@ WRITE PATH (upsert/delete), docs/09_live_updates_consistency.md
 
     That is the DEFAULT, "sync" apply mode (ADR 0007). ``apply_mode="async"`` (ADR 0013,
     src/service/async_apply.py) is the alternative kept for comparison: version check -> WAL +
-    fsync -> ack, and a background thread embeds in batches and applies; searchable within
-    ~1 s (enforced by back-pressure). scripts/write_load.py compares both under heavy writes.
+    fsync -> ack, and a background thread embeds (parallel, one doc per call) and applies;
+    searchable within 1 s (enforced by back-pressure). scripts/write_load.py compares both under
+    heavy writes (results/write_load.json).
 
     Readers hold the shared lock, so they see the state before or after a
     write, never in between. That is what keeps lexical and dense consistent.
@@ -109,7 +110,8 @@ class ShardUnhealthy(RuntimeError):
 class ShardStore:
     def __init__(self, shard_id: int = 0, n_shards: int = 1, state_dir: Path | None = None,
                  embed: EmbedFn | None = None, use_cache: bool = True, apply_mode: str = "sync",
-                 max_lag_s: float = 0.5, batch_max: int = 32, max_pending: int = 2000):
+                 max_lag_s: float = 0.5, batch_max: int = 32, max_pending: int = 2000,
+                 embed_workers: int = 8):
         if apply_mode not in ("sync", "async"):
             raise ValueError(f"apply_mode must be 'sync' or 'async', not {apply_mode!r}")
         self.shard_id, self.n_shards = shard_id, n_shards
@@ -143,7 +145,8 @@ class ShardStore:
         # after the WAL and applies in a background thread (src/service/async_apply.py). The
         # applier is created at the end of load(), after WAL replay, so replay stays single-threaded.
         self.apply_mode = apply_mode
-        self._async_cfg = {"max_lag_s": max_lag_s, "batch_max": batch_max, "max_pending": max_pending}
+        self._async_cfg = {"max_lag_s": max_lag_s, "batch_max": batch_max, "max_pending": max_pending,
+                           "embed_workers": embed_workers}
         self._applier = None
 
     # ------------------------------------------------------------------ loading
@@ -211,7 +214,8 @@ class ShardStore:
                 else:
                     todo.append(j)
         if todo:
-            # One batched embedder call for all misses (much faster than one call per doc).
+            # One embedder call for all misses. Measured on CPU (async_apply.py PITFALL): a large
+            # call is only ~4% cheaper per doc than one call per doc, but it is simpler and never worse.
             out[todo] = self._embed(model, [items[j][1] for j in todo])
         return out
 
@@ -301,6 +305,9 @@ class ShardStore:
     def _write(self, op: str, doc_id: str, version: int, text: str | None) -> dict:
         """The write path from the module docstring (steps 1-4). Returns the ack dict."""
         self._check()
+        # Same input rule as async mode (async_apply.submit), so both modes accept the same writes.
+        if op == "upsert" and (not isinstance(text, str) or not text.strip()):
+            raise ValueError("upsert needs a non-empty text")
         # Step 1 runs WITHOUT the lock: a cheap early exit for retries, so a duplicate never
         # pays for embedding. It may race with another writer; step 3 re-checks under the lock.
         if not self._is_newer(doc_id, version):  # step 1: cheap idempotency check

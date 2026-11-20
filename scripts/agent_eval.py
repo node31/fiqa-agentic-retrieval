@@ -8,6 +8,14 @@
 SETS
     plain     100 dev queries sampled with seed 42 (``random.Random(42).sample(sorted(dev), 100)``)
     compound  data/compound_dev.jsonl (100 two-topic questions, gold tagged by half)
+    Needs the REAL FiQA data: unset FIQA_DATA_DIR / ARTIFACTS_DIR / RESULTS_DIR if a toy run set them.
+
+WHERE THE AGENTS' SEARCHES RUN (--search)
+    local    (default) NOT sharded: ``single_node_router()`` = the whole corpus in ONE in-process
+             ShardStore, same Router code with 1 shard and no HTTP. Fast to start; quality is
+             identical to the sharded service (svc3 matched single-node nDCG exactly).
+    service  the real sharded system over HTTP: router + 3 shards, e.g. the Docker stack
+             (``--search service --url http://127.0.0.1:8000``). Adds the network hop to latency.
 
 METRICS (per set x system)
     Recall@10, MRR@10, Coverage@10 (compound only), cost/query (USD, at config prices),
@@ -21,6 +29,7 @@ Writes results/agent_eval.json (azure) or results/agent_eval_dev_<backend>.json.
 """
 import argparse
 import json
+import os
 import random
 import sys
 import threading
@@ -37,13 +46,21 @@ from src.agent.orchestrator import Orchestrator  # noqa: E402
 from src.agent.single_agent import AgentResult, run_single_agent  # noqa: E402
 from src.agent.tools import SearchTool, http_search_fn, local_search_fn  # noqa: E402
 from src.beir_data import load_split  # noqa: E402
-from src.config import RESULTS_DIR, SEED  # noqa: E402
+from src.config import DATA_DIR, RESULTS_DIR, SEED  # noqa: E402
 from src.metrics import coverage_at_k, mrr_at_k, recall_at_k  # noqa: E402
 from src.util import percentile  # noqa: E402
 
 
 def load_sets(limit=None):
     queries, qrels = load_split("dev")
+    # PITFALL: a shell left over from the toy runs (ch06) may still have FIQA_DATA_DIR pointing at
+    # the 24-doc fixture (4 dev queries). Refuse clearly instead of crashing in random.sample, and
+    # never shrink the sample: the compound set's gold docs are REAL FiQA ids, absent from a toy corpus.
+    if len(queries) < 100:
+        sys.exit(f"agent_eval needs the real FiQA dev split (500 queries), but {DATA_DIR} has only {len(queries)}.\n"
+                 f"FIQA_DATA_DIR={os.environ.get('FIQA_DATA_DIR', '(unset)')} - probably left over from a toy run. Fix:\n"
+                 "  PowerShell: Remove-Item Env:FIQA_DATA_DIR, Env:ARTIFACTS_DIR, Env:RESULTS_DIR -ErrorAction SilentlyContinue\n"
+                 "  bash:       unset FIQA_DATA_DIR ARTIFACTS_DIR RESULTS_DIR")
     plain_ids = random.Random(SEED).sample(sorted(queries), 100)
     plain = [{"id": q, "question": queries[q], "gold": {d: "a" for d in qrels[q]}} for q in plain_ids]
     compound = [json.loads(l) for l in (ROOT / "data" / "compound_dev.jsonl").read_text(encoding="utf-8").splitlines()]
@@ -104,7 +121,8 @@ def main():
     ap.add_argument("--limit", type=int, help="queries per set")
     ap.add_argument("--systems", default="baseline,single,multi")
     ap.add_argument("--sets", default="plain,compound")
-    ap.add_argument("--search", choices=["local", "service"], default="local")
+    ap.add_argument("--search", choices=["local", "service"], default="local",
+                    help="local = single in-process node (NOT sharded, default); service = the sharded router at --url")
     ap.add_argument("--url", default="http://127.0.0.1:8000")
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--max-usd", type=float, default=2.0)

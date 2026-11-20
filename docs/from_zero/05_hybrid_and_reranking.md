@@ -84,19 +84,34 @@ E (0.81) are far better than A (0.52), and RRF just sees ranks 1, 2, 3.
 
 > 🎯 **Why we're doing this:** A design choice (α = 0.7, linear) must be *measured*, not assumed. The sweep is the evidence, and its shape (a broad plateau) tells us the choice is robust.
 
-We tried many α values on **dev** (`scripts/ablations.py` → `results/ablation_fusion_minilm.json`):
+We tried many α values on **dev** (`scripts/ablations.py` → `results/ablation_fusion_minilm.json`).
+**Every cell is nDCG@10**: the average over the 500 dev queries, with MiniLM as the dense model.
 
-| α (weight on dense) | 0.1 | 0.3 | 0.5 | 0.6 | 0.7 | 0.8 | 0.9 |
+| nDCG@10 on dev, α = weight on dense | 0.1 | 0.3 | 0.5 | 0.6 | 0.7 | 0.8 | 0.9 |
 |---|---|---|---|---|---|---|---|
 | linear (min-max) | 0.287 | 0.336 | 0.402 | 0.418 | **0.419** | 0.406 | 0.401 |
 | weighted RRF | – | – | 0.373 | 0.387 | 0.395 | 0.404 | **0.406** |
 
 For reference: dense alone = 0.388, BM25 alone = 0.264. (α = 0.5 RRF is plain, unweighted RRF.)
+The same file also stores Recall@10 and MRR@10 for every cell. At the shipped point (linear, α = 0.7):
+nDCG@10 **0.419**, Recall@10 **0.491**, MRR@10 **0.487**.
+
+**How to read the table:**
+- **α is the dense share; 1 − α goes to BM25.** The two ends would be the single systems: α = 0 is pure BM25 (0.264),
+  α = 1 is pure dense (0.388). **Any cell above 0.388 means the mix beat the best single system.**
+- **Linear row:** climbs from 0.287 (α = 0.1, mostly BM25) to a peak of **0.419 at α = 0.7**, then slips back
+  (0.406, 0.401). The best mix leans heavily on dense, but a ~30% BM25 share still adds something dense misses
+  (exact names, numbers, rare terms).
+- **Weighted RRF row:** at α = 0.5 both lists get equal weight, i.e. plain RRF: **0.373, below dense alone**. It improves only
+  as dense gets more weight (0.406 at α = 0.9), and never reaches linear's 0.419.
+- **Why the dashes:** RRF wasn't run at α = 0.1 and 0.3. With most of the weight on the much weaker BM25 list, it can
+  only get worse, so those runs would have told us nothing.
 
 Three lessons:
 1. **Hybrid wins**, +0.031 nDCG over dense for +2 ms. Cheap quality.
 2. **Plain RRF hurt** (0.373 < 0.388): giving equal votes to a much weaker system drags you down.
-3. The best α is a **broad plateau** (0.6–0.7), so we aren't overfitting a single lucky point.
+3. The best α is a **broad plateau**: linear stays between 0.40 and 0.42 for every α from 0.5 to 0.9, and peaks at 0.6–0.7.
+   We aren't overfitting a single lucky point. Picking 0.6 instead of 0.7 would cost only 0.001.
 
 ## 5.4 Re-ranking: a second, slower, more careful look
 

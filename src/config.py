@@ -41,7 +41,8 @@ except ImportError:  # pragma: no cover
 
 DATA_DIR = Path(os.environ.get("FIQA_DATA_DIR", ROOT / "data" / "raw" / "fiqa"))
 ARTIFACTS_DIR = Path(os.environ.get("ARTIFACTS_DIR", ROOT / "artifacts"))
-RESULTS_DIR = ROOT / "results"
+# WHY overridable: toy runs on the tiny dataset must not overwrite the real FiQA results.
+RESULTS_DIR = Path(os.environ.get("RESULTS_DIR", ROOT / "results"))
 
 
 @dataclass(frozen=True)

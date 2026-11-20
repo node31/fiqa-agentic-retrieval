@@ -28,3 +28,6 @@ dist/
 Thumbs.db
 .vscode/
 .idea/
+
+# toy runs of the eval/bench pipeline on the tiny dataset (docs/from_zero/06)
+toy_runs/

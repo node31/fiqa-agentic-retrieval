@@ -115,9 +115,13 @@ def evaluate(searcher: Searcher, split: str = "dev", cold_n: int = 20, warmup_n:
         return ids, (time.perf_counter() - t0) * 1e3
 
     cold = [timed(q)[1] for _, q in items[:cold_n]]  # 1) fresh process: first N queries
-    train_q, _ = load_split("train")
+    try:
+        train_q, _ = load_split("train")
+    except FileNotFoundError:  # WHY: the tiny toy dataset has only a dev split; never warm up on dev queries
+        train_q = {}
+        print("[eval] no train split in this dataset: skipping warmup (warm latency is less meaningful)")
     rng = random.Random(SEED)
-    for q in rng.sample(list(train_q.values()), warmup_n):  # 2) warmup on TRAIN queries
+    for q in rng.sample(list(train_q.values()), min(warmup_n, len(train_q))):  # 2) warmup on TRAIN queries
         searcher.search(q)
     run, warm = {}, []
     for qid, q in items:  # 3) the measured run

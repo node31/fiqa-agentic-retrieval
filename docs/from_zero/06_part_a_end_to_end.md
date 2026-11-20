@@ -86,6 +86,101 @@ flowchart LR
     P --> J["merged into<br/>results/bench.json"]
 ```
 
+### Run the benchmark yourself, on the tiny dataset (one config at a time)
+
+> 🎯 **Why we're doing this:** `results/bench.json` is just the output of a program you can run. Running each config yourself
+> on 24 documents (seconds, not 30 minutes) shows you exactly what produces each number, and with only 4 queries you can
+> read every line of every results file.
+
+**Three environment variables point everything at the toy data and a scratch folder**, so you can't overwrite the real
+results. `toy_runs\` is gitignored. Run from the repo root, venv active:
+
+```powershell
+$env:FIQA_DATA_DIR = "$PWD\tests\fixtures\tinyfiqa"   # which dataset: the 24-doc tiny FiQA (default: data\raw\fiqa)
+$env:ARTIFACTS_DIR = "$PWD\toy_runs\artifacts"        # where indexes/cluster state go (empty → embeds the 24 docs on the fly)
+$env:RESULTS_DIR   = "$PWD\toy_runs\results"          # where results go (default: results\, the REAL numbers)
+```
+
+**Step 1: one config = one command.** Each line below is exactly what `bench.py` runs for that config (its `LOCAL` list):
+
+```powershell
+python -m src.eval --name bm25                    --strategy bm25
+python -m src.eval --name dense-minilm            --strategy dense  --model minilm
+python -m src.eval --name dense-bge-small         --strategy dense  --model bge-small
+python -m src.eval --name hybrid-rrf-minilm       --strategy hybrid --model minilm    --fusion rrf    --alpha 0.5
+python -m src.eval --name hybrid-linear-minilm    --strategy hybrid --model minilm    --fusion linear --alpha 0.7
+python -m src.eval --name hybrid-linear-bge-small --strategy hybrid --model bge-small --fusion linear --alpha 0.7
+```
+
+Each prints one summary line and writes `toy_runs\results\runs\<name>.json`. What we got:
+
+```
+[eval] no train split in this dataset: skipping warmup (warm latency is less meaningful)
+bm25                    nDCG@10=0.9343 R@10=1.0000 MRR@10=1.0000 warm p50/p95=0.25/0.33ms  cold p50/p95=0.31/0.87ms
+dense-minilm            nDCG@10=0.9626 R@10=1.0000 MRR@10=1.0000 warm p50/p95=26.98/29.9ms cold p50/p95=26.99/33.09ms
+dense-bge-small         nDCG@10=0.9492 ...                        warm p50/p95=40.83/42.33ms
+hybrid-rrf-minilm       nDCG@10=0.9626 ...
+hybrid-linear-minilm    nDCG@10=0.9579 R@10=1.0000 MRR@10=1.0000 warm p50/p95=27.0/29.22ms  cold p50/p95=27.11/28.02ms
+hybrid-linear-bge-small nDCG@10=0.9492 ...
+```
+
+(BM25 0.934, dense 0.963, hybrid 0.958: the same numbers as your ch06 exercise, because it's the same pipeline at toy scale.)
+
+**Step 2 (optional): the whole matrix.** `python scripts\bench.py` runs the 6 commands above, **plus** the 5 service
+configs (it starts a real router and 1 or 3 shard processes for each, then evaluates over HTTP), and merges everything
+into `toy_runs\results\bench.json`. On the tiny set it took ~7 minutes, mostly model loading and starting processes.
+`python scripts\bench.py --only local` runs just step 1's six.
+
+**What happens inside one `python -m src.eval` run:**
+
+```mermaid
+sequenceDiagram
+    participant You
+    participant E as src/eval.py
+    participant R as single-node router (in-process)
+    participant F as results file
+    You->>E: 1. python -m src.eval --name X --strategy ...
+    E->>R: 2. build indexes (BM25 + dense, model loaded) → startup_s
+    E->>R: 3. COLD: first 20 dev queries, timed (tiny: only 4 exist)
+    E->>R: 4. WARMUP: 100 train queries, NOT timed (tiny has no train split → skipped)
+    E->>R: 5. WARM: every dev query, timed, ranked ids kept
+    E->>E: 6. metrics (nDCG/Recall/MRR), stratified recall, p50/p95, memory
+    E->>F: 7. write runs/X.json, print the one-line summary
+```
+
+**How to read a run file** (`toy_runs\results\runs\hybrid-linear-minilm.json`, shortened):
+
+| key | example (tiny) | meaning |
+|---|---|---|
+| `split` | `"dev"` | which queries were evaluated |
+| `overall` | `{"ndcg@10": 0.9579, "recall@10": 1.0, "mrr@10": 1.0, "n": 4}` | the averages over `n` queries (Ch. 2) |
+| `stratified` | `"qlen:medium(5-15)": {"recall@10": 1.0, "n": 4}` | Recall@10 per group: by query length, and by whether the gold doc is among the 10% longest docs. **Always read `n`**: a group of 1 query proves nothing |
+| `latency.cold_first20` | `{"p50_ms": 27.11, "p95_ms": 28.02, "n": 4}` | the first queries of a fresh process (model and caches still cold) |
+| `latency.warm` | `{"p50_ms": 27.0, "p95_ms": 29.22, "n": 4}` | all queries after warmup: the number the 50 ms limit is about |
+| `memory` | `{"process": {"rss_mb": 551.1, "peak_rss_mb": 551.5}}` | RAM of the searching process (service runs list each shard instead) |
+| `run` | `{"q1": ["1","2","9","22",...], ...}` | **the actual ranked top-10 per query**: everything above is computed from this |
+| `config` | `{"strategy": "hybrid", "fusion": "linear", "alpha": 0.7, ...}` | the exact settings, so the run can be reproduced |
+| `startup_s` | `13.9` | seconds to build the indexes and load the model before the first query |
+
+`bench.json` has three keys: `machine` (CPU, cores, RAM, OS: latency depends on hardware), `protocol` (how cold/warm
+were measured), and `configs` (one entry per config with all of the above *except* `run`, to keep it small).
+
+**Try this, and read the effect in the files:**
+- Run α = 0.3 under a **new name** (the same name would overwrite the old file):
+  `python -m src.eval --name hybrid-linear-a03 --strategy hybrid --model minilm --fusion linear --alpha 0.3`. Then compare
+  `run.q3` in `hybrid-linear-minilm.json` vs `hybrid-linear-a03.json`. We got `7, 4, 14, 21, …` at α = 0.7 and `7, 14, 20, 4, …`
+  at α = 0.3. With more weight on BM25, its keyword hits (doc 14 matches "should", doc 20 matches "fund") climb above dense's
+  topical doc 4. nDCG doesn't change (0.9579 both times) because the only gold doc, 7, stays #1.
+- Add `--limit 2`: only q1 and q2 are evaluated, and `overall.n` becomes 2.
+- Compare `run` in `svc3-bm25.json` (global IDF) with `svc3-bm25-localidf.json` (from step 2). The rankings **differ in 3 of 4 queries**,
+  e.g. q3 is `7, 14, 20, 5, 4` with global stats and `7, 20, 5, 14, 4` with local stats. **Yet nDCG is identical** (0.9343),
+  because the gold doc stays #1. A bug can hide behind good metrics on a small test set. On the full corpus, local IDF changes
+  395 of 500 top-10s (ch07).
+- Rerun the same command twice: the quality numbers are identical (deterministic), the latencies wobble (that's why we use percentiles).
+
+**When you're done:** `Remove-Item Env:FIQA_DATA_DIR, Env:ARTIFACTS_DIR, Env:RESULTS_DIR` (or close the terminal). Otherwise
+your next "real" run would quietly use the tiny data.
+
 ### Our numbers (dev, single node)
 
 | configuration | nDCG@10 | R@10 | MRR@10 | warm p50 / p95 ms | peak RSS |

@@ -11,6 +11,45 @@ WHAT
 
     python -m src.eval --mode local   --strategy hybrid --model minilm --name hybrid-rrf
     python -m src.eval --mode service --strategy hybrid --url http://127.0.0.1:8000
+    python -m src.eval --help          # prints every argument with a short explanation
+
+ARGUMENTS (each one picks WHICH system to test, or HOW to run the test)
+  Where the search runs
+    --mode        local (default): the whole engine (BM25 + dense index + router) is built INSIDE this process,
+                  no network. service: the engine already runs as router + shard processes (Part B); every
+                  query is sent over HTTP, so latency includes the network hop.
+    --url         service mode only: the router's address (default http://127.0.0.1:8000). Ignored in local mode.
+  What system to test (the "configuration")
+    --strategy    bm25 = keyword search only (ch03) · dense = meaning search only (ch04) · hybrid = both, fused (ch05).
+    --model       dense side's embedding model: minilm (default) or bge-small. Local mode only: in service mode
+                  the running router's active model decides and this is ignored.
+    --fusion      hybrid only: rrf = combine by RANK (default) · linear = min-max the SCORES, then weighted sum.
+    --alpha       hybrid only: the weight on DENSE; BM25 gets 1 - alpha. linear: a*dense + (1-a)*bm25.
+                  rrf: list weights (1-a, a), so alpha 0.5 = plain RRF.
+                  PITFALL: the defaults (rrf, 0.5) are NOT the shipped system. Pass --fusion linear --alpha 0.7.
+    --rerank-k    0 = off (default). N = re-score the fused top N with the cross-encoder (ch05; slower, didn't help).
+    --bm25-stats  global (default) = router sums IDF statistics from all shards first (correct).
+                  local = each shard uses only its own statistics (the ch07 bug, kept for comparison).
+                  Matters only with several shards: in local mode (one in-process shard) both are identical.
+                  In service mode it's ignored here; set BM25_STATS=local on the ROUTER instead (bench.py does).
+  Which questions
+    --split       dev (default, 500 questions, used for all tuning) or test (648, the "final exam").
+    --final-test-run  safety lock: --split test refuses to run without it, so you can't tune on test by accident.
+    --limit N     evaluate only the first N questions (quick checks; overall.n then equals N).
+  Bookkeeping
+    --name        required label: printed on the summary line and used as the file name runs/<name>.json.
+                  Reusing a name OVERWRITES that file.
+    --threads     torch CPU threads for query encoding (default 4, fixed so latencies are comparable).
+                  Local mode only; in service mode the model runs inside the shards.
+    --out         write the results JSON here instead of RESULTS_DIR/runs/<name>.json.
+  Environment (not arguments): FIQA_DATA_DIR = which dataset, ARTIFACTS_DIR = index/cache folder,
+    RESULTS_DIR = where results go. Point all three at a scratch folder to run on the tiny toy dataset
+    without touching the real results (docs/from_zero/06_part_a_end_to_end.md §6.3).
+
+  Examples
+    python -m src.eval --name hybrid-linear-minilm --strategy hybrid --model minilm --fusion linear --alpha 0.7
+    python -m src.eval --mode service --name svc3-hybrid --strategy hybrid --fusion linear --alpha 0.7
+    python -m src.eval --name bm25-quick --strategy bm25 --limit 20
 
 PROTOCOL DECISIONS (docs/07_benchmarking_latency_memory.md)
     * Warmup uses TRAIN queries, so no dev query is ever "seen" before it is timed.
@@ -137,21 +176,38 @@ def evaluate(searcher: Searcher, split: str = "dev", cold_n: int = 20, warmup_n:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Evaluate one retrieval configuration")
-    ap.add_argument("--mode", choices=["local", "service"], default="local")
-    ap.add_argument("--url", default="http://127.0.0.1:8000")
-    ap.add_argument("--name", required=True)
-    ap.add_argument("--strategy", choices=["bm25", "dense", "hybrid"], default="hybrid")
-    ap.add_argument("--model", default=PRIMARY_MODEL)
-    ap.add_argument("--fusion", choices=["rrf", "linear"], default="rrf")
-    ap.add_argument("--alpha", type=float, default=0.5)
-    ap.add_argument("--rerank-k", type=int, default=0)
-    ap.add_argument("--bm25-stats", choices=["global", "local"], default="global")
-    ap.add_argument("--split", default="dev", choices=["dev", "test"])
-    ap.add_argument("--final-test-run", action="store_true", help="required to touch the test split")
-    ap.add_argument("--limit", type=int)
-    ap.add_argument("--threads", type=int, default=4, help="torch intra-op threads (local mode)")
-    ap.add_argument("--out", type=Path)
+    ap = argparse.ArgumentParser(
+        description="Evaluate one retrieval configuration (quality, latency, memory). "
+                    "Full explanations: the ARGUMENTS section at the top of src/eval.py.",
+        epilog="The shipped system: --strategy hybrid --model minilm --fusion linear --alpha 0.7 "
+               "(the --fusion/--alpha defaults are rrf/0.5, NOT the shipped values).")
+    ap.add_argument("--mode", choices=["local", "service"], default="local",
+                    help="local: build the engine inside this process (no network). "
+                         "service: send queries over HTTP to a running router + shards (Part B)")
+    ap.add_argument("--url", default="http://127.0.0.1:8000", help="service mode only: the router's address")
+    ap.add_argument("--name", required=True,
+                    help="label for this run; output file is runs/<name>.json (same name = overwrite)")
+    ap.add_argument("--strategy", choices=["bm25", "dense", "hybrid"], default="hybrid",
+                    help="bm25 = keywords only, dense = meaning only, hybrid = both fused")
+    ap.add_argument("--model", default=PRIMARY_MODEL,
+                    help="embedding model for dense: minilm or bge-small (local mode only)")
+    ap.add_argument("--fusion", choices=["rrf", "linear"], default="rrf",
+                    help="hybrid only: rrf = combine ranks, linear = min-max scores then weighted sum")
+    ap.add_argument("--alpha", type=float, default=0.5,
+                    help="hybrid only: weight on DENSE (BM25 gets 1-alpha); 0.5 with rrf = plain RRF")
+    ap.add_argument("--rerank-k", type=int, default=0,
+                    help="0 = off; N = re-score the fused top N with the cross-encoder")
+    ap.add_argument("--bm25-stats", choices=["global", "local"], default="global",
+                    help="global = IDF from all shards (correct); local = per-shard IDF (the ch07 bug). "
+                         "No effect in local mode (one shard)")
+    ap.add_argument("--split", default="dev", choices=["dev", "test"],
+                    help="dev (500 questions, for tuning) or test (648, the final exam)")
+    ap.add_argument("--final-test-run", action="store_true",
+                    help="safety lock: required to touch the test split")
+    ap.add_argument("--limit", type=int, help="evaluate only the first N questions")
+    ap.add_argument("--threads", type=int, default=4,
+                    help="torch CPU threads for query encoding (local mode); fixed so latencies are comparable")
+    ap.add_argument("--out", type=Path, help="results file path (default: RESULTS_DIR/runs/<name>.json)")
     a = ap.parse_args()
     if a.split == "test" and not a.final_test_run:
         raise SystemExit("Refusing to evaluate on TEST without --final-test-run (tune on dev only!)")

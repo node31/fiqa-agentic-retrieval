@@ -1,0 +1,258 @@
+{
+ "sync": {
+  "mode": "sync",
+  "duration_s": 30.1,
+  "writers": 8,
+  "readers": 2,
+  "writes_ok": 1741,
+  "writes_per_s": 57.8,
+  "write_errors": 0,
+  "write_error_samples": [],
+  "noop": 0,
+  "write_ack_ms": {
+   "p50": 128.5,
+   "p95": 180.9,
+   "p99": 218.2,
+   "max": 279.3,
+   "n": 1741
+  },
+  "freshness": {
+   "probes": 55,
+   "visible_lag_ms": {
+    "p50": 0.0,
+    "p95": 0.0,
+    "p99": 0.0,
+    "max": 0.0,
+    "n": 55
+   },
+   "found_by_first_search": 55,
+   "missed_within_3s": 0,
+   "probe_ack_ms": {
+    "p50": 125.5,
+    "p95": 182.6,
+    "p99": 189.8,
+    "max": 189.8,
+    "n": 55
+   }
+  },
+  "search_ms": {
+   "p50": 131.0,
+   "p95": 165.3,
+   "p99": 192.3,
+   "max": 220.6,
+   "n": 432
+  },
+  "searches": 432,
+  "search_errors": 0,
+  "partial_results": 0,
+  "final_flush": {
+   "drained": true,
+   "seconds": 0.53
+  },
+  "shards": {
+   "0": {
+    "n_docs": 19648,
+    "apply_mode": "sync",
+    "async": null
+   },
+   "1": {
+    "n_docs": 19737,
+    "apply_mode": "sync",
+    "async": null
+   },
+   "2": {
+    "n_docs": 19680,
+    "apply_mode": "sync",
+    "async": null
+   }
+  }
+ },
+ "async": {
+  "mode": "async",
+  "duration_s": 30.1,
+  "writers": 8,
+  "readers": 2,
+  "writes_ok": 2835,
+  "writes_per_s": 94.2,
+  "write_errors": 0,
+  "write_error_samples": [],
+  "noop": 0,
+  "write_ack_ms": {
+   "p50": 78.3,
+   "p95": 119.6,
+   "p99": 154.3,
+   "max": 249.4,
+   "n": 2835
+  },
+  "freshness": {
+   "probes": 39,
+   "visible_lag_ms": {
+    "p50": 203.4,
+    "p95": 465.7,
+    "p99": 582.9,
+    "max": 582.9,
+    "n": 39
+   },
+   "found_by_first_search": 1,
+   "missed_within_3s": 0,
+   "probe_ack_ms": {
+    "p50": 79.7,
+    "p95": 111.1,
+    "p99": 151.5,
+    "max": 151.5,
+    "n": 39
+   }
+  },
+  "search_ms": {
+   "p50": 183.5,
+   "p95": 244.1,
+   "p99": 271.9,
+   "max": 296.4,
+   "n": 303
+  },
+  "searches": 303,
+  "search_errors": 0,
+  "partial_results": 0,
+  "final_flush": {
+   "drained": true,
+   "seconds": 0.67
+  },
+  "shards": {
+   "0": {
+    "n_docs": 19957,
+    "apply_mode": "async",
+    "async": {
+     "pending": 0,
+     "oldest_pending_age_ms": 0.0,
+     "lag_ms": {
+      "p50": 181.0,
+      "p95": 376.4,
+      "max": 540.2
+     },
+     "batch_timing": {
+      "size_avg": 3.7,
+      "size_max": 13,
+      "embed_ms": {
+       "p50": 95.7,
+       "p95": 193.1,
+       "max": 278.4
+      },
+      "lock_wait_ms": {
+       "p50": 0.0,
+       "p95": 2.5,
+       "max": 8.0
+      },
+      "apply_ms": {
+       "p50": 3.4,
+       "p95": 13.0,
+       "max": 20.5
+      }
+     },
+     "cost_model_ms": {
+      "round": 121.0,
+      "fixed": 6.6
+     },
+     "embed_workers": 8,
+     "embed_chunk": 1,
+     "max_lag_s": 0.5,
+     "batch_max": 32,
+     "accepted": 979,
+     "applied": 979,
+     "superseded": 0,
+     "batches": 265,
+     "backpressure_waits": 3
+    }
+   },
+   "1": {
+    "n_docs": 20004,
+    "apply_mode": "async",
+    "async": {
+     "pending": 0,
+     "oldest_pending_age_ms": 0.0,
+     "lag_ms": {
+      "p50": 180.3,
+      "p95": 378.1,
+      "max": 637.9
+     },
+     "batch_timing": {
+      "size_avg": 3.6,
+      "size_max": 14,
+      "embed_ms": {
+       "p50": 96.9,
+       "p95": 180.8,
+       "max": 361.1
+      },
+      "lock_wait_ms": {
+       "p50": 0.0,
+       "p95": 1.2,
+       "max": 6.7
+      },
+      "apply_ms": {
+       "p50": 4.5,
+       "p95": 13.0,
+       "max": 19.4
+      }
+     },
+     "cost_model_ms": {
+      "round": 127.1,
+      "fixed": 5.4
+     },
+     "embed_workers": 8,
+     "embed_chunk": 1,
+     "max_lag_s": 0.5,
+     "batch_max": 32,
+     "accepted": 954,
+     "applied": 954,
+     "superseded": 0,
+     "batches": 265,
+     "backpressure_waits": 11
+    }
+   },
+   "2": {
+    "n_docs": 19987,
+    "apply_mode": "async",
+    "async": {
+     "pending": 0,
+     "oldest_pending_age_ms": 0.0,
+     "lag_ms": {
+      "p50": 197.2,
+      "p95": 449.5,
+      "max": 553.2
+     },
+     "batch_timing": {
+      "size_avg": 3.8,
+      "size_max": 13,
+      "embed_ms": {
+       "p50": 96.5,
+       "p95": 221.5,
+       "max": 320.1
+      },
+      "lock_wait_ms": {
+       "p50": 0.0,
+       "p95": 0.1,
+       "max": 7.8
+      },
+      "apply_ms": {
+       "p50": 3.7,
+       "p95": 12.3,
+       "max": 22.1
+      }
+     },
+     "cost_model_ms": {
+      "round": 166.8,
+      "fixed": 9.6
+     },
+     "embed_workers": 8,
+     "embed_chunk": 1,
+     "max_lag_s": 0.5,
+     "batch_max": 32,
+     "accepted": 941,
+     "applied": 941,
+     "superseded": 0,
+     "batches": 249,
+     "backpressure_waits": 18
+    }
+   }
+  }
+ }
+}

@@ -59,7 +59,8 @@ def run_mode(mode: str, duration: float, writers: int, readers: int, texts: list
         lock = threading.Lock()
         # Shared result lists (appended under `lock` by the worker threads).
         r = {"ack_ms": [], "write_errors": 0, "writes_ok": 0, "noop": 0, "search_ms": [], "search_errors": 0,
-             "partial": 0, "probe_lag_ms": [], "probe_first_hit": 0, "probe_missed": 0, "probe_ack_ms": []}
+             "partial": 0, "probe_lag_ms": [], "probe_first_hit": 0, "probe_missed": 0, "probe_ack_ms": [],
+             "error_samples": []}
 
         def writer(w: int) -> None:
             rng = random.Random(1000 + w)
@@ -82,9 +83,12 @@ def run_mode(mode: str, duration: float, writers: int, readers: int, texts: list
                         with lock:
                             r["ack_ms"].append(dt)
                             r["writes_ok" if resp.json()["applied"] else "noop"] += 1
-                    except httpx.HTTPError:
+                    except httpx.HTTPError as e:
                         with lock:
                             r["write_errors"] += 1
+                            if len(r["error_samples"]) < 5:  # keep a few, so errors can be explained
+                                body = getattr(getattr(e, "response", None), "text", "")
+                                r["error_samples"].append(f"{doc} v{mine[doc]}: {type(e).__name__}: {e} {body[:200]}")
 
         def reader(i: int) -> None:
             rng = random.Random(2000 + i)
@@ -157,7 +161,7 @@ def run_mode(mode: str, duration: float, writers: int, readers: int, texts: list
     return {
         "mode": mode, "duration_s": round(elapsed, 1), "writers": writers, "readers": readers,
         "writes_ok": r["writes_ok"], "writes_per_s": round(r["writes_ok"] / elapsed, 1),
-        "write_errors": r["write_errors"], "noop": r["noop"],
+        "write_errors": r["write_errors"], "write_error_samples": r["error_samples"], "noop": r["noop"],
         "write_ack_ms": pct(r["ack_ms"]),
         "freshness": {"probes": n_probes, "visible_lag_ms": pct(r["probe_lag_ms"]),
                       "found_by_first_search": r["probe_first_hit"], "missed_within_3s": r["probe_missed"],
@@ -209,7 +213,8 @@ def main() -> None:
     a = ap.parse_args()
     corpus = load_corpus()
     rng = random.Random(42)
-    texts = rng.sample(list(corpus.values()), min(2000, len(corpus)))  # real passages: realistic embedding cost
+    texts = [t for t in rng.sample(list(corpus.values()), min(2000, len(corpus))) if t.strip()]  # real passages:
+    # realistic embedding cost. Empty ones are dropped: FiQA has 38, and the API rejects empty text (422).
     queries = list(load_split("dev")[0].values())
     modes = ["sync", "async"] if a.mode == "both" else [a.mode]
     res = {m: run_mode(m, a.duration, a.writers, a.readers, texts, queries, a.router_port, a.base_port)

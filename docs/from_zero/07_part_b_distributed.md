@@ -101,6 +101,57 @@ Fix: phase 1 asks every shard for its `N`, total length and `df` for the query t
 (`CorpusStats.merge`) and sends the global numbers back in phase 2. The name comes from Elasticsearch's "DFS query then fetch".
 Cost: one extra round trip (~4 ms). Dense search doesn't need this: a cosine doesn't depend on other documents.
 
+#### Where does the "global N" live, and what happens to it after a write?
+
+> 🎯 **Why this matters:** it's natural to picture a global counter somewhere ("total docs = 57,638") that every write
+> must update. There isn't one. That's what makes IDF both correct and fresh without any coordination.
+
+**Nothing global is stored.** Each shard keeps only *its own* counts, updated on every write. The router adds them up
+**fresh on every query** in phase 1, then forgets them. So the "global N" is never out of date and never needs updating.
+
+| | Kept where | Contains | Lifetime |
+|---|---|---|---|
+| local stats | each shard's `BM25Index`: `len(row_of)` (N), `total_len`, `df[term]` | counts for **that shard's live docs only** | permanent, updated by every write |
+| global stats | the router, inside one `search()` call | the sum over all shards, for **this query's terms only** | one query, then thrown away |
+
+The formula always uses the global numbers (default `bm25_stats="global"`):
+`idf(term) = ln(1 + (N − df + 0.5) / (df + 0.5))` with **N = docs on all shards** and **df = docs on all shards
+containing the term**. For example, for the term *what*:
+
+| | shard 0 | shard 1 | shard 2 | global (router sums) |
+|---|---|---|---|---|
+| N | 19,167 | 19,254 | 19,217 | **57,638** |
+| df(what) | 5,345 | 5,152 | 5,222 | **15,719** |
+
+Only the **per-document** parts of BM25 (term frequency `tf`, the doc's length `len(d)`) come from the shard's own data.
+(`--bm25-stats local` exists only to reproduce the bug for the experiment above.)
+
+**What a write does to the shard's counts** (`BM25Index.add()` / `delete()` in `src/retrieval/bm25.py`). The counts are
+updated *inside* the write, under the write lock, **before** the ack:
+
+| write | shard's N | shard's df | shard's `total_len` |
+|---|---|---|---|
+| upsert a **new** doc | +1 | +1 for each distinct term in the doc | + its length |
+| upsert an **existing** doc (an edit) | unchanged: old version removed, new one added | −1 for the old terms, +1 for the new terms | − old length + new length |
+| delete | −1 | −1 for each of its terms (a term whose df reaches 0 is dropped) | − its length |
+
+On delete, the old postings stay in the matrix but are masked out (a *tombstone*, §7.4). The **counts**, however,
+forget the doc immediately, so IDF and avgdl always describe live documents only.
+
+**Worked example:** upsert a new doc containing *what*; `crc32` sends it to shard 1.
+
+```
+before:      shard 1: N = 19,254   df(what) = 5,152      next query sums → N = 57,638   df(what) = 15,719
+write+ack:   shard 1: N = 19,255   df(what) = 5,153      (updated under the write lock, then acked)
+next query:  phase 1 sums fresh   → N = 57,639   df(what) = 15,720   ← already includes the write
+```
+
+So the freshness guarantee (§7.4: searchable as soon as acked) holds for **IDF too**, not just for the doc itself.
+
+**Caveat (accepted by design):** if a write lands *between* one query's phase 1 and phase 2, that one query scores with
+counts that are one write out of date (1 doc in 57K: an invisible change to IDF). The next query is exact again.
+Making it perfect would need a snapshot across all shards, which costs far more than it's worth.
+
 ### Correctness rule 2: each shard returns its top-D, and the router merges *then* fuses
 
 - **Why top-D per shard is enough:** the global top-100 must be made of docs that are in *their own* shard's top-100.

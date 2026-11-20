@@ -60,6 +60,8 @@ router state (`artifacts/docker/router_state.json`) survive restarts.
 | run the full dev evaluation (500 queries) | `docker compose --profile tools run --rm eval` (ours: nDCG@10 0.4190) |
 | run scenario files (writes, searches, migrations, crashes) with an HTML replay | see [docs/scenarios.md](docs/scenarios.md) |
 | a deeper Docker check: kill/restart a shard container, migration, memory, eval (needs host Python + venv) | `python -m scripts.docker_check --mode both --eval` |
+| **prove** the router really talks to 3 separate containers: container IPs, DNS inside the router, writes landing in the predicted container (each shard asked directly via `docker exec`), one search merging all 3, TCP connections from the router's IP, stop/start one shard (needs host Python + venv; stack must be up) | `python -m scripts.docker_trace --failover` |
+| "I only see one container" | Docker Desktop's *Containers* tab groups a compose stack into one row (`fiqa-agentic-retrieval`): click ▸ to expand it into 4. The *Images* tab correctly shows ONE image. `docker ps` lists all 4 |
 | migrate the embedding model by hand | `make migrate`, `make cutover`, `make rollback`, `make finalize` (or the `/admin/*` endpoints) |
 | logs | `docker compose logs -f router shard0` |
 | switch write mode | `./scripts/bootstrap.sh --mode async` (recreates the shard containers with `APPLY_MODE=async`) |

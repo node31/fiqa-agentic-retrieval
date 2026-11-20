@@ -1,0 +1,96 @@
+# 05: reads + WRITES during a model migration. Proves dual-write: docs written while the new index
+# is being built are found by DENSE search after the cutover (and after the old index is dropped).
+#
+#   python scripts/scenario.py scenarios/05_multi_node_read_write_migrate.jsonl --start-cluster --tiny --mode async
+#
+# Actors: 🦊 fox writes two docs before the migration; 🛠️ admin migrates / cuts over / rolls back /
+# finalizes; 🤖 bot-1 keeps writing during the build and the finalize; 🤖 bot-2 keeps reading;
+# 🐘 elephant checks, after each switch, that every doc is found; 🧑‍🔧 ops checks the status.
+# How a doc reaches the new model's index:
+#   written BEFORE migrate  -> the BACKFILL (snapshot taken at migrate) embeds it in the background
+#   written AFTER migrate   -> DUAL-WRITE: the shard embeds it with both models on every write
+# Why "expect_same_as" only between the quiet point (2) and the rollback (4): new docs change the
+# ranking legitimately (even unrelated ones change BM25's global statistics N and average length),
+# so answers are only comparable while nobody writes. During write phases readers use expect_ok.
+# In async mode the admin "flush"es (waits until every acked write is applied) before the quiet point.
+{"op": "config", "shards": 3, "models": "minilm", "description": "bot-1 writes while admin migrates: those docs are dual-written and found by dense search after cutover and finalize", "actors": {
+  "fox": {"role": "user", "description": "writes two docs before the migration"},
+  "elephant": {"role": "user", "description": "checks after each switch that the docs and answers are right"},
+  "bot-1": {"role": "bot", "description": "background writer during the build and the finalize"},
+  "bot-2": {"role": "bot", "description": "background reader: every answer must be complete"},
+  "admin": {"role": "admin", "description": "migrate, cutover, rollback, cutover, finalize (+ flush)"},
+  "ops": {"role": "ops", "description": "checks the cluster status at the end"}}}
+
+{"op": "label", "text": "0. Fox writes two docs BEFORE the migration (they reach bge-small through the backfill)"}
+{"op": "upsert", "actor": "fox", "doc_id": "pre-{run}-a", "text": "pelicanprobe{run} alpha backfill annuity doc"}
+{"op": "upsert", "actor": "fox", "doc_id": "pre-{run}-b", "text": "pelicanprobe{run} beta backfill annuity doc"}
+{"op": "wait_visible", "actor": "fox", "query": "pelicanprobe{run} beta backfill annuity doc", "doc_id": "pre-{run}-b", "timeout": 1.0}
+
+{"op": "label", "text": "1. Admin MIGRATEs while bot-1 writes and bot-2 reads: every write from now on is DUAL-WRITTEN"}
+{"op": "parallel", "lanes": [
+  {"name": "admin", "ops": [
+    {"op": "migrate", "model": "bge-small"},
+    {"op": "wait_ready", "model": "bge-small", "timeout": 900}
+  ]},
+  {"name": "bot-1", "ops": [
+    {"op": "repeat", "times": 20, "ops": [
+      {"op": "upsert", "doc_id": "dual-{run}-{i}", "text": "heronprobe{run}n{i} dual write municipal bond doc"},
+      {"op": "sleep", "seconds": 0.02}
+    ]}
+  ]},
+  {"name": "bot-2", "ops": [
+    {"op": "repeat", "until_done": "bot-1", "ops": [
+      {"op": "search", "query": "pension rollover ira", "expect_ok": true},
+      {"op": "sleep", "seconds": 0.05}
+    ]}
+  ]}
+]}
+{"op": "flush", "actor": "admin"}
+
+{"op": "label", "text": "2. Quiet point (nobody writes until the rollback): elephant remembers the minilm answers"}
+{"op": "search", "actor": "elephant", "query": "short selling borrowing shares", "strategy": "hybrid", "save_as": "base_q1", "expect_ok": true}
+{"op": "search", "actor": "elephant", "query": "roth ira tax free withdrawals", "strategy": "dense", "save_as": "base_q2", "expect_ok": true}
+{"op": "search", "actor": "elephant", "query": "mortgage interest rate deduction", "strategy": "bm25", "save_as": "base_q3", "expect_ok": true}
+
+{"op": "label", "text": "3. Admin CUTs OVER: dense search now uses bge-small; backfilled AND dual-written docs must be found"}
+{"op": "cutover", "actor": "admin", "model": "bge-small"}
+{"op": "search", "actor": "elephant", "query": "pelicanprobe{run} alpha backfill annuity doc", "strategy": "dense", "expect": ["pre-{run}-a"], "expect_ok": true}
+{"op": "search", "actor": "elephant", "query": "heronprobe{run}n0 dual write municipal bond doc", "strategy": "dense", "expect": ["dual-{run}-0"], "expect_ok": true}
+{"op": "search", "actor": "elephant", "query": "heronprobe{run}n19 dual write municipal bond doc", "strategy": "dense", "expect": ["dual-{run}-19"], "expect_ok": true}
+{"op": "search", "actor": "elephant", "query": "short selling borrowing shares", "strategy": "hybrid", "expect_overlap_with": {"ref": "base_q1", "min": 0.3}, "expect_ok": true}
+{"op": "search", "actor": "elephant", "query": "mortgage interest rate deduction", "strategy": "bm25", "expect_same_as": "base_q3", "expect_ok": true}
+
+{"op": "label", "text": "4. ROLLBACK: minilm got every write too (dual-write), so answers are IDENTICAL to the quiet point"}
+{"op": "rollback", "actor": "admin"}
+{"op": "search", "actor": "elephant", "query": "short selling borrowing shares", "strategy": "hybrid", "expect_same_as": "base_q1", "expect_ok": true}
+{"op": "search", "actor": "elephant", "query": "roth ira tax free withdrawals", "strategy": "dense", "expect_same_as": "base_q2", "expect_ok": true}
+{"op": "search", "actor": "elephant", "query": "heronprobe{run}n19 dual write municipal bond doc", "strategy": "dense", "expect": ["dual-{run}-19"]}
+
+{"op": "label", "text": "5. Admin cuts over again and FINALIZEs (drops minilm) while bot-1 writes and bot-2 reads"}
+{"op": "cutover", "actor": "admin", "model": "bge-small"}
+{"op": "parallel", "lanes": [
+  {"name": "admin", "ops": [
+    {"op": "sleep", "seconds": 0.2},
+    {"op": "finalize", "model": "minilm"},
+    {"op": "rollback", "expect_error": true}
+  ]},
+  {"name": "bot-1", "ops": [
+    {"op": "repeat", "times": 10, "ops": [
+      {"op": "upsert", "doc_id": "post-{run}-{i}", "text": "ibisprobe{run}n{i} written around finalize doc"},
+      {"op": "sleep", "seconds": 0.03}
+    ]}
+  ]},
+  {"name": "bot-2", "ops": [
+    {"op": "repeat", "until_done": "bot-1", "ops": [
+      {"op": "search", "query": "pension rollover ira", "expect_ok": true},
+      {"op": "sleep", "seconds": 0.05}
+    ]}
+  ]}
+]}
+{"op": "flush", "actor": "admin"}
+
+{"op": "label", "text": "6. bge-small is now the ONLY dense index: elephant still finds docs from every phase"}
+{"op": "search", "actor": "elephant", "query": "pelicanprobe{run} beta backfill annuity doc", "strategy": "dense", "expect": ["pre-{run}-b"]}
+{"op": "search", "actor": "elephant", "query": "heronprobe{run}n10 dual write municipal bond doc", "strategy": "dense", "expect": ["dual-{run}-10"]}
+{"op": "search", "actor": "elephant", "query": "ibisprobe{run}n9 written around finalize doc", "strategy": "dense", "expect": ["post-{run}-9"]}
+{"op": "status", "actor": "ops"}

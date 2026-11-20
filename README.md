@@ -31,7 +31,11 @@ The sharded service reproduces single-node quality exactly (0.0% difference) for
 
 ## Setup
 
-### Option A: Docker (no local Python needed)
+**One command, from a fresh clone (Docker only):** `./scripts/bootstrap.sh` (Linux/macOS) or `.\scripts\bootstrap.ps1`
+(Windows). It builds the image, fetches the data and embedding caches, starts the 4 containers and verifies them.
+Details, options and troubleshooting: **[DEPLOY.md](DEPLOY.md)**.
+
+### Option A: Docker by hand (no local Python needed)
 
 ```bash
 docker compose build                       # corporate PyPI mirror? add --build-arg PIP_INDEX_URL=...
@@ -73,6 +77,12 @@ run directly (handy on Windows).
 | `make agent-eval` | **costs money**: the Azure agent evaluation (needs `.env`) |
 | `make test-final` | the single test-split run of the chosen configuration |
 
+**Scenario runner + replay:** script who does what (🦊 users, 🤖 bots, 🛠️ admin, 🧑‍🔧 ops): writes, searches,
+migrations and shard crashes in a small JSONL file, run it against a live cluster in sync or async mode, and
+get pass/fail checks plus an animated HTML replay:
+`python scripts/scenario.py scenarios/freshness_demo.jsonl --start-cluster --tiny --mode async`.
+Guide and scenario catalog: [docs/scenarios.md](docs/scenarios.md).
+
 ## LLM configuration (Part C)
 
 Copy `.env.example` to `.env` and fill in `AZURE_OPENAI_ENDPOINT` (Foundry project `/openai/v1/` URL),
@@ -89,7 +99,8 @@ src/            search.py (CLI) · eval.py · metrics.py · config.py · beir_da
   service/      router.py · shard_server.py · store.py · wal.py · cluster.py
   agent/        llm.py · tools.py · prompts.py · single_agent.py · orchestrator.py · fake_policies.py
 data/           build_compound.py · compound_dev.jsonl · compound_rewrites.json · compound_review_sheet.md
-scripts/        bench.py · ablations.py · failure_cases.py · migration.py · query_load.py · migration_demo.py · agent_eval.py
+scripts/        bench.py · ablations.py · failure_cases.py · migration.py · query_load.py · migration_demo.py · agent_eval.py · scenario.py (+ replay_html.py)
+scenarios/      runnable JSONL scenarios for scripts/scenario.py (freshness, migration, shard failure, ...)
 tests/          unit, in-process and multi-process integration, toy smoke tests
 results/        bench.json · ablation_*.json · migration_demo.json · agent_eval*.json · failures.md
 examples/       27 narrated toy scripts (offline, seconds each)

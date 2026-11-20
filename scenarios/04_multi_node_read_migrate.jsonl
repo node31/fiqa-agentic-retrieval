@@ -1,0 +1,110 @@
+# 04: reads during a blue/green MODEL MIGRATION (minilm -> bge-small), with a rollback.
+#
+#   python scripts/scenario.py scenarios/04_multi_node_read_migrate.jsonl --start-cluster --tiny --mode sync
+#   python scripts/scenario.py scenarios/04_multi_node_read_migrate.jsonl --start-cluster --mode sync   (real corpus)
+#
+# Actors (one lane each, named like the actor):
+#   🛠️ admin     runs the migration: migrate, wait until ready, cutover, rollback, cutover, finalize.
+#   🐘 elephant  asks the same four questions in every phase and checks the answers.
+#   🤖 probe-bot synthetic canary: one search every 50 ms for the whole migration (zero failed queries).
+#   🧑‍🔧 ops      checks the cluster status at the end.
+# The promise: a migration never fails a query, and answers change only when the admin flips the switch.
+#   phase            queries use   hybrid / dense answers          bm25 answers
+#   build (migrate)  minilm        IDENTICAL to the baseline       identical
+#   after cutover    bge-small     may CHANGE (other model!)       identical (BM25 ignores the model)
+#                                  -> check overlap + expect_ok, not equality
+#   after rollback   minilm        IDENTICAL to the baseline again identical
+#   after finalize   bge-small     unchanged by the drop           identical
+# The admin and elephant take turns with SIGNALS: the admin "signal"s when a phase starts
+# ("cut-over"), elephant "wait_signal"s for it, checks, and signals back ("checked-cutover") before the
+# admin moves on. Without that handshake a check could race the next switch and compare the wrong model.
+# In --tiny mode both models are hash "embeddings" with different seeds: the build takes milliseconds
+# but the answers really change at cutover. Same result in sync and async mode (nobody writes here;
+# see 05 for writes during a migration).
+{"op": "config", "shards": 3, "models": "minilm", "description": "admin migrates minilm -> bge-small while elephant checks the answers and probe-bot searches non-stop: identical answers until cutover and after rollback", "actors": {
+  "elephant": {"role": "user", "description": "asks the same four questions in every phase"},
+  "probe-bot": {"role": "bot", "description": "synthetic canary: searches continuously to prove no query fails during the migration"},
+  "admin": {"role": "admin", "description": "migrate, wait until ready, cutover, rollback, cutover, finalize"},
+  "ops": {"role": "ops", "description": "checks the cluster status at the end"}}}
+
+{"op": "label", "text": "0. Baseline: elephant asks four questions (answered by minilm) and remembers the answers"}
+{"op": "search", "actor": "elephant", "query": "short selling borrowing shares", "strategy": "hybrid", "save_as": "base_q1", "expect_ok": true}
+{"op": "search", "actor": "elephant", "query": "roth ira tax free withdrawals", "strategy": "dense", "save_as": "base_q2", "expect_ok": true}
+{"op": "search", "actor": "elephant", "query": "mortgage interest rate deduction", "strategy": "bm25", "save_as": "base_q3", "expect_ok": true}
+{"op": "search", "actor": "elephant", "query": "index funds returns after inflation", "strategy": "hybrid", "save_as": "base_q4", "expect_ok": true}
+
+{"op": "label", "text": "Safety gate: the admin's cutover to a model that is not built yet is refused (HTTP 409)"}
+{"op": "cutover", "actor": "admin", "model": "bge-small", "expect_error": true}
+
+{"op": "parallel", "lanes": [
+  {"name": "admin", "ops": [
+    {"op": "label", "text": "1. MIGRATE: every shard builds a bge-small index in the background; queries still use minilm -> IDENTICAL answers"},
+    {"op": "migrate", "model": "bge-small"},
+    {"op": "wait_ready", "model": "bge-small", "timeout": 900},
+    {"op": "sleep", "seconds": 0.5},
+    {"op": "signal", "name": "built"},
+    {"op": "wait_signal", "name": "checked-build"},
+
+    {"op": "label", "text": "2. CUTOVER to bge-small: dense/hybrid answers may legitimately CHANGE (overlap); BM25 stays IDENTICAL"},
+    {"op": "cutover", "model": "bge-small"},
+    {"op": "signal", "name": "cut-over"},
+    {"op": "wait_signal", "name": "checked-cutover"},
+
+    {"op": "label", "text": "3. ROLLBACK to minilm (instant: its index was kept up to date) -> answers IDENTICAL to the baseline"},
+    {"op": "rollback"},
+    {"op": "signal", "name": "rolled-back"},
+    {"op": "wait_signal", "name": "checked-rollback"},
+
+    {"op": "label", "text": "4. CUTOVER again, then FINALIZE (drop minilm): bge-small answers unchanged; rollback no longer possible"},
+    {"op": "cutover", "model": "bge-small"},
+    {"op": "signal", "name": "cut-over-again"},
+    {"op": "wait_signal", "name": "checked-cutover-again"},
+    {"op": "finalize", "model": "minilm"},
+    {"op": "signal", "name": "finalized"},
+    {"op": "wait_signal", "name": "checked-finalize"},
+    {"op": "rollback", "expect_error": true}
+  ]},
+  {"name": "elephant", "ops": [
+    {"op": "repeat", "until_signal": "built", "ops": [
+      {"op": "search", "query": "short selling borrowing shares", "strategy": "hybrid", "expect_same_as": "base_q1", "expect_ok": true},
+      {"op": "search", "query": "roth ira tax free withdrawals", "strategy": "dense", "expect_same_as": "base_q2", "expect_ok": true},
+      {"op": "search", "query": "mortgage interest rate deduction", "strategy": "bm25", "expect_same_as": "base_q3", "expect_ok": true},
+      {"op": "search", "query": "index funds returns after inflation", "strategy": "hybrid", "expect_same_as": "base_q4", "expect_ok": true},
+      {"op": "sleep", "seconds": 0.05}
+    ]},
+    {"op": "signal", "name": "checked-build"},
+
+    {"op": "wait_signal", "name": "cut-over"},
+    {"op": "repeat", "times": 2, "ops": [
+      {"op": "search", "query": "short selling borrowing shares", "strategy": "hybrid", "expect_overlap_with": {"ref": "base_q1", "min": 0.3}, "expect_ok": true},
+      {"op": "search", "query": "roth ira tax free withdrawals", "strategy": "dense", "expect_overlap_with": {"ref": "base_q2", "min": 0.2}, "expect_ok": true},
+      {"op": "search", "query": "mortgage interest rate deduction", "strategy": "bm25", "expect_same_as": "base_q3", "expect_ok": true},
+      {"op": "search", "query": "index funds returns after inflation", "strategy": "hybrid", "expect_overlap_with": {"ref": "base_q4", "min": 0.3}, "expect_ok": true}
+    ]},
+    {"op": "search", "query": "short selling borrowing shares", "strategy": "hybrid", "save_as": "bge_q1", "expect_ok": true},
+    {"op": "signal", "name": "checked-cutover"},
+
+    {"op": "wait_signal", "name": "rolled-back"},
+    {"op": "search", "query": "short selling borrowing shares", "strategy": "hybrid", "expect_same_as": "base_q1", "expect_ok": true},
+    {"op": "search", "query": "roth ira tax free withdrawals", "strategy": "dense", "expect_same_as": "base_q2", "expect_ok": true},
+    {"op": "search", "query": "mortgage interest rate deduction", "strategy": "bm25", "expect_same_as": "base_q3", "expect_ok": true},
+    {"op": "search", "query": "index funds returns after inflation", "strategy": "hybrid", "expect_same_as": "base_q4", "expect_ok": true},
+    {"op": "signal", "name": "checked-rollback"},
+
+    {"op": "wait_signal", "name": "cut-over-again"},
+    {"op": "search", "query": "short selling borrowing shares", "strategy": "hybrid", "expect_same_as": "bge_q1", "expect_ok": true},
+    {"op": "signal", "name": "checked-cutover-again"},
+
+    {"op": "wait_signal", "name": "finalized"},
+    {"op": "search", "query": "short selling borrowing shares", "strategy": "hybrid", "expect_same_as": "bge_q1", "expect_ok": true},
+    {"op": "search", "query": "mortgage interest rate deduction", "strategy": "bm25", "expect_same_as": "base_q3", "expect_ok": true},
+    {"op": "signal", "name": "checked-finalize"}
+  ]},
+  {"name": "probe-bot", "ops": [
+    {"op": "repeat", "until_done": "admin", "ops": [
+      {"op": "search", "query": "what is an etf", "expect_ok": true},
+      {"op": "sleep", "seconds": 0.05}
+    ]}
+  ]}
+]}
+{"op": "status", "actor": "ops"}

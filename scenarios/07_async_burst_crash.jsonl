@@ -1,0 +1,47 @@
+# 07: ASYNC burst + crash. Three bots write 30 docs to shard 1 as fast as they can; 🧑‍🔧 ops kills
+# shard 1 the moment the last ack arrives, then restarts it. 🐘 elephant checks every acked doc.
+#
+#   python scripts/scenario.py scenarios/07_async_burst_crash.jsonl --start-cluster --tiny --mode async
+#
+# Meaningful in ASYNC mode: an ack there means "fsynced to the WAL", NOT "applied". Killing the
+# shard right after the acks leaves some writes accepted but not applied (watch the queue on shard 1
+# in the replay). On restart the shard replays its WAL, so every acked write must be searchable.
+# In sync mode it passes trivially (every ack was applied before it was sent): a useful baseline.
+# Doc ids are fixed because they must all hash to shard 1 (python scripts/scenario.py --shard-of burst1).
+{"op": "config", "shards": 3, "description": "bots burst-write to shard 1, ops kills it right after the acks, restarts it: every acked write is present", "actors": {
+  "bot-1": {"role": "bot", "description": "burst writer (10 docs owned by shard 1)"},
+  "bot-2": {"role": "bot", "description": "burst writer (10 more docs owned by shard 1)"},
+  "bot-3": {"role": "bot", "description": "burst writer (10 more docs owned by shard 1)"},
+  "ops": {"role": "ops", "description": "kills shard 1 right after the burst, restarts it"},
+  "elephant": {"role": "user", "description": "checks that every acked doc survived the crash"}}}
+
+{"op": "label", "text": "1. Burst: bot-1..3 write 30 docs, all owned by shard 1, as fast as they can"}
+{"op": "parallel", "lanes": [
+  {"name": "bot-1", "ops": [
+    {"op": "repeat", "each": ["burst1", "burst7", "burst8", "burst11", "burst14", "burst15", "burst22", "burst23", "burst24", "burst25"], "ops": [
+      {"op": "upsert", "doc_id": "{i}", "text": "burstprobe {i} crash recovery annuity"}
+    ]}
+  ]},
+  {"name": "bot-2", "ops": [
+    {"op": "repeat", "each": ["burst28", "burst30", "burst32", "burst33", "burst36", "burst37", "burst38", "burst40", "burst48", "burst57"], "ops": [
+      {"op": "upsert", "doc_id": "{i}", "text": "burstprobe {i} crash recovery annuity"}
+    ]}
+  ]},
+  {"name": "bot-3", "ops": [
+    {"op": "repeat", "each": ["burst60", "burst62", "burst63", "burst66", "burst68", "burst71", "burst72", "burst73", "burst74", "burst76"], "ops": [
+      {"op": "upsert", "doc_id": "{i}", "text": "burstprobe {i} crash recovery annuity"}
+    ]}
+  ]}
+]}
+
+{"op": "label", "text": "2. Ops kills shard 1 IMMEDIATELY after the last ack (async: some writes may not be applied yet)"}
+{"op": "kill_shard", "actor": "ops", "shard": 1}
+{"op": "restart_shard", "actor": "ops", "shard": 1}
+
+{"op": "label", "text": "3. Elephant checks: every acked write must be searchable after the restart (WAL replay)"}
+{"op": "repeat", "each": ["burst1", "burst7", "burst8", "burst11", "burst14", "burst15", "burst22", "burst23", "burst24", "burst25",
+                          "burst28", "burst30", "burst32", "burst33", "burst36", "burst37", "burst38", "burst40", "burst48", "burst57",
+                          "burst60", "burst62", "burst63", "burst66", "burst68", "burst71", "burst72", "burst73", "burst74", "burst76"], "ops": [
+  {"op": "search", "actor": "elephant", "query": "{i}", "strategy": "bm25", "k": 3, "expect": ["{i}"]}
+]}
+{"op": "status", "actor": "ops"}

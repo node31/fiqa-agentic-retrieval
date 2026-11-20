@@ -1,0 +1,63 @@
+# 03: multi-node reads + writes under load: bots write and read, 🦊 fox checks freshness.
+#
+#   python scripts/scenario.py scenarios/03_multi_node_read_write.jsonl --start-cluster --tiny --mode async
+#
+# Actors (each lane = one thread + one keep-alive HTTP client):
+#   🤖 bot-1, bot-2 : 3 bursts of 20 upserts each (new docs), then wait_visible on the burst's LAST doc
+#                     with timeout 1.0 s -> "the newest write is searchable within 1 s".
+#   🤖 bot-3        : searches until fox is done ("until_done"); every search must be complete and
+#                     non-empty ("expect_ok"). Shows search latency under write load.
+#   🦊 fox          : write -> search at once (soft) -> sleep 1 s -> HARD search expecting the doc.
+#   🛠️ admin / 🧑‍🔧 ops : flush the async queues / check the status at the end.
+# Must pass in both modes. In async mode watch the shards' queues fill and drain in the replay
+# (on the real corpus the MiniLM embedding makes the queue clearly visible).
+# Templating: {run} = per-run id; {b} and {i} = the repeat counters ("var").
+{"op": "config", "shards": 3, "description": "bots write and read in parallel; fox checks that every write is searchable within 1 s", "actors": {
+  "bot-1": {"role": "bot", "description": "background writer: 3 bursts of 20 docs"},
+  "bot-2": {"role": "bot", "description": "background writer: 3 bursts of 20 other docs"},
+  "bot-3": {"role": "bot", "description": "background reader: searches continuously"},
+  "fox": {"role": "user", "description": "writes a doc, searches at once and 1 s later (freshness check)"},
+  "admin": {"role": "admin", "description": "flushes the async queues after the load"},
+  "ops": {"role": "ops", "description": "checks the cluster status"}}}
+
+{"op": "label", "text": "Continuous load: bot-1 + bot-2 write, bot-3 reads, fox checks freshness, all in parallel"}
+{"op": "parallel", "lanes": [
+  {"name": "bot-1", "ops": [
+    {"op": "repeat", "times": 3, "var": "b", "ops": [
+      {"op": "repeat", "times": 20, "ops": [
+        {"op": "upsert", "doc_id": "wa-{run}-{b}-{i}", "text": "walrusa{run}b{b}n{i} pension fund rebalancing load"},
+        {"op": "sleep", "seconds": 0.01}
+      ]},
+      {"op": "wait_visible", "doc_id": "wa-{run}-{b}-19", "query": "walrusa{run}b{b}n19 pension fund rebalancing load", "timeout": 1.0}
+    ]}
+  ]},
+  {"name": "bot-2", "ops": [
+    {"op": "repeat", "times": 3, "var": "b", "ops": [
+      {"op": "repeat", "times": 20, "ops": [
+        {"op": "upsert", "doc_id": "wb-{run}-{b}-{i}", "text": "walrusb{run}b{b}n{i} municipal bond etf load"},
+        {"op": "sleep", "seconds": 0.01}
+      ]},
+      {"op": "wait_visible", "doc_id": "wb-{run}-{b}-19", "query": "walrusb{run}b{b}n19 municipal bond etf load", "timeout": 1.0}
+    ]}
+  ]},
+  {"name": "bot-3", "ops": [
+    {"op": "repeat", "until_done": "fox", "ops": [
+      {"op": "search", "query": "pension fund rebalancing municipal bond etf", "expect_ok": true},
+      {"op": "sleep", "seconds": 0.04}
+    ]}
+  ]},
+  {"name": "fox", "ops": [
+    {"op": "repeat", "times": 3, "ops": [
+      {"op": "upsert", "doc_id": "chk-{run}-{i}", "text": "checkerprobe{run}x{i} retirement annuity freshness"},
+      {"op": "search", "query": "checkerprobe{run}x{i} retirement annuity freshness", "expect": ["chk-{run}-{i}"], "soft": true},
+      {"op": "sleep", "seconds": 1.0},
+      {"op": "search", "query": "checkerprobe{run}x{i} retirement annuity freshness", "expect": ["chk-{run}-{i}"]}
+    ]}
+  ]}
+]}
+
+{"op": "label", "text": "Load finished: admin flushes, then fox finds the bots' last writes"}
+{"op": "flush", "actor": "admin"}
+{"op": "search", "actor": "fox", "query": "walrusa{run}b2n19 pension fund rebalancing load", "expect": ["wa-{run}-2-19"]}
+{"op": "search", "actor": "fox", "query": "walrusb{run}b2n19 municipal bond etf load", "expect": ["wb-{run}-2-19"]}
+{"op": "status", "actor": "ops"}

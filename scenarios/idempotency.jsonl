@@ -1,0 +1,38 @@
+# Idempotency: 🦊 fox's phone has a flaky network. Her retries and late, out-of-order writes must be
+# harmless no-ops. 🐘 elephant checks what is visible.
+#
+#   python scripts/scenario.py scenarios/idempotency.jsonl --start-cluster --tiny --mode async
+#
+# The CLIENT picks the version; the owner shard applies a write only if its version is STRICTLY
+# greater than the highest one it has seen for that doc (deletes leave a versioned "tombstone").
+#   same version again  -> {"applied": false, "reason": "stale_or_duplicate"}   (a retry)
+#   lower version later -> {"applied": false, ...}                               (a late/stale write)
+# expect_applied checks exactly that. Both modes must pass every check (async compares against the
+# latest ACCEPTED version, not the latest applied one; see src/service/async_apply.py, point 1).
+# Top-level writes without "actor" go to fox (the first declared user); searches name elephant.
+{"op": "config", "description": "fox's retries and out-of-order writes are no-ops; elephant checks what is visible", "actors": {
+  "fox": {"role": "user", "description": "writes with retries and out-of-order versions (flaky network)"},
+  "elephant": {"role": "user", "description": "checks which version is searchable"},
+  "ops": {"role": "ops", "description": "checks the cluster status at the end"}}}
+
+{"op": "label", "text": "1. Fox's retry of the same (doc, version) is a no-op"}
+{"op": "upsert", "doc_id": "idem-{run}", "version": 1, "text": "quokkaprobe{run} dividend strategy", "expect_applied": true}
+{"op": "upsert", "doc_id": "idem-{run}", "version": 1, "text": "quokkaprobe{run} dividend strategy", "expect_applied": false}
+
+{"op": "label", "text": "2. Out of order: v5 arrives, then a late v4. The older write must NOT overwrite the newer"}
+{"op": "upsert", "doc_id": "idem-{run}", "version": 5, "text": "quokkaprobe{run} bond ladder", "expect_applied": true}
+{"op": "upsert", "doc_id": "idem-{run}", "version": 4, "text": "stalemarker{run} quokkaprobe{run} overwritten", "expect_applied": false}
+{"op": "upsert", "doc_id": "idem-{run}", "version": 5, "text": "quokkaprobe{run} bond ladder", "expect_applied": false}
+{"op": "wait_visible", "actor": "elephant", "query": "quokkaprobe{run} bond ladder", "doc_id": "idem-{run}", "timeout": 1.0}
+{"op": "search", "actor": "elephant", "query": "stalemarker{run}", "strategy": "bm25", "expect_absent": ["idem-{run}"]}
+
+{"op": "label", "text": "3. Deletes are versioned too: a late older upsert cannot resurrect a deleted doc"}
+{"op": "delete", "doc_id": "idem-{run}", "version": 6, "expect_applied": true}
+{"op": "delete", "doc_id": "idem-{run}", "version": 6, "expect_applied": false}
+{"op": "upsert", "doc_id": "idem-{run}", "version": 3, "text": "quokkaprobe{run} zombie resurrection", "expect_applied": false}
+{"op": "wait_visible", "actor": "elephant", "query": "quokkaprobe{run} bond ladder", "doc_id": "idem-{run}", "absent": true, "timeout": 1.0}
+
+{"op": "label", "text": "4. A NEWER version re-creates it"}
+{"op": "upsert", "doc_id": "idem-{run}", "version": 7, "text": "quokkaprobe{run} reborn index fund", "expect_applied": true}
+{"op": "wait_visible", "actor": "elephant", "query": "quokkaprobe{run} reborn index fund", "doc_id": "idem-{run}", "timeout": 1.0}
+{"op": "status", "actor": "ops"}

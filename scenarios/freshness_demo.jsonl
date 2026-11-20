@@ -1,0 +1,44 @@
+# Freshness demo: 🦊 fox writes a new doc, 🐘 elephant searches for it at once, then again after 1 s.
+#
+#   python scripts/scenario.py scenarios/freshness_demo.jsonl --start-cluster --tiny --mode sync
+#   python scripts/scenario.py scenarios/freshness_demo.jsonl --start-cluster --tiny --mode async
+#
+# What to compare between the two runs:
+#   sync : the ack comes AFTER the shard applied the write, so elephant's immediate search always finds it.
+#   async: the ack comes right after the WAL fsync; a background thread embeds + applies a few ms
+#          later. The immediate search MAY miss the doc. That is expected (it is THE difference
+#          between the modes), so the immediate checks are "soft": recorded, shown, never failing.
+#   After 1 s (the freshness budget) both modes MUST find it: those checks are hard.
+# The immediate checks run twice: BM25 first (fastest search: no query embedding, so it is most
+# likely to race the async applier), then hybrid (the router embeds the query first, ~10-30 ms with
+# MiniLM, which often gives the applier enough time).
+# {run} = a random id per run, so re-running against a long-lived cluster always writes new docs.
+# Top-level "sleep" has no actor: it is the story pausing (shown in the middle of the replay).
+{"op": "config", "description": "fox writes, elephant searches at once and after 1 s; then the same for a delete", "actors": {
+  "fox": {"role": "user", "description": "writes a brand-new doc, later deletes it"},
+  "elephant": {"role": "user", "description": "searches for fox's doc right after each write and again 1 s later"},
+  "ops": {"role": "ops", "description": "checks the cluster status"}}}
+
+{"op": "label", "text": "1. Fox writes a new document; elephant searches for it IMMEDIATELY"}
+{"op": "upsert", "actor": "fox", "doc_id": "fresh-{run}", "text": "zebraprobe{run} annuity ladder freshness demo", "expect_applied": true}
+{"op": "search", "actor": "elephant", "query": "zebraprobe{run} annuity ladder freshness demo", "strategy": "bm25", "expect": ["fresh-{run}"], "soft": true}
+{"op": "search", "actor": "elephant", "query": "zebraprobe{run} annuity ladder freshness demo", "expect": ["fresh-{run}"], "soft": true}
+
+{"op": "label", "text": "2. 1 s later (the freshness budget) elephant searches again: now it MUST be found"}
+{"op": "sleep", "seconds": 1.0}
+{"op": "search", "actor": "elephant", "query": "zebraprobe{run} annuity ladder freshness demo", "expect": ["fresh-{run}"]}
+{"op": "status", "actor": "ops"}
+
+{"op": "label", "text": "3. Fox deletes it; elephant searches IMMEDIATELY (async: it may still be found)"}
+{"op": "delete", "actor": "fox", "doc_id": "fresh-{run}", "expect_applied": true}
+{"op": "search", "actor": "elephant", "query": "zebraprobe{run} annuity ladder freshness demo", "strategy": "bm25", "expect_absent": ["fresh-{run}"], "soft": true}
+{"op": "search", "actor": "elephant", "query": "zebraprobe{run} annuity ladder freshness demo", "expect_absent": ["fresh-{run}"], "soft": true}
+
+{"op": "label", "text": "4. 1 s later the delete MUST be visible"}
+{"op": "sleep", "seconds": 1.0}
+{"op": "search", "actor": "elephant", "query": "zebraprobe{run} annuity ladder freshness demo", "expect_absent": ["fresh-{run}"]}
+
+{"op": "label", "text": "5. Measure the lag: fox writes, elephant polls search until the doc shows up (must be < 1 s)"}
+{"op": "upsert", "actor": "fox", "doc_id": "fresh2-{run}", "text": "okapiprobe{run} pension rollover freshness demo"}
+{"op": "wait_visible", "actor": "elephant", "query": "okapiprobe{run} pension rollover freshness demo", "doc_id": "fresh2-{run}", "timeout": 1.0}
+{"op": "status", "actor": "ops"}

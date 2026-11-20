@@ -1,0 +1,76 @@
+# 06: SHARD FAILURE under traffic. 🧑‍🔧 ops kills shard 1 (like a crash) and restarts it later.
+#
+#   python scripts/scenario.py scenarios/06_shard_failure.jsonl --start-cluster --tiny --mode sync
+#   (kill_shard / restart_shard need --start-cluster: the runner owns the shard processes)
+#
+# Actors (one lane each, coordinated with signals): 🦊 fox writes docs (before, during and after the
+# outage); 🐘 elephant searches and remembers answers; 🤖 bot-1 searches continuously (background traffic); 🧑‍🔧 ops kills and
+# restarts shard 1 and checks the status.
+# What to observe:
+#   * while shard 1 is down every search still answers, but "partial": true, missing_shards [1]
+#     (the router does not fail the whole query: availability over completeness);
+#   * a write OWNED by shard 1 fails (the router retries, then 503); writes to other shards work;
+#   * after the restart the shard replays its WAL: every acked write is back, and the answers are
+#     IDENTICAL to before the crash. The failed write was never acked, so it is absent until fox retries.
+# Doc ids are fixed (not {run}) because their OWNER shard matters: pre8 / pre14 / down1 hash to
+# shard 1, pre3 to shard 0, pre0 to shard 2 (check: python scripts/scenario.py --shard-of pre8).
+# PITFALL (Windows): a connection to a dead localhost port takes ~2 s to fail, so partial searches
+# take ~4 s and the failing write ~6.5 s (3 attempts). On Linux it is instant.
+{"op": "config", "shards": 3, "description": "ops kills shard 1 under traffic: partial answers, failing writes; restart: WAL replay restores everything", "actors": {
+  "fox": {"role": "user", "description": "writes docs on every shard, one while shard 1 is down"},
+  "elephant": {"role": "user", "description": "searches and checks the answers before, during and after the outage"},
+  "bot-1": {"role": "bot", "description": "background reader: keeps searching during the outage"},
+  "ops": {"role": "ops", "description": "kills shard 1 (crash), checks status, restarts it"}}}
+
+{"op": "label", "text": "0. Fox writes docs on every shard; elephant remembers the answers"}
+{"op": "upsert", "actor": "fox", "doc_id": "pre8", "text": "otterprobe pre8 lives on shard one"}
+{"op": "upsert", "actor": "fox", "doc_id": "pre14", "text": "otterprobe pre14 lives on shard one"}
+{"op": "upsert", "actor": "fox", "doc_id": "pre3", "text": "otterprobe pre3 lives on shard zero"}
+{"op": "upsert", "actor": "fox", "doc_id": "pre0", "text": "otterprobe pre0 lives on shard two"}
+{"op": "flush", "actor": "ops"}
+{"op": "search", "actor": "elephant", "query": "otterprobe", "strategy": "bm25", "save_as": "otters", "expect": ["pre8", "pre14", "pre3", "pre0"], "expect_ok": true}
+{"op": "search", "actor": "elephant", "query": "short selling borrowing shares", "strategy": "hybrid", "save_as": "base_q1", "expect_ok": true}
+{"op": "search", "actor": "elephant", "query": "roth ira tax free withdrawals", "strategy": "dense", "save_as": "base_q2", "expect_ok": true}
+
+{"op": "parallel", "lanes": [
+  {"name": "ops", "description": "crash shard 1, wait until the clients saw the damage, restart it", "ops": [
+    {"op": "label", "text": "1. Ops KILLs shard 1 (hard kill, like a crash) while bot-1 keeps querying"},
+    {"op": "sleep", "seconds": 0.3},
+    {"op": "kill_shard", "shard": 1},
+    {"op": "signal", "name": "shard1-down"},
+    {"op": "wait_signal", "name": "fox-wrote"},
+    {"op": "status"},
+    {"op": "label", "text": "3. Ops RESTARTs shard 1: base corpus + WAL replay before it answers /health"},
+    {"op": "restart_shard", "shard": 1}
+  ]},
+  {"name": "elephant", "description": "searches while shard 1 is down: partial answers", "ops": [
+    {"op": "wait_signal", "name": "shard1-down"},
+    {"op": "search", "query": "short selling borrowing shares", "strategy": "hybrid", "expect_partial": true, "expect_missing_shards": [1]},
+    {"op": "search", "query": "otterprobe", "strategy": "bm25", "expect_partial": true, "expect_absent": ["pre8", "pre14"], "expect": ["pre3", "pre0"]},
+    {"op": "signal", "name": "elephant-checked"}
+  ]},
+  {"name": "fox", "description": "writes while shard 1 is down", "ops": [
+    {"op": "wait_signal", "name": "elephant-checked"},
+    {"op": "label", "text": "2. Fox's write owned by shard 1 fails (retries, then 503); her write to shard 0 still works"},
+    {"op": "upsert", "doc_id": "down1", "version": 1, "text": "beaverprobe down1 written while its shard was dead", "expect_error": true},
+    {"op": "upsert", "doc_id": "pre3", "version": 2, "text": "otterprobe pre3 lives on shard zero", "expect_applied": true},
+    {"op": "signal", "name": "fox-wrote"}
+  ]},
+  {"name": "bot-1", "description": "background reader during the outage (soft checks: partial answers are expected)", "ops": [
+    {"op": "repeat", "until_done": "ops", "ops": [
+      {"op": "search", "query": "otterprobe", "strategy": "bm25", "expect_ok": true, "soft": true},
+      {"op": "sleep", "seconds": 0.1}
+    ]}
+  ]}
+]}
+
+{"op": "label", "text": "4. Every acked doc is back and elephant's answers are IDENTICAL to before the crash"}
+{"op": "search", "actor": "elephant", "query": "otterprobe", "strategy": "bm25", "expect_same_as": "otters", "expect_ok": true}
+{"op": "search", "actor": "elephant", "query": "short selling borrowing shares", "strategy": "hybrid", "expect_same_as": "base_q1", "expect_ok": true}
+{"op": "search", "actor": "elephant", "query": "roth ira tax free withdrawals", "strategy": "dense", "expect_same_as": "base_q2", "expect_ok": true}
+{"op": "search", "actor": "elephant", "query": "beaverprobe down1", "strategy": "bm25", "expect_absent": ["down1"]}
+
+{"op": "label", "text": "5. Fox retries the failed write: now it is applied"}
+{"op": "upsert", "actor": "fox", "doc_id": "down1", "version": 1, "text": "beaverprobe down1 written while its shard was dead", "expect_applied": true}
+{"op": "wait_visible", "actor": "elephant", "query": "beaverprobe down1", "doc_id": "down1", "strategy": "bm25", "timeout": 1.0}
+{"op": "status", "actor": "ops"}

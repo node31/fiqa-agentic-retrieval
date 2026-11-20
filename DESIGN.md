@@ -140,7 +140,7 @@ on this CPU) or errors on the new path. Keep the old index until the new one sur
   query (3 calls, 8K tokens; reserve-before-spend). A planner/verifier error degrades to "simple" / "all relevant"; a
   failed worker's list is dropped; if all fail, the system falls back to a direct search. Tested with a fake LLM in `tests/test_agents.py`.
 
-**Dev results.** Free backend: GitHub Copilot CLI, `claude-haiku-4.5`, 100 plain dev queries (seed 42) + the 100
+**Dev results (free model, used while building).** GitHub Copilot CLI, `claude-haiku-4.5`, 100 plain dev queries (seed 42) + the 100
 compound queries (`results/agent_eval_dev_copilot.json`, table from `python scripts/render_agent_table.py <file>`):
 
 | set | system | R@10 | MRR@10 | Cov@10 | LLM calls/q | tokens/q | errors |
@@ -158,7 +158,7 @@ single 0.288 < multi 0.354). Latency/cost columns from the Copilot run are **not
 ~30 s starting a process with its own ~26K-token harness prompt. Non-agentic latency is the Part B number (28.6 / 40.5 ms).
 Real latency and $/query come from the Azure run below.
 
-**What the traces say** (per-query traces are in the JSON):
+**What the dev traces say** (per-query traces are in the JSON):
 - The planner decomposed **100 / 100** compound queries. On the plain set it correctly kept **91 / 100** simple
   (56 by the free gate, so no LLM call; 35 by the LLM). The multi-agent's whole loss on plain comes from the **9 false
   decompositions**: recall on those 9 fell from 0.696 (baseline) to 0.400. On the other 91, multi = baseline exactly.
@@ -169,24 +169,60 @@ Real latency and $/query come from the Azure run below.
   no LLM and the verifier is one batched call. Its p95 is also bounded: the workers are parallel and the call count is fixed
   (≤ 2 sequential LLM calls), while the single agent's steps are sequential and vary from 0 to 3.
 
-**Decision (routing policy).** Ship **one** agentic path: the multi-agent orchestrator, used as a router:
-1. Free gate says simple → serve the **non-agentic** search (no LLM, 29 ms).
-2. Otherwise one planner call. If it says simple → non-agentic results. If it decomposes → workers + verifier + interleave.
+*Dev-time conclusion (superseded by the Azure run below):* ship only the multi-agent path for compound questions, and
+don't ship the single agent, because with haiku it cost ~1.7 calls per plain query for slightly worse quality.
 
-This keeps the plain-query quality of the baseline (91% of plain queries never leave it), captures the compound gain
-(R@10 0.20 → 0.34, Coverage 0.10 → 0.26 on dev), and spends LLM tokens only where they help. **Don't ship** the single
-agent as a general wrapper: on plain queries it costs ~1.7 calls for slightly worse quality, and on compound it matches
-multi at ~3× the tokens. **Next fix:** the 9 false decompositions. Make the planner prompt require two
-*independent information needs*, and require ≥ 2 sub-queries whose top-10 lists overlap < 50% before trusting a split.
-**Known limitation:** when a worker fails, the surviving sub-query list fills every slot. Reserving ~3 slots for the
-full-question list would protect the failed half's coverage.
+**Final numbers on Azure AI Foundry `gpt-6-sol`** (`results/agent_eval.json`, run by the user). Responses API, reasoning
+effort `low`, no temperature parameter (reasoning models fix sampling). Search was `--search local`, i.e. the single-node
+router over the same indexes. Quality is identical to the 3-shard service (§3), and the search part of the latency is
+~30 ms either way, so it does not change the picture. Every response is cached on disk, so reruns are deterministic and free.
+0 errors, wall time 394 s for 600 system-query runs.
 
-**Final numbers on Azure AI Foundry `gpt-6-sol`** (Responses API; reasoning effort `low`; no temperature parameter,
-because reasoning models fix sampling. Every response is cached on disk, so reruns are deterministic and free). Run by the
-user: `python scripts/agent_eval.py --backend azure --dry-run`, then `--backend azure --confirm-spend --max-usd 2`.
-The table is rendered with `python scripts/render_agent_table.py results/agent_eval.json`. **Pending: paste here, with total spend.**
-Prices are placeholders (`PRICE_PER_1M_INPUT` / `PRICE_PER_1M_OUTPUT` in `src/config.py`, defaults $1 / $4 per 1M tokens) until
-the deployment's actual rates are set; the dev run's estimate at those prices was $0.64 for all 600 system-query runs.
+| set | system | R@10 | MRR@10 | Cov@10 | LLM calls/q | tokens/q | $/q | p50 / p95 s |
+|---|---|---|---|---|---|---|---|---|
+| plain | baseline | 0.502 | 0.485 | – | 0.00 | 0 | 0 | 0.06 / 0.08 |
+| plain | single | **0.547** | **0.642** | – | 1.96 | 2,118 | 0.0025 | 4.09 / 7.27 |
+| plain | multi | 0.481 | 0.466 | – | 0.51 | 130 | 0.0002 | 0.03 / 3.59 |
+| compound | baseline | 0.204 | 0.365 | 0.10 | 0.00 | 0 | 0 | 0.08 / 0.10 |
+| compound | single | **0.400** | **0.609** | **0.40** | 2.70 | 3,380 | 0.0039 | 5.75 / 9.28 |
+| compound | multi | 0.355 | 0.518 | 0.32 | 2.00 | 925 | 0.0013 | 3.40 / 4.75 |
+
+**Spend:** ≈ 655K tokens in total (≈ 610K input, ≈ 45K output), **$0.79 at placeholder prices** ($1 / $4 per 1M tokens,
+`PRICE_PER_1M_INPUT` / `PRICE_PER_1M_OUTPUT` in `src/config.py`; the real gpt-6-sol rates were not known). The `--dry-run`
+estimate was $0.47 (`results/agent_eval_dryrun.json`). It under-estimated by ~40% because the dry run uses the fake policy,
+which makes fewer and shorter calls than the real model.
+
+**What the Azure traces say** (comparisons are per query, against the baseline):
+- **Single agent, plain:** recall better on 7 queries, worse on 0. The first relevant hit moved up in 30 and down in 3. It
+  changed the top-1 in 55 / 100. It ended with its own picks in 100 / 100; steps used: 1 → 29, 2 → 46, 3 → 25.
+- **Single agent, compound:** recall better on 55, worse on 3; it used all 3 steps on 72%.
+- **Multi agent, plain:** the planner split 7 plain queries (56 kept by the free gate, 37 by the LLM). On those 7, recall fell
+  0.824 → 0.514. That is the whole plain loss; the other 93 equal the baseline exactly.
+- **Multi agent, compound:** decomposed 100 / 100; recall better on 50, worse on 5. The verifier rewrote a sub-query in 16 / 100
+  (36 with haiku).
+- **Single vs multi on compound, per query:** single minus multi is R@10 +0.045 (bootstrap 95% CI [+0.007, +0.085]; 30
+  wins / 17 losses, sign test p ≈ 0.08) and Cov@10 +0.08 (CI [+0.01, +0.15]; 11 / 3, p ≈ 0.06). The difference is real
+  but small, at n = 100.
+
+**Why the conclusion flipped vs dev.** The single agent's final step is an *LLM rerank over 200-char snippets*. haiku did
+it badly (plain MRR 0.485 → 0.432), and gpt-6-sol does it well (0.485 → 0.642, with 0 recall losses). The multi-agent's LLM
+never ranks: it only splits and checks, and workers/interleave do the ordering. So a stronger model barely helps it
+(compound R@10 0.335 → 0.355). **Lesson: which architecture wins depends on the model; re-run the eval when the model changes.**
+
+**Decision (routing policy, final).**
+1. Free gate says simple → **non-agentic** search (no LLM, ~30 ms p50 through the router). This stays the default for
+   plain traffic. The single agent adds +0.045 R@10 / +0.157 MRR, but at ~4 s p50 and ~2K tokens per query. Offer it as an
+   **opt-in "deep search"** for users who accept that latency.
+2. Otherwise one planner call. If it says simple → non-agentic results.
+3. Compound → the **single agent** when quality matters (R@10 0.400, Cov@10 0.40, p95 9.3 s, 3,380 tokens/q).
+   Fall back to the **multi-agent** path when the latency or cost budget is tight (p95 4.7 s, ~¼ of the tokens, R@10 0.355,
+   Cov@10 0.32). Both beat one search by a wide margin (R@10 0.204, Cov@10 0.10).
+
+**Next fixes:** (a) the 7 false plain decompositions: require two *independent information needs*, and require ≥ 2
+sub-queries whose top-10 lists overlap < 50% before trusting a split. (b) A hybrid: multi-agent retrieval followed by one
+single-agent-style rerank call, which may get the single agent's ordering at multi's latency. **Known limitation:** when
+a worker fails, the surviving sub-query list fills every slot. Reserving ~3 slots for the full-question list would
+protect the failed half's coverage.
 
 ## 8. One counterintuitive finding: sharding made latency *worse*
 
@@ -239,6 +275,7 @@ buys capacity (memory, write throughput, failure isolation), not latency. A clos
 
 ---
 **LLM / spend disclosure:** dev runs used a free backend (GitHub Copilot CLI, claude-haiku-4.5) and the scripted fake LLM.
-Final agent numbers: Azure AI Foundry deployment `gpt-6-sol` (see §7 for the model, temperature/reasoning settings and total spend).
+Final agent numbers: Azure AI Foundry deployment `gpt-6-sol`, reasoning effort `low`, ≈ 655K tokens in total,
+$0.79 at placeholder prices of $1 / $4 per 1M input / output tokens (see §7).
 Compound-query rewrites were written in-session by GitHub Copilot from the two query texts only (no gold passages);
 10 were selected for human hand-check (`data/compound_review_sheet.md`). Code volume (`python scripts/count_loc.py`): **1,686 logical code lines** in `src/` excluding the data loader (2,881 physical lines; 41% are docstrings/comments, by design: this repo doubles as a study guide). Scripts, tests, toys and docs are extra.

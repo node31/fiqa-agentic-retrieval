@@ -38,12 +38,16 @@ passages) matter. In the project the multi-agent design was cheaper than one lon
 Scores from different sub-queries aren't comparable (just like local IDF in ch07), so allocate *slots*, not scores.
 The project's numbers on 100 real compound questions: Coverage@10 went from 0.10 (one search) to 0.26 (multi-agent).
 
-**6.** Route by question type:
-- **plain question → no agent.** Use the plain hybrid search: it's better (R 0.502 vs 0.494 single-agent / 0.476 multi-agent), ~20 ms instead of
-  seconds, and free.
-- **compound question → multi-agent** (planner splits, workers search each part, interleave). Recall@10 0.204 → 0.335,
-  Coverage@10 0.10 → 0.26.
-- **Who decides:** the planner itself. It kept 91/100 plain questions as one search and split 100/100 compound ones.
+**6.** Route by question type (numbers from the final Azure gpt-6-sol run; the haiku dev run is in brackets):
+- **plain question → no agent by default.** The plain hybrid search is ~30 ms and free. With gpt-6-sol the single agent is
+  better on plain (R 0.547 vs 0.502, MRR 0.642 vs 0.485), but costs ~4 s and ~2K tokens, so offer it only as an opt-in
+  "deep search". [With haiku the agents were *worse* on plain: R 0.494 single / 0.476 multi.]
+- **compound question → an agent.** Single agent for quality (R@10 0.204 → 0.400, Coverage@10 0.10 → 0.40, p95 9.3 s), or
+  multi-agent under a latency/cost budget (R@10 0.355, Coverage 0.32, p95 4.7 s, ~¼ of the tokens). [haiku: multi 0.335 /
+  0.26, single 0.327 / 0.29.]
+- **Who decides:** a free word/punctuation gate, then the planner. With gpt-6-sol it kept 93/100 plain questions as one
+  search and split 100/100 compound ones.
 - **Guardrails:** a step cap, a token budget and a fallback to the plain search on any failure.
+- **Lesson:** the best architecture changed when the model changed, so re-run the eval whenever you swap the model.
 
 This is DESIGN.md §7. The `--full` ch08 check shows the same effect with your own loop: one search vs your agent on 100 real two-part questions.

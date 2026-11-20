@@ -53,13 +53,17 @@ python examples/21_query_rewrite_agent.py     # the real run_single_agent with a
 
 ## 6. Observe it in the real system
 
-`results/agent_eval_dev_copilot.json` (free dev backend) and `results/agent_eval.json` (Azure, your run).
-DESIGN.md §7 tabulates them. Look at `per_query[...].trace` to see the actual rewrites.
+`results/agent_eval_dev_copilot.json` (free dev backend, haiku) and `results/agent_eval.json` (Azure gpt-6-sol, your run).
+DESIGN.md §7 tabulates both. On Azure the single agent was the best system on quality: plain R@10 0.547 / MRR 0.642 (baseline
+0.502 / 0.485), compound R@10 0.400 / Coverage 0.40, at 2–3 calls, 2–3.4K tokens and a 4–6 s p50 per query.
+Look at `per_query[...].trace` to see the actual rewrites.
 
 ## 7. Pitfalls and interview questions
 
 - **Transcript growth**: step n re-sends n result blocks, so tokens grow ~quadratically with steps (toy 26).
-- **LLM-as-reranker on 200-char snippets** can *hurt* MRR: it judges on less text than the retriever saw.
+- **LLM-as-reranker on 200-char snippets** can *hurt or help*, depending on the model. With claude-haiku-4.5 it hurt plain
+  MRR (0.485 → 0.432), because it judged on less text than the retriever saw. With gpt-6-sol it helped a lot (0.485 → 0.642,
+  0 recall losses on 100 plain queries). Always measure with the model you'll ship.
 - **Over-searching**: models like to "be thorough". Each extra search costs latency and tokens; the
   prompt says to search again only if part of the question is missing.
 - *Q: How would you make it cheaper?* Smaller model for the decision, shorter snippets, skip the LLM

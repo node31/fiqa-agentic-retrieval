@@ -56,6 +56,27 @@ by itself, because its "LLM" is just a regex splitter. On compound queries, deco
 Coverage@10 from 0.10 (one search) to 0.31 (multi-agent). On plain queries it slightly *hurts* recall
 (0.502 → 0.476), because it splits questions that should not be split. That is why the gate and the routing policy exist.
 
+**The real run (Azure gpt-6-sol, `results/agent_eval.json`).** 600 system-query runs, 0 errors, ≈ 655K tokens,
+**$0.79 at placeholder prices** ($1 / $4 per 1M input / output tokens).
+
+| set | system | R@10 | MRR@10 | Cov@10 | calls/q | tokens/q | $/q | p50 / p95 s |
+|---|---|---|---|---|---|---|---|---|
+| plain | baseline | 0.502 | 0.485 | – | 0 | 0 | 0 | 0.06 / 0.08 |
+| plain | single | 0.547 | 0.642 | – | 1.96 | 2,118 | 0.0025 | 4.09 / 7.27 |
+| plain | multi | 0.481 | 0.466 | – | 0.51 | 130 | 0.0002 | 0.03 / 3.59 |
+| compound | baseline | 0.204 | 0.365 | 0.10 | 0 | 0 | 0 | 0.08 / 0.10 |
+| compound | single | 0.400 | 0.609 | 0.40 | 2.70 | 3,380 | 0.0039 | 5.75 / 9.28 |
+| compound | multi | 0.355 | 0.518 | 0.32 | 2.00 | 925 | 0.0013 | 3.40 / 4.75 |
+
+Three cost lessons from this run:
+- **The dry run under-estimated by ~40%** ($0.47 estimated vs $0.79 actual). `--dry-run` replays the *fake* policy, which
+  makes fewer and shorter calls than a real model (the real single agent averaged 2.70 calls on compound queries). Treat a
+  dry-run estimate as a lower bound and set `--max-usd` with headroom.
+- **Input tokens dominate.** Roughly 610K of the 655K tokens were input: prompts re-send search results, while replies are a
+  short JSON. Shorter snippets and fewer results per step cut cost more than a lower output cap does.
+- **Cost per useful query.** The single agent costs ~19× multi on plain queries (2,118 vs 130 tokens), because multi's free
+  gate skips the LLM for most of them. Routing is the biggest cost lever.
+
 ## 7. Pitfalls and interview questions
 
 - **Gold leakage into rewrites**: the compound rewrites must not add words from gold passages. Ours were written

@@ -80,8 +80,11 @@ full-question search. Scores across sub-queries aren't comparable, so a score me
 **Q: Show me partial failure.** `tests/test_agents.py::test_orchestrator_partial_failure_still_returns_results`
 and `python examples/24_partial_failure.py`.
 
-**Q: Ship or not?** See DESIGN.md §7 for the numbers and routing policy. Short version: route compound-looking
-questions to the multi-agent path, keep plain questions on the non-agentic path.
+**Q: Ship or not?** See DESIGN.md §7 for the numbers and routing policy. Short version, from the Azure gpt-6-sol run:
+plain questions stay on the non-agentic path (~30 ms, free); the single agent is an opt-in "deep search" (+0.045 R@10,
++0.157 MRR, but ~4 s). For compound questions, use the single agent for quality (R@10 0.400, Cov 0.40, p95 9.3 s), or the
+multi-agent path under a latency/cost budget (R@10 0.355, Cov 0.32, p95 4.7 s, 925 vs 3,380 tokens). The haiku dev run had
+favoured multi; the flip is itself a good debrief story: the eval decides, and it must be re-run when the model changes.
 
 ## System design
 

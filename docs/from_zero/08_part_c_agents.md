@@ -180,7 +180,7 @@ Dev evaluation: 100 plain dev queries (seed 42) + the 100 compound ones, through
 | compound | single agent | 0.327 | **0.513** | **0.29** | 2.24 | 2,681 |
 | compound | multi-agent | **0.335** | 0.493 | 0.26 | 2.00 | 940 |
 
-**How to read it:**
+**How to read it (haiku dev run; the Azure run below changes part of this):**
 - **Plain questions: agents don't help** (slightly worse). There was nothing to fix, and the LLM's re-ordering lost some MRR.
 - **Compound questions: agents help a lot.** Recall goes from 0.20 to ~0.33 (+60% relative), and Coverage from 0.10 to 0.26–0.29.
 - Single vs multi: similar quality, but multi uses **~3× fewer tokens** and fewer calls. Why is explained just below.
@@ -237,12 +237,49 @@ On the 100 compound questions every multi-agent run used exactly 2 calls, and th
 
 **The trade-off.** Multi is cheap because its flow is **fixed**: plan once, search in parallel, verify once. The single agent is
 **adaptive**: it reads the results and decides what to search next (up to 3 times), and pays for that freedom in tokens. On
-compound questions the fixed flow did as well (Recall 0.335 vs 0.327) for about a third of the tokens. When a fixed recipe
-handles the task, code beats an LLM loop on both cost and predictability.
+compound questions, with haiku, the fixed flow did as well (Recall 0.335 vs 0.327) for about a third of the tokens. When a
+fixed recipe handles the task, code beats an LLM loop on both cost and predictability. *But see the Azure run below: with a
+stronger model, the adaptive loop's freedom starts paying off.*
 
-**Decision: route.** Simple → plain search (fast, free, best on plain). Compound (gate + planner say so) → multi-agent.
-Don't wrap every query in an agent. Next fix: stop the 9 false splits. Final cost/latency numbers come from the Azure
-`gpt-6-sol` run you'll do yourself (`DESIGN.md` §7).
+### The final run: Azure `gpt-6-sol` (your run)
+
+Same 200 queries and the same code, only the LLM changed (`results/agent_eval.json`; reasoning effort `low`; search =
+single-node router, which gives the same quality as the 3 shards). 0 errors, 394 s, ≈ 655K tokens,
+**$0.79 at placeholder prices** ($1 / $4 per 1M input / output tokens; the real rates weren't known).
+
+| set | system | Recall@10 | MRR@10 | Coverage@10 | LLM calls / q | tokens / q | p50 / p95 s |
+|---|---|---|---|---|---|---|---|
+| plain | baseline (no LLM) | 0.502 | 0.485 | – | 0 | 0 | 0.06 / 0.08 |
+| plain | single agent | **0.547** | **0.642** | – | 1.96 | 2,118 | 4.09 / 7.27 |
+| plain | multi-agent | 0.481 | 0.466 | – | 0.51 | 130 | 0.03 / 3.59 |
+| compound | baseline | 0.204 | 0.365 | 0.10 | 0 | 0 | 0.08 / 0.10 |
+| compound | single agent | **0.400** | **0.609** | **0.40** | 2.70 | 3,380 | 5.75 / 9.28 |
+| compound | multi-agent | 0.355 | 0.518 | 0.32 | 2.00 | 925 | 3.40 / 4.75 |
+
+**What changed vs the haiku dev run:**
+- **The single agent now wins everywhere on quality.** On plain questions it improved recall on 7 queries and hurt it on
+  **0**, and moved the first relevant hit up on 30 (down on 3). Its last step is "pick the final 10 from everything you
+  saw", i.e. an **LLM reranker over 200-char snippets**. haiku was a bad reranker (plain MRR 0.485 → 0.432); gpt-6-sol is a
+  good one (0.485 → 0.642).
+- **The multi-agent barely moved** (compound recall 0.335 → 0.355). Its LLM never ranks anything; it only splits the
+  question and checks sub-results. A smarter model can't improve a step it doesn't do.
+- **The token story still holds:** multi used 925 tokens per compound question vs single's 3,380 (3.7×), for the same
+  reasons as above. Its p95 (4.7 s) is half of single's (9.3 s), because the flow is fixed at 2 calls.
+- **Is the single > multi gap real?** On compound questions, per query: recall +0.045 (bootstrap 95% CI +0.007 to +0.085),
+  coverage +0.08 (CI +0.01 to +0.15). It is real but small at n = 100.
+- The multi-agent's plain-set loss is again entirely the false splits: 7 this time, whose recall fell 0.82 → 0.51.
+
+> 💡 **Lesson:** "which architecture is best" is not a property of the architecture alone. It depends on the model. An
+> eval you ran with one model is a decision you must re-check when you swap the model.
+
+**Decision: route, now with two agentic options.**
+- Simple (free gate / planner) → plain search: ~30 ms, free. The single agent *does* improve plain questions (+0.045
+  recall, +0.157 MRR), but costs ~4 s and ~2K tokens each, so offer it only as an opt-in "deep search".
+- Compound → **single agent** when quality matters most (best recall and coverage, p95 ≈ 9 s).
+- Compound under a tight latency or cost budget → **multi-agent** (p95 ≈ 5 s, ~¼ of the tokens, still far better than
+  one search: coverage 0.32 vs 0.10).
+- Next fix: stop the false splits. Worth trying: multi-agent retrieval plus *one* final rerank call by the strong model,
+  which could give single's ordering at multi's latency. Full write-up: `DESIGN.md` §7.
 
 ## 8.7 Three LLM backends, and cost control
 

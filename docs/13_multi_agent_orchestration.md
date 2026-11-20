@@ -74,6 +74,10 @@ python examples/24_partial_failure.py     python examples/25_slot_allocation.py
 - Sub-queries that aren't standalone ("how is *it* taxed?") retrieve garbage, so the planner prompt demands standalone queries.
 - The verifier judges 200-char snippets. It can be fooled, and it only gets one retry.
 - *Q: When is multi-agent NOT worth it?* Simple questions (most FiQA queries): it adds latency and cost for no recall gain. Hence the routing policy in DESIGN.md.
+- *Q: Is multi-agent always better than one agent on compound questions?* No; it depends on the model. With haiku they tied
+  (R@10 0.335 vs 0.327). With gpt-6-sol the single agent won (0.400 vs 0.355, Coverage 0.40 vs 0.32), because its final
+  step is an LLM rerank and a strong model reranks well, while multi's LLM never ranks. Multi still wins on cost and tail
+  latency: 925 vs 3,380 tokens per question, p95 4.7 s vs 9.3 s (DESIGN.md §7).
 
 ## 8. Exercises
 

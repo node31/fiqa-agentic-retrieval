@@ -365,9 +365,9 @@ just nonsense rankings). So every search must use *one* model end to end.
 stateDiagram-v2
     [*] --> Serving_A: normal
     Serving_A --> Building_B: 1. migrate: each shard creates an empty B index<br/>+ turns ON dual-write (new writes → A and B)
-    Building_B --> Ready_B: 2. backfill: embed all old docs with B in the background<br/>(throttled; skips docs changed since the snapshot)
+    Building_B --> Ready_B: 2. backfill: embed all old docs with B in the background<br/>(throttled, skips docs changed since the snapshot)
     Ready_B --> Serving_B: 3. cutover: router flips active_model = B<br/>(only if EVERY shard reports B ready)
-    Serving_B --> Serving_A: 4. rollback: flip back (instant; A is still up to date)
+    Serving_B --> Serving_A: 4. rollback: flip back (instant, A is still up to date)
     Serving_B --> Final_B: 5. finalize: drop A (no more rollback)
 ```
 

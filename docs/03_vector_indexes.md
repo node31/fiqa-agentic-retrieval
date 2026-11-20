@@ -24,7 +24,7 @@ section captains, who point you to their tallest friends, and so on. Usually rig
 ## 3. Diagram
 
 ```
-Flat:  q · [v1 v2 v3 ... v19,206]  -> one BLAS matrix-vector product per query (1.4 ms per 19K-vector shard, measured)
+Flat:  q · [v1 v2 v3 ... v19,167]  -> one BLAS matrix-vector product per query (1.4 ms per 19K-vector shard, measured)
 HNSW:  top layer (few nodes) -> greedy hop -> ... -> bottom layer (all nodes) -> best-first search
 IVF:   q -> nearest nprobe of nlist centroids -> scan only those lists
 ```

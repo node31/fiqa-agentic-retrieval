@@ -37,7 +37,8 @@ embedded documents too) would be ~150 MB. That's a real design option for memory
 - `tests/test_integration_service.py`: 4 tests over 3 real shard processes: idempotency, freshness (searchable
   right after the ack, < 1 s for write + 3 searches), delete visibility in both indexes, hard-kill + WAL recovery + partial results.
 - `results/migration_demo.json`: 2,045 queries during migrate → cutover → rollback, **0 failed**. Index sizes
-  per shard are equal across models (19,206 / 19,288 / 19,260 docs). All 116 docs written during the run are found by both models.
+  per shard are equal across models (19,206 / 19,288 / 19,260 docs, i.e. the fresh 19,167 / 19,254 / 19,217 plus the
+  116 docs written during the run). All 116 written docs are found by both models.
 
 ## Questions to test yourself
 1. Where would you look first if sharded nDCG were 0.4185 instead of 0.4190?

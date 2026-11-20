@@ -47,7 +47,7 @@ sequenceDiagram
 ## 4. How this repo implements it
 
 - **Partitioning**: `crc32(doc_id) % N`. Stable across processes (never Python's salted `hash()`).
-  Balance: 19,206 / 19,288 / 19,260 docs across the 3 shards.
+  Balance: 19,167 / 19,254 / 19,217 docs across the 3 shards (sum 57,638).
 - **Router embeds the query once** and ships the vector, instead of having every shard re-encode it (3× CPU).
 - **Timeouts** on every shard call (`SHARD_TIMEOUT_S = 0.5`). Failure policy `partial` (default)
   returns what arrived and sets `partial: true, missing_shards: [i]`. `fail` returns HTTP 503.

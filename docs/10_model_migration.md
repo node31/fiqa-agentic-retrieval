@@ -72,7 +72,9 @@ Fresh 3-shard cluster; 4 query threads + 1 writer (2 upserts/s) for the whole ru
 
 - **2,045 queries, 0 failed** (no HTTP error, no partial result, no empty result); 1,711 served by minilm and 334 by bge-small.
 - **116 docs written during the run, all retrievable by BOTH models' dense indexes**, and per-shard index
-  sizes are identical for both models (e.g. shard 0: 19,206 / 19,206 / 19,206 docs).
+  sizes are identical for both models (e.g. shard 0: 19,206 docs, 19,206 minilm vectors, 19,206 bge-small vectors).
+  These are the sizes *after* the demo's writes: 57,638 loaded + 116 written = 57,754 docs, so each shard is a bit
+  larger than its fresh 19,167 / 19,254 / 19,217.
 - Under this load p50 ≈ 140 ms. That's 4 concurrent clients + writes (each write embeds with 2 models)
   sharing one router process and 4 torch threads per process. It is a *load* test, not the serial
   latency benchmark of [07](07_benchmarking_latency_memory.md).

@@ -18,10 +18,13 @@ pieces, put each piece in its own process/machine, and put a **router** in front
 ```mermaid
 flowchart LR
     C["Client<br/>(eval.py, search.py, agents)"] -->|"HTTP POST /search"| R["ROUTER :8000<br/>the only door"]
-    R --> S0["SHARD 0 :8101<br/>~19,206 docs<br/>BM25 + vectors"]
-    R --> S1["SHARD 1 :8102<br/>~19,288 docs"]
-    R --> S2["SHARD 2 :8103<br/>~19,260 docs"]
+    R --> S0["SHARD 0 :8101<br/>19,167 docs<br/>BM25 index + vector index"]
+    R --> S1["SHARD 1 :8102<br/>19,254 docs<br/>BM25 index + vector index"]
+    R --> S2["SHARD 2 :8103<br/>19,217 docs<br/>BM25 index + vector index"]
 ```
+
+Every shard is the same program holding **both** indexes (BM25 and faiss vectors) for **its own third** of the
+docs. A search goes to **all** shards. A write goes only to the **one** shard that owns that doc (§7.2).
 
 At 57K docs we don't *need* this (one process does it in 21 ms). The assignment wants us to build it correctly
 anyway, because the hard part is correctness, not size.
@@ -34,10 +37,10 @@ anyway, because the hard part is correctness, not size.
 
 ```
 doc_id "12345" → crc32 → 3,421,846,044 → % 3 → 0 → shard 0
-doc_id "12346" → crc32 →   ...           → % 3 → 2 → shard 2
+doc_id "12346" → crc32 → 1,392,274,342 → % 3 → 1 → shard 1
 ```
 - Every process computes the same answer with no lookup table: the router knows where to send a write.
-- It balances well: 19,206 / 19,288 / 19,260 docs.
+- It balances well: 19,167 / 19,254 / 19,217 docs (sum 57,638).
 - **Pitfall:** Python's built-in `hash("12345")` is **randomised per process** (for security). If the router and a shard each
   used `hash()`, they'd disagree about where documents live. Use `crc32`.
 - **Pitfall:** changing 3 → 4 shards with `% N` moves ~75% of docs. *Consistent hashing* moves only ~1/N (toy 15).
@@ -63,9 +66,9 @@ sequenceDiagram
         R->>S1: /stats {terms}
         R->>S2: /stats {terms}
     end
-    S0-->>R: N=19,206, total_len, df(what)=5,201...
-    S1-->>R: N=19,288, ...
-    S2-->>R: N=19,260, ...
+    S0-->>R: N=19,167, total_len, df(what)=5,345...
+    S1-->>R: N=19,254, df(what)=5,152...
+    S2-->>R: N=19,217, df(what)=5,222...
     Note over R: GLOBAL stats = sum: N=57,638, df(what)=15,719 ...
     par Phase 2: search with global stats
         R->>S0: /search {terms, global stats, vector q, model, depth 100}

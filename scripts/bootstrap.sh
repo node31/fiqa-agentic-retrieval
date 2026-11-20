@@ -95,10 +95,19 @@ step "1/6 configuration"
 if [ ! -f .env ]; then cp .env.example .env; ok "created .env from .env.example (LLM keys optional, not needed to run search)"; else ok ".env exists"; fi
 mkdir -p data/raw artifacts results/runs
 # PyPI mirror: honour PIP_INDEX_URL, else the host's pip config (corporate networks), else pypi.org.
+# Tries pip3 / pip / python3 -m pip, then reads the pip config files directly (works without Python).
 if [ -z "${PIP_INDEX_URL:-}" ]; then
-  for p in pip3 pip; do
-    if command -v "$p" >/dev/null 2>&1; then
-      PIP_INDEX_URL="$("$p" config get global.index-url 2>/dev/null || true)"
+  for p in "pip3" "pip" "python3 -m pip"; do
+    if command -v "${p%% *}" >/dev/null 2>&1; then
+      PIP_INDEX_URL="$($p config get global.index-url 2>/dev/null || true)"
+      [ -n "$PIP_INDEX_URL" ] && break
+    fi
+  done
+fi
+if [ -z "${PIP_INDEX_URL:-}" ]; then
+  for f in "${PIP_CONFIG_FILE:-}" "$HOME/.config/pip/pip.conf" "$HOME/.pip/pip.conf" "$HOME/Library/Application Support/pip/pip.conf" /etc/pip.conf; do
+    if [ -n "$f" ] && [ -f "$f" ]; then
+      PIP_INDEX_URL="$(sed -n -E 's/^[[:space:]]*index-url[[:space:]]*=[[:space:]]*([^[:space:]]+).*/\1/p' "$f" | head -n1)"
       [ -n "$PIP_INDEX_URL" ] && break
     fi
   done

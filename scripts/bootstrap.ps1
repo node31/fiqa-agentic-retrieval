@@ -75,11 +75,22 @@ Step "1/6 configuration"
 if (-not (Test-Path .env)) { Copy-Item .env.example .env; Ok "created .env from .env.example (LLM keys optional)" } else { Ok ".env exists" }
 foreach ($d in "data\raw", "artifacts", "results\runs") { New-Item -ItemType Directory -Force $d | Out-Null }
 # PyPI mirror: PIP_INDEX_URL, else the host's pip config (corporate networks), else pypi.org.
+# Tries pip / python -m pip / py -m pip, then reads the pip.ini files directly (works without Python).
 if (-not $env:PIP_INDEX_URL) {
-    foreach ($p in "pip", "pip3", "py") {
-        if (Get-Command $p -ErrorAction SilentlyContinue) {
-            $u = if ($p -eq "py") { & py -m pip config get global.index-url 2>$null } else { & $p config get global.index-url 2>$null }
+    $tries = @(@("pip"), @("pip3"), @("python", "-m", "pip"), @("py", "-m", "pip"))
+    foreach ($t in $tries) {
+        if (Get-Command $t[0] -ErrorAction SilentlyContinue) {
+            $rest = @(); if ($t.Count -gt 1) { $rest = $t[1..($t.Count - 1)] }
+            $u = & $t[0] @rest config get global.index-url 2>$null
             if ($LASTEXITCODE -eq 0 -and $u) { $env:PIP_INDEX_URL = "$u".Trim(); break }
+        }
+    }
+}
+if (-not $env:PIP_INDEX_URL) {
+    foreach ($f in @("$env:APPDATA\pip\pip.ini", "$env:USERPROFILE\pip\pip.ini", "$env:ProgramData\pip\pip.ini")) {
+        if (Test-Path $f) {
+            $m = Select-String -Path $f -Pattern '^\s*index-url\s*=\s*(\S+)' | Select-Object -First 1
+            if ($m) { $env:PIP_INDEX_URL = $m.Matches[0].Groups[1].Value; break }
         }
     }
 }

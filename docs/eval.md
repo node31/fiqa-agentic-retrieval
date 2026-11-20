@@ -359,6 +359,73 @@ How to read it:
 - **Memory with no model:** BM25 loads no embedding model, but `src.eval` still imports PyTorch (to set threads), numpy
   and scipy. Those libraries are most of the 236 MB. The index for 24 docs is a few kilobytes.
 
+#### The `stratified` block, slowly
+
+```json
+"stratified": {
+  "doclen:gold_in_top10pct_longest": {"recall@10": 1.0, "n": 1},
+  "doclen:gold_not_longest":         {"recall@10": 1.0, "n": 3},
+  "qlen:medium(5-15)":               {"recall@10": 1.0, "n": 4}
+}
+```
+
+**What "stratified" means.** `overall` is one average over *all* questions. *Stratified* means: split the questions
+into groups (*strata*), and average Recall@10 **separately inside each group**. A weakness can hide inside a good
+average. For example, "short questions do badly" disappears when 13 short questions are averaged with 487 others. The assignment
+asks for this breakdown (A2). Each entry reads: `"group name": {"recall@10": average within this group, "n": how many
+questions are in it}`.
+
+**Two independent groupings.** Every question is put into **one `qlen:` group and one `doclen:` group**. That's why
+the `n`s add up to 4 **twice** (1 + 3 = 4, and 4 = 4), not to 8.
+
+| prefix | the question it asks | how the group is chosen (`src/eval.py`) |
+|---|---|---|
+| `qlen:` | "is the **question** short, medium or long?" | `length_bucket()`: count words: under 5 → `short(<5)`, 5–15 → `medium(5-15)`, over 15 → `long(>15)` |
+| `doclen:` | "is a correct **answer document** one of the longest docs?" | `long_doc_ids()` sorts every doc by word count and keeps the top 10%. If **any** of the question's gold docs is in that set → `gold_in_top10pct_longest`, else `gold_not_longest` |
+
+**Your 4 questions, sorted into groups.** The 10% longest docs: `int(24 × 0.10)` = **2 docs**, doc `2` (17 words) and
+doc `1` (15 words).
+
+| question | words | → `qlen:` group | gold docs | a gold doc among {1, 2}? | → `doclen:` group | its Recall@10 |
+|---|---|---|---|---|---|---|
+| q1 "how does short selling work" | 5 | medium | 1, 2 | **yes** | `gold_in_top10pct_longest` | 2/2 = 1.0 |
+| q2 "roth ira vs traditional 401k taxes" | 6 | medium | 5, 6 | no | `gold_not_longest` | 2/2 = 1.0 |
+| q3 "how big should an emergency fund be" | 7 | medium | 7 | no | `gold_not_longest` | 1/1 = 1.0 |
+| q4 "pay off mortgage early or invest" | 6 | medium | 3, 4 | no | `gold_not_longest` | 2/2 = 1.0 |
+
+So:
+- `doclen:gold_in_top10pct_longest` = average of {q1} = **1.0, n = 1**
+- `doclen:gold_not_longest` = average of {q2, q3, q4} = **1.0, n = 3**
+- `qlen:medium(5-15)` = average of all 4 = **1.0, n = 4**. Note "how does short selling work" has exactly 5 words,
+  so it is medium, not short (`< 5` is short).
+- `qlen:short(<5)` and `qlen:long(>15)` are **missing**, not zero: a group only appears if at least one question
+  falls into it.
+
+**Why everything is 1.0.** Every gold doc of every question is somewhere in its top 10 (see the table above), so each
+question's recall is 1.0, and the average of 1.0s is 1.0. With 24 docs the toy is too easy to show any difference.
+This is a **plumbing check**, not a finding. And `n = 1` would prove nothing even if the number were different.
+
+**What the same block shows on real FiQA** (500 dev questions, `results\runs\*.json`). Here the groups are big enough
+to say something:
+
+| group | n | BM25 | dense (MiniLM) | hybrid (linear, α = 0.7) |
+|---|---|---|---|---|
+| `qlen:short(<5)` | 13 | **0.231** | 0.423 | 0.385 |
+| `qlen:medium(5-15)` | 403 | 0.316 | 0.471 | 0.491 |
+| `qlen:long(>15)` | 84 | 0.315 | 0.454 | 0.510 |
+| `doclen:gold_in_top10pct_longest` | 185 | 0.310 | **0.414** | 0.464 |
+| `doclen:gold_not_longest` | 315 | 0.315 | **0.497** | 0.508 |
+
+How to read it:
+- **Short questions hurt BM25 most** (0.231 vs ~0.315): with 2–4 words there are few terms to match. Dense copes better
+  (0.423) because it matches meaning, not exact words. But n = 13 is small, so treat this as a hint, not proof.
+- **Long gold docs hurt dense, not BM25.** BM25 barely moves (0.310 vs 0.315). Dense drops from 0.497 to 0.414. The
+  reason: MiniLM reads at most 256 tokens of a passage (`max_seq_length`), so the end of a long answer is never
+  embedded. BM25 indexes every word. Hybrid narrows the gap (0.464 vs 0.508) because BM25 rescues some of those docs.
+  This is failure case 2 in `results/failures.md`.
+- **Compare groups side by side, not columns alone**: the useful question is always "which *group* is worse, and does
+  another system fix it?"
+
 ### Sample 2: the same file on the real FiQA (`results\runs\bm25.json`), for comparison
 
 | | tiny (24 docs, 4 questions) | real FiQA (57,638 docs, 500 questions) | why they differ |

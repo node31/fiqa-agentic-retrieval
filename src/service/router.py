@@ -121,7 +121,11 @@ def dispatch(store, op: str, p: dict) -> dict:
     if op == "search":
         # stats/vector/model are optional: no stats -> shard uses its LOCAL BM25 stats,
         # no vector -> dense list comes back empty (BM25-only query).
-        return store.search(p["terms"], p["k"], p.get("stats"), p.get("vector"), p.get("model"))
+        # took_ms = this shard's own compute time; the router subtracts it from the round-trip
+        # time to estimate network + queueing (the per-query time split in Router.search).
+        t = time.perf_counter()
+        out = store.search(p["terms"], p["k"], p.get("stats"), p.get("vector"), p.get("model"))
+        return {**out, "took_ms": round((time.perf_counter() - t) * 1e3, 2)}
     if op == "docs":
         return store.get_docs(p["ids"])
     if op == "upsert":
@@ -284,26 +288,49 @@ class Router:
 
         Returns:
             {"results": [{"doc_id", "score", ("text")}...], "partial": bool,
-             "missing_shards": [shard ids], "model", "strategy", "latency_ms"}
+             "missing_shards": [shard ids], "model", "strategy", "latency_ms", "timings_ms"}
+
+            ``timings_ms`` splits ``latency_ms`` into the phases, in the order they happen:
+              stats        phase 1 DFS round-trip (0 when skipped)
+              embed_wait   extra wait for the query embedding AFTER the stats phase (the
+                           embedding runs in parallel with phase 1; ``embed`` = its full time)
+              scatter      phase 2 round-trip to all shards = slowest shard's compute
+                           (``shard_compute``, per shard in ``per_shard``) + network/queueing
+                           (``network``, estimated as scatter - slowest compute)
+              merge, fuse  phases 3-4 at the router
+              fetch, rerank phase 5 (0 unless include_text / rerank_k)
+              other        the rest (bookkeeping, building the response)
         """
         if strategy not in ("bm25", "dense", "hybrid"):
             raise ValueError(f"unknown strategy {strategy!r}")
         t0 = time.perf_counter()
+        ms = lambda a, b: round((b - a) * 1e3, 2)  # noqa: E731
+        tm: dict = {"stats": 0.0, "embed": 0.0, "embed_wait": 0.0, "scatter": 0.0, "merge": 0.0, "fuse": 0.0,
+                    "fetch": 0.0, "rerank": 0.0}
         model = self.active_model  # WHY capture once: a cutover mid-request must not mix models
         # Phase 0a: tokenise. dict.fromkeys dedupes while keeping order, so a repeated
         # query word is sent (and counted in df) once. Dense-only needs no terms at all.
         terms = list(dict.fromkeys(tokenize(query))) if strategy != "dense" else []
+
+        def timed_embed() -> object:  # records how long the encoder itself took
+            s = time.perf_counter()
+            v = self.query_embed(model, query)
+            tm["embed"] = ms(s, time.perf_counter())
+            return v
+
         # Phase 0b: start embedding NOW but don't wait for it. asyncio.to_thread runs the
         # blocking, CPU-heavy encoder in a worker thread so the event loop stays free;
         # create_task schedules it immediately, so it overlaps with the DFS round-trip below.
-        emb = (asyncio.create_task(asyncio.to_thread(self.query_embed, model, query))
+        emb = (asyncio.create_task(asyncio.to_thread(timed_embed))
                if strategy != "bm25" else None)
         missing: set[int] = set()
         stats = None
         # Phase 1 (DFS) is skipped when it cannot matter: no terms, local-stats mode, or a
         # single shard (whose local stats ARE the global stats).
         if terms and self.bm25_stats == "global" and len(self.shards) > 1:  # phase 1: DFS
+            t = time.perf_counter()
             ok, miss = await self._fan("stats", self._all({"terms": terms}))
+            tm["stats"] = ms(t, time.perf_counter())
             # A shard that misses this phase is flagged even if it answers phase 2: its docs
             # were then scored with stats that leave out its own counts (slightly off).
             missing |= miss
@@ -316,11 +343,21 @@ class Router:
                 g = g.merge(CorpusStats.from_dict(r))
             stats = g.to_dict()
         # Join the embedding task started in phase 0b. .tolist(): numpy arrays are not JSON.
+        t = time.perf_counter()
         vec = (await emb).tolist() if emb else None
+        tm["embed_wait"] = ms(t, time.perf_counter())
         # Phase 2: every shard scores its own docs with the GLOBAL stats and the router's
         # query vector, and returns {"bm25": top-depth, "dense": top-depth}.
+        t = time.perf_counter()
         ok, miss = await self._fan("search", self._all(  # phase 2: query
             {"terms": terms, "k": depth, "stats": stats, "vector": vec, "model": model}))
+        tm["scatter"] = ms(t, time.perf_counter())
+        # Split the round-trip: the slowest shard's own compute vs the rest (network, HTTP,
+        # JSON, waiting for a worker thread). WHY the slowest: gather waits for the last shard.
+        per_shard = {str(i): r.get("took_ms") for i, r in ok.items() if r.get("took_ms") is not None}
+        tm["shard_compute"] = max(per_shard.values(), default=0.0)
+        tm["network"] = round(max(0.0, tm["scatter"] - tm["shard_compute"]), 2)
+        tm["per_shard"] = per_shard
         missing |= miss
         # Partial-result decision: no shard answered -> nothing to return; some missing and
         # policy "fail" -> error. Otherwise continue with what we have and flag it below.
@@ -329,30 +366,41 @@ class Router:
         # Phase 3: union the per-shard lists and keep the best ``depth`` by score: one global
         # list for BM25, one for dense. WHY each shard returns ``depth`` (not k): any doc in
         # the global top-depth is necessarily in its own shard's top-depth, so none is lost.
+        t = time.perf_counter()
         bm = merge_shard_lists([r["bm25"] for r in ok.values()], depth)  # phase 3: merge
         dn = merge_shard_lists([r["dense"] for r in ok.values()], depth)
+        tm["merge"] = ms(t, time.perf_counter())
         # Phase 4: fuse the two GLOBAL lists. WHY not fuse on each shard: RRF uses ranks
         # and linear fusion normalises scores per list, so both depend on the whole list;
         # per-shard fusion would see different lists and give a different answer (ADR 0003).
+        t = time.perf_counter()
         ranked = bm if strategy == "bm25" else dn if strategy == "dense" else fuse(bm, dn, fusion, alpha)
+        tm["fuse"] = ms(t, time.perf_counter())
         texts: dict[str, str] = {}
         # Phase 5: only now fetch text, and only for the few ids we will show or rerank.
         # WHY a separate round-trip: shipping text for 100 candidates x N shards in phase 2
         # would be mostly wasted bytes.
         if include_text or rerank_k:  # phase 5: fetch (+ rerank)
+            t = time.perf_counter()
             texts = await self.fetch([d for d, _ in ranked[:max(k, rerank_k)]])
+            tm["fetch"] = ms(t, time.perf_counter())
         if rerank_k:
             from src.retrieval.rerank import rerank
 
             # Cross-encoder rerank is CPU-heavy and blocking -> worker thread. Only the head
             # is reordered; the tail keeps its fused order.
+            t = time.perf_counter()
             head = await asyncio.to_thread(rerank, query, ranked[:rerank_k], texts)
+            tm["rerank"] = ms(t, time.perf_counter())
             ranked = head + ranked[rerank_k:]
         # Response: "partial" + "missing_shards" make a degraded answer visible to the caller.
         results = [{"doc_id": d, "score": round(float(s), 6), **({"text": texts.get(d, "")} if include_text else {})}
                    for d, s in ranked[:k]]
+        total = ms(t0, time.perf_counter())
+        sequential = sum(tm[x] for x in ("stats", "embed_wait", "scatter", "merge", "fuse", "fetch", "rerank"))
+        tm["other"] = round(max(0.0, total - sequential), 2)
         return {"results": results, "partial": bool(missing), "missing_shards": sorted(missing),
-                "model": model, "strategy": strategy, "latency_ms": round((time.perf_counter() - t0) * 1e3, 2)}
+                "model": model, "strategy": strategy, "latency_ms": total, "timings_ms": tm}
 
     async def fetch(self, ids: Sequence[str]) -> dict[str, str]:
         """Fetch phase: get passage text for ``ids``. Returns {doc_id: text}.

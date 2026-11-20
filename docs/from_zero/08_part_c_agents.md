@@ -183,9 +183,62 @@ Dev evaluation: 100 plain dev queries (seed 42) + the 100 compound ones, through
 **How to read it:**
 - **Plain questions: agents don't help** (slightly worse). There was nothing to fix, and the LLM's re-ordering lost some MRR.
 - **Compound questions: agents help a lot.** Recall goes from 0.20 to ~0.33 (+60% relative), and Coverage from 0.10 to 0.26–0.29.
-- Single vs multi: similar quality, but multi uses **~3× fewer tokens** (workers need no LLM; one batched verifier call).
+- Single vs multi: similar quality, but multi uses **~3× fewer tokens** and fewer calls. Why is explained just below.
 - Traces: the planner split **100/100** compound questions and kept **91/100** plain ones simple (56 by the free gate). All of
   multi's plain-set loss comes from the **9 wrongly split** plain questions (their recall fell 0.70 → 0.40).
+
+### Why does multi-agent need fewer LLM calls AND fewer tokens?
+
+> 🎯 **Why we're doing this:** "more agents" sounds like "more LLM calls". Here it's the opposite, and the reason is the most
+> useful design lesson of Part C: **put the decisions that don't need an LLM into plain code.**
+
+It is not a smarter model. The multi-agent system gives the LLM **less to do and less to read**: searching, the "should we
+even ask the LLM?" decision and merging the results are ordinary code. The LLM only answers two small, fixed questions.
+
+**1. The "workers" use no LLM at all.** In `src/agent/orchestrator.py` a retrieval worker is a plain function call in a thread
+pool that runs `search()`. So multi does **more** searches (3.38 per compound question vs 2.24) for **0 tokens**. In the single
+agent, every search is chosen by an LLM call ("what should I search next?").
+
+**2. The single agent re-reads everything on every step.** An LLM has no memory between calls, so `single_agent.py` rebuilds
+the whole prompt each step: system prompt + question + **all search results so far**. Measured sizes (≈ characters / 4):
+system prompt ≈ 194 tokens, one result line ≈ 52 tokens, so one search of 10 hits ≈ 517 tokens.
+
+| single-agent step | what the prompt contains | input tokens (≈) |
+|---|---|---|
+| call 1 | 194 + question + 1 search (517) | 740 |
+| call 2 | 194 + question + 2 searches (1,034) | 1,260 |
+| call 3 | 194 + question + 3 searches (1,551) | 1,780 |
+
+The prompt grows every step, so cost grows faster than the number of calls. 2.24 calls on average plus the replies ≈ 2,600,
+which matches the measured **2,681 tokens** per compound question.
+
+**3. The multi-agent LLM calls are small and capped at two.**
+
+| multi-agent call | what it sees | tokens (≈, incl. the reply) |
+|---|---|---|
+| planner | its instructions (118) + the question. **No search results at all** | ~200 |
+| verifier | its instructions (106) + the **top 5** hits (not 10) of each sub-question, all in **one** batched call | ~740 |
+| **total** | the flow has only these 2 LLM steps (the `Budget` cap, `max_llm_calls=3`, is a safety net on top) | **~940** (measured **940**) |
+
+**4. Most plain questions never reach the LLM.** `looks_simple()` is a free code check: 12 words or fewer and no sign of a
+second question (no "and / also / plus / as well as / additionally / then / while", no comma or semicolon, not two question
+marks). From the traces of the 100 plain questions:
+
+| path | questions | LLM calls each |
+|---|---|---|
+| free gate said "simple" → just search | 56 | 0 |
+| planner called, said "simple" → just search | 35 | 1 |
+| planner split it (wrongly) → workers + verifier | 9 | 2 |
+| **average** | | **(35 + 9 × 2) / 100 = 0.53** |
+
+The single agent always makes at least one call (it must decide whether to search again): 1.67 calls, 1,789 tokens.
+On the 100 compound questions every multi-agent run used exactly 2 calls, and the verifier rewrote a sub-question in 36 of them
+(each rewrite = one extra search, still 0 tokens).
+
+**The trade-off.** Multi is cheap because its flow is **fixed**: plan once, search in parallel, verify once. The single agent is
+**adaptive**: it reads the results and decides what to search next (up to 3 times), and pays for that freedom in tokens. On
+compound questions the fixed flow did as well (Recall 0.335 vs 0.327) for about a third of the tokens. When a fixed recipe
+handles the task, code beats an LLM loop on both cost and predictability.
 
 **Decision: route.** Simple → plain search (fast, free, best on plain). Compound (gate + planner say so) → multi-agent.
 Don't wrap every query in an agent. Next fix: stop the 9 false splits. Final cost/latency numbers come from the Azure

@@ -1,5 +1,7 @@
 """Evaluation harness: quality, stratified quality, cold/warm latency and peak RAM.
 
+Easier to read, with tables and diagrams: docs/eval.md
+
 WHAT
     Runs one retrieval CONFIGURATION over a query split and reports:
       overall     nDCG@10, Recall@10, MRR@10

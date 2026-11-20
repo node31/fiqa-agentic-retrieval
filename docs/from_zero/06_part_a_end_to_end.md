@@ -88,6 +88,8 @@ flowchart LR
 
 ### Run the benchmark yourself, on the tiny dataset (one config at a time)
 
+> 📖 Every argument, output field and protocol decision of `src/eval.py`, in tables: [`docs/eval.md`](../eval.md).
+
 > 🎯 **Why we're doing this:** `results/bench.json` is just the output of a program you can run. Running each config yourself
 > on 24 documents (seconds, not 30 minutes) shows you exactly what produces each number, and with only 4 queries you can
 > read every line of every results file.

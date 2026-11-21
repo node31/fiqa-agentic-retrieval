@@ -1,0 +1,109 @@
+# =====================================================================================================
+# SIMPLE SCENARIO TEMPLATE: copy this file, edit the lines, run one command, open the replay.
+# =====================================================================================================
+#
+# FORMAT: one operation per line, comma separated:
+#
+#     actor, operation, text, t_ms, doc_id
+#
+#   actor      who does it. A persona (fox, elephant, owl, ... any name) or a bot (bot1, bot-2, ...) is a
+#              CLIENT: it may search, upsert, delete, wait_visible, wait_gone. ADMIN (or admin2, ...) runs
+#              migrate, wait_ready, cutover, rollback, finalize, flush. ops runs status, kill_shard,
+#              restart_shard. Mixing them up is an error that names the line.
+#   operation  see the table below. search:bm25 / search:dense / search:hybrid pick the strategy
+#              (plain "search" = hybrid, the shipped system).
+#   text       column 3, depends on the operation (table below). Put text that contains commas in
+#              "double quotes". For ADMIN and ops lines it may be EMPTY (two commas: ADMIN, rollback, , 900).
+#   t_ms       "do not start before t ms after the run started". Lines always run in FILE ORDER, one after
+#              the other: if the line before takes longer, this one starts as soon as it is done.
+#              Empty = right after the line before.
+#   doc_id     optional. upsert: the id to write (empty = automatic, <actor>-<n>-<run id>).
+#              delete / wait_visible / wait_gone: which doc (empty = the last doc this actor upserted,
+#              else the last doc anyone upserted). search: a doc you EXPECT in the top 10; the replay
+#              marks it found or missing (recorded only, never fails the run).
+#
+#   operation      column 3 (text)                           what it does
+#   search         the query                                 top 10 for the query
+#   upsert         the document text                         write a new doc (or a new version of doc_id)
+#   delete         empty                                     delete a doc
+#   wait_visible   query (empty = the doc's upserted text)   poll until the doc is searchable: the REAL freshness lag
+#   wait_gone      query (empty = the doc's upserted text)   poll until a deleted doc is gone
+#   migrate        model (empty = bge-small)                 start building a new embedding model on every shard
+#   wait_ready     model (empty = bge-small)                 wait until the new model is built everywhere
+#   cutover        model (empty = bge-small)                 switch queries to that model
+#   rollback       empty                                     switch back to the previous model
+#   finalize       model to drop (empty = the one kept for rollback)   end the migration, free its memory
+#   flush          empty                                     wait until async writes are all applied
+#   status         empty                                     record every shard's state
+#   kill_shard     shard number                              CRASH a shard (only with --start-cluster)
+#   restart_shard  shard number                              restart it; it replays its WAL
+#   sleep          seconds                                   pause (usually t_ms is easier)
+#   label          banner text                               a heading in the replay (actor is ignored)
+#
+# RUN IT (from the repo root; the replay opens in your browser at the end because of --open)
+#
+#   Windows (PowerShell):
+#     New-Item -ItemType Directory -Force toy_runs | Out-Null
+#     Copy-Item scenarios\simple_template.csv toy_runs\my_scenario.csv
+#     notepad toy_runs\my_scenario.csv                    # edit it
+#     .\.venv\Scripts\python scripts\scenario.py toy_runs\my_scenario.csv --start-cluster --tiny --open
+#
+#   macOS / Linux:
+#     mkdir -p toy_runs
+#     cp scenarios/simple_template.csv toy_runs/my_scenario.csv
+#     open -e toy_runs/my_scenario.csv                    # edit it
+#     .venv/bin/python scripts/scenario.py toy_runs/my_scenario.csv --start-cluster --tiny --open
+#
+#   Variants (same command, change the flags):
+#     --start-cluster --tiny          a fresh 3-shard cluster on a 24-doc test corpus; starts in ~10 s
+#     --start-cluster                 a fresh 3-shard cluster on the real 57,638-doc corpus; starts in 1-2 min
+#     --start-cluster --mode async    the same in async write mode (ack first, searchable within 1 s)
+#     --start-cluster --shards 1      a single shard
+#     --url http://localhost:8000     against the running Docker stack instead (no kill_shard/restart_shard)
+#     --to-jsonl                      print what every line turns into, and exit (nothing runs)
+#
+#   The last lines of the output say PASS/FAIL and where everything went:
+#     events   toy_runs/scenarios/my_scenario-sync-<date>-<time>/events.jsonl
+#     replay   toy_runs/scenarios/my_scenario-sync-<date>-<time>/replay.html
+#   Without --open, open the replay yourself:  start <replay path>   (Windows)  /  open <replay path>   (macOS)
+#   In the replay: press Play, or filter by persona and by doc id / query text above the timeline.
+#
+# This template runs green on --tiny in sync and async mode, and against Docker. It deletes the docs it
+# writes, ends with a ROLLBACK and drops the tried model, so a Docker stack is left as it was.
+# =====================================================================================================
+
+ADMIN, label, "1. Reads: three users search, each with a different strategy", 0
+fox, search, "roth ira", 10
+elephant, search:bm25, "investments in mortgage", 20
+owl, search:dense, "how do I save for retirement", 30
+
+ADMIN, label, "2. Writes: a bot adds a doc, a user checks it is searchable", 100
+bot1, upsert, "roth investments for IRA are as follows: contribute after tax, withdraw tax free", 100
+fox, wait_visible, , 110
+fox, search, "roth investments for IRA", 120
+bot2, upsert, "a mortgage offset account lowers the interest you pay", 150, offset-{run}
+elephant, search, "mortgage offset account interest", 160, offset-{run}
+bot2, upsert, "a mortgage offset account lowers interest; version 2 adds the tax angle", 200, offset-{run}
+bot2, delete, , 250, offset-{run}
+elephant, wait_gone, , 260, offset-{run}
+# clean up: bot1 deletes its own doc (column 5 empty = bot1's last upsert), so a run against Docker
+# leaves the index as it found it
+bot1, delete, , 270
+
+ADMIN, label, "3. Model migration: build bge-small, switch, switch back, clean up", 300
+ADMIN, migrate, , 300
+fox, search, "roth ira", 310
+ADMIN, wait_ready, , 320
+ADMIN, cutover, , 400
+fox, search, "roth ira", 410
+ADMIN, rollback, , 500
+fox, search, "roth ira", 510
+ADMIN, finalize, , 600
+ADMIN, flush, , 650
+ops, status, , 700
+
+# 4. Crash a shard (only with --start-cluster; remove the # to try it). Searches meanwhile are partial.
+# ops, kill_shard, 1, 800
+# owl, search, "roth ira", 900
+# ops, restart_shard, 1, 1000
+# owl, search, "roth ira", 1100

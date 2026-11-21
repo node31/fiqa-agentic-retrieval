@@ -113,7 +113,8 @@ OPS: dict[str, tuple[set[str], set[str]]] = {
     "wait_ready": ({"model"}, {"timeout", "interval"}),
     "cutover": ({"model"}, {"expect_error"}),
     "rollback": (set(), {"expect_error"}),
-    "finalize": ({"model"}, {"expect_error"}),
+    # finalize without "model" drops the router's previous_model (the one kept only for rollback).
+    "finalize": (set(), {"model", "expect_error"}),
     # cluster faults: only with --start-cluster (the runner owns the processes)
     "kill_shard": ({"shard"}, set()),
     "restart_shard": ({"shard"}, {"timeout"}),
@@ -175,6 +176,178 @@ def parse_scenario(text: str) -> list[dict]:
     return ops
 
 
+# ----------------------------------------------------------------------------- the simple CSV format
+# One op per line:  actor, operation, text, t_ms[, doc_id]   (docs/scenarios.md "Simple format").
+# Lines run in FILE ORDER. t_ms = "do not start before t ms after the run started" (empty = right
+# after the previous line). Column 3 depends on the operation:
+SIMPLE_TEXT = {
+    "search": "query", "upsert": "text", "wait_visible": "query (empty = the doc's upserted text)",
+    "wait_gone": "query (empty = the doc's upserted text)",
+    "migrate": "model (empty = bge-small)", "wait_ready": "model (empty = bge-small)",
+    "cutover": "model (empty = bge-small)", "finalize": "model to DROP (empty = the one kept for rollback)",
+    "kill_shard": "shard number", "restart_shard": "shard number", "sleep": "seconds", "label": "banner text",
+    "delete": "empty", "rollback": "empty", "flush": "empty", "status": "empty",
+}
+SIMPLE_ALIASES = {"update": "upsert", "write": "upsert", "remove": "delete", "query": "search"}
+_MODEL_DEFAULT = {"migrate": "bge-small", "wait_ready": "bge-small", "cutover": "bge-small"}
+
+
+def simple_role(actor: str, kind: str) -> str:
+    """Role of an actor in the simple format: from its name, else from what this line does.
+
+    >>> [simple_role(a, k) for a, k in (("ADMIN", "migrate"), ("bot1", "search"), ("fox", "search"),
+    ...                                 ("ops", "status"), ("alice", "cutover"))]
+    ['admin', 'bot', 'user', 'ops', 'admin']
+    """
+    return role_from_name(actor) or ("admin" if kind in ADMIN_TYPE_OPS else "ops" if kind in OPS_TYPE_OPS else "user")
+
+
+def simple_to_ops(text: str) -> list[dict]:
+    """Simple CSV text -> raw op dicts (JSONL ops with ``_line`` and ``_src``), not yet validated.
+
+    >>> ops = simple_to_ops('fox, search, "roth ira", 10\\nbot1, upsert, "roth text", 40\\nbot1, delete, , 60')
+    >>> [(o["op"], o.get("query") or o.get("doc_id"), o["at"]) for o in ops]
+    [('search', 'roth ira', 0.01), ('upsert', 'bot1-1-{run}', 0.04), ('delete', 'bot1-1-{run}', 0.06)]
+    """
+    import csv
+
+    ops: list[dict] = []
+    last_doc: dict[str, str] = {}     # actor -> its last upserted doc id ("*" = anyone's last)
+    doc_text: dict[str, str] = {}     # doc id -> text of its last upsert (wait_visible's default query)
+    count: dict[str, int] = {}        # actor -> upserts with an automatic id so far
+    roles: dict[str, tuple[str, int]] = {}   # actor -> (role, first line), to report mixed roles
+    prev_at = 0.0
+    for n, raw in enumerate(text.splitlines(), 1):
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        where = f"line {n}"
+        try:
+            cols = [c.strip() for c in next(csv.reader([raw], skipinitialspace=True))]
+        except csv.Error as e:
+            raise ScenarioError(f"{where}: cannot read the line ({e})") from None
+        if not ops and cols and cols[0].lower() == "actor":
+            continue   # an optional header row
+        if len(cols) < 2 or not cols[0] or not cols[1]:
+            raise ScenarioError(f"{where}: expected  actor, operation, text, t_ms[, doc_id]  got {raw.strip()!r}")
+        cols += [""] * (5 - len(cols))
+        if len(cols) > 5:
+            raise ScenarioError(f"{where}: too many columns ({len(cols)}); put text with commas in double quotes")
+        actor, opname, body, t_ms, doc = cols[:5]
+        kind, _, strategy = opname.lower().partition(":")
+        kind = SIMPLE_ALIASES.get(kind, kind)
+        gone = kind == "wait_gone"   # = wait_visible with absent=true (after a delete)
+        if kind not in SIMPLE_TEXT:
+            raise ScenarioError(f"{where}: unknown operation {opname!r}; use one of {', '.join(SIMPLE_TEXT)}")
+        if strategy and (kind != "search" or strategy not in ("bm25", "dense", "hybrid")):
+            raise ScenarioError(f"{where}: {opname!r}: only search takes a strategy (search:bm25, search:dense, "
+                                f"search:hybrid)")
+        kind = "wait_visible" if gone else kind
+        op: dict = {"op": kind, "_line": n, "_src": raw.strip()}
+        if kind != "label":
+            op["actor"] = actor
+            role = simple_role(actor, kind)
+            first = roles.setdefault(actor, (role, n))
+            if (first[0] in CLIENT_ROLES) != (role in CLIENT_ROLES):
+                raise ScenarioError(f"{where}: {actor!r} already acted as a {first[0]} on line {first[1]}, so it "
+                                    f"cannot {kind} here. Clients (users, bots) search and write; ADMIN/ops run "
+                                    f"migrate, cutover, rollback, finalize, flush and status")
+            if role in CLIENT_ROLES and kind in PRIVILEGED_OPS:
+                raise ScenarioError(f"{where}: {kind!r} is an admin operation, but {actor!r} looks like a "
+                                    f"{role}. Write it as  ADMIN, {kind}, ...")
+            if role not in CLIENT_ROLES and kind in CLIENT_OPS:
+                raise ScenarioError(f"{where}: {kind!r} is a client operation, but {actor!r} is {role}. "
+                                    f"Use a persona (fox, elephant, ...) or a bot (bot1, ...)")
+        if t_ms:
+            try:
+                at = float(t_ms) / 1000.0
+            except ValueError:
+                raise ScenarioError(f"{where}: t_ms must be a number of milliseconds, got {t_ms!r}") from None
+            if at < 0:
+                raise ScenarioError(f"{where}: t_ms must be >= 0, got {t_ms!r}")
+            if at < prev_at:
+                op["_warn"] = f"{where}: t_ms {t_ms} is earlier than the line before; it runs right after it"
+            op["at"], prev_at = at, max(prev_at, at)
+        if kind == "search":
+            if not body:
+                raise ScenarioError(f"{where}: search needs a query in column 3")
+            op["query"] = body
+            if strategy:
+                op["strategy"] = strategy
+            if doc:   # column 5 on a search = "I expect this doc"; recorded, never fails the run
+                op["expect"], op["soft"] = [doc], True
+        elif kind == "upsert":
+            if not body:
+                raise ScenarioError(f"{where}: upsert needs the document text in column 3")
+            if not doc:
+                count[actor] = count.get(actor, 0) + 1
+                doc = f"{actor.lower()}-{count[actor]}-{{run}}"
+            op.update(doc_id=doc, text=body)
+            last_doc[actor] = last_doc["*"] = doc
+            doc_text[doc] = body
+        elif kind in ("delete", "wait_visible"):
+            doc = doc or last_doc.get(actor) or last_doc.get("*")   # own last upsert, else anyone's
+            if not doc:
+                raise ScenarioError(f"{where}: {kind} needs a doc id in column 5 (nothing was upserted "
+                                    f"earlier in the file to default to)")
+            op["doc_id"] = doc
+            if kind == "wait_visible":
+                query = body or doc_text.get(doc)
+                if not query:
+                    raise ScenarioError(f"{where}: wait_visible needs a query in column 3 (no upsert of {doc!r} "
+                                        f"earlier in this file to take the text from)")
+                op["query"] = query
+                if gone:
+                    op["absent"] = True
+        elif kind in _MODEL_DEFAULT:
+            op["model"] = body or _MODEL_DEFAULT[kind]
+        elif kind == "finalize":
+            if body:
+                op["model"] = body
+        elif kind in ("kill_shard", "restart_shard"):
+            if not body.isdigit():
+                raise ScenarioError(f"{where}: {kind} needs the shard number in column 3")
+            op["shard"] = int(body)
+        elif kind == "sleep":
+            try:
+                op["seconds"] = float(body)
+            except ValueError:
+                raise ScenarioError(f"{where}: sleep needs seconds in column 3 (or just use t_ms)") from None
+        elif kind == "label":
+            if not body:
+                raise ScenarioError(f"{where}: label needs its text in column 3")
+            op["text"] = body
+        elif body:
+            raise ScenarioError(f"{where}: {kind} takes no text; leave column 3 empty")
+        ops.append(op)
+    if not ops:
+        raise ScenarioError("the file has no operations")
+    return ops
+
+
+def parse_simple(text: str) -> list[dict]:
+    """Simple CSV text -> validated ops, ready for the Runner (same checks as JSONL files)."""
+    ops = [_validate({k: v for k, v in o.items() if not k.startswith("_")}, o["_line"]) | {"_src": o["_src"]}
+           | ({"_warn": o["_warn"]} if "_warn" in o else {}) for o in simple_to_ops(text)]
+    resolve_actors(ops)
+    return ops
+
+
+def load_scenario(path: Path) -> list[dict]:
+    """Read a scenario file: ``.csv`` = the simple format, anything else = JSON Lines."""
+    text = Path(path).read_text(encoding="utf-8-sig")   # -sig: Excel saves CSV with a BOM
+    return parse_simple(text) if Path(path).suffix.lower() == ".csv" else parse_scenario(text)
+
+
+def to_jsonl(ops: list[dict]) -> str:
+    """Ops -> JSON Lines text (what ``--to-jsonl`` prints), each op under a comment with its source line."""
+    out = []
+    for op in ops:
+        if "_src" in op:
+            out.append(f"# line {op['_line']}: {op['_src']}")
+        out.append(json.dumps({k: v for k, v in op.items() if not k.startswith("_")}, ensure_ascii=False))
+    return "\n".join(out) + "\n"
+
+
 class _PosDecoder(json.JSONDecoder):
     """A JSON decoder that remembers where every object starts (``starts``: id(obj) -> offset).
 
@@ -210,7 +383,9 @@ def _validate(op, line: int, top_level: bool = False, line_of: dict | None = Non
         raise ScenarioError(f"{where}: config must be the first op of the file")
     required, optional = OPS[kind]
     if kind not in ("config", "repeat", "parallel"):
-        optional = optional | {"actor"}  # who performs it (see resolve_actors)
+        # actor: who performs it (see resolve_actors). at: do not start before this many seconds
+        # after the run started (the simple CSV format's timestamp column; see Runner._leaf).
+        optional = optional | {"actor", "at"}
     fields = set(op) - {"op", "_line"}
     if missing := required - fields:
         raise ScenarioError(f"{where}: {kind} needs {sorted(missing)}")
@@ -243,6 +418,8 @@ def _validate(op, line: int, top_level: bool = False, line_of: dict | None = Non
     for key in ("expect", "expect_absent", "expect_missing_shards"):
         if key in op and not isinstance(op[key], list):
             raise ScenarioError(f"{where}: {key} must be a list")
+    if "at" in op and not (isinstance(op["at"], (int, float)) and not isinstance(op["at"], bool) and op["at"] >= 0):
+        raise ScenarioError(f"{where}: at must be a number of seconds >= 0, got {op['at']!r}")
     if "expect_overlap_with" in op and not (isinstance(op["expect_overlap_with"], dict) and "ref" in op["expect_overlap_with"]):
         raise ScenarioError(f"{where}: expect_overlap_with must look like {{\"ref\": \"q1\", \"min\": 0.6}}")
     if kind == "config" and op.get("mode", "sync") not in ("sync", "async"):
@@ -803,6 +980,19 @@ class Runner:
     def _leaf(self, op: dict, lane: str, variables: dict, http: httpx.Client) -> None:
         kind = op["op"]
         op = render(op, {"run": self.run_id, "lane": lane, **variables})
+        if "at" in op:
+            # "Not before t": wait until the op's start time. If the previous op ran late, start
+            # at once (ops in one lane never overlap; that is what "sequential" means).
+            delay = float(op["at"]) - self.rec.now()
+            if delay > 0:
+                time.sleep(delay)
+        if kind == "finalize" and "model" not in op:
+            # Default: drop the model the router keeps only for rollback (after a cutover that is
+            # the old model, after a rollback the one that was tried). Never the active one.
+            try:
+                op = {**op, "model": _call(http, "GET", "/admin/status").get("previous_model")}
+            except CallError:
+                op = {**op, "model": None}
         req, extra = self._prepare(kind, op)
         oid, t0 = self._begin(lane, kind, op["_line"], req, actor=op.get("_actor"), **extra)
         hard = not op.get("soft", False)
@@ -847,7 +1037,7 @@ class Runner:
                      "throttle_s": float(op.get("throttle_s", 0.0))}, {"from_model": self.active_model})
         if kind in ("cutover", "rollback", "finalize"):
             return ({"model": op["model"]} if "model" in op else {}), {"from_model": self.active_model}
-        return {k: v for k, v in op.items() if k not in ("op", "soft", "actor") and not k.startswith("_")}, {}
+        return {k: v for k, v in op.items() if k not in ("op", "soft", "actor", "at") and not k.startswith("_")}, {}
 
     # writes
     def _do_upsert(self, op, req, http, t0):
@@ -1030,6 +1220,8 @@ class Runner:
         return self._switch(http, "/admin/rollback", None)
 
     def _do_finalize(self, op, req, http, t0):
+        if not op.get("model"):
+            raise CallError("nothing to finalize: no model is kept for rollback (run migrate + cutover first)", 409)
         body = _call(http, "POST", "/admin/finalize", json={"model": op["model"]})
         return {"resp": {"dropped": body.get("dropped"), "missing_shards": body.get("missing_shards", [])},
                 "checks": []}
@@ -1188,9 +1380,11 @@ class Runner:
                 want = "expected" if k == "expect" else "expected absent"
                 got = (c(f"FOUND (#{ch['rank']})", "green" if ch["pass"] else "red") if ch["found"]
                        else c("MISSING", "green" if ch["pass"] else ("red" if ch["hard"] else "yellow")))
-                # PITFALL: this is when the search RAN relative to the ack, NOT how long the doc took
-                # to become visible (that is wait_visible's lag).
-                since = (f", searched {fmt_ms(ch['since_ack_ms'])} after its ack"
+                # Freshness as plain facts on the run's clock: doc acked, search sent, answer back, and
+                # the difference. A search sent late only says the script searched late; how fast a
+                # write becomes searchable is what wait_visible measures.
+                since = (f" (doc acked {t0 - ch['since_ack_ms'] / 1e3:.3f} s, search sent {t0:.3f} s, "
+                         f"answer back {ev['t']:.3f} s, difference {fmt_ms((ev['t'] - t0) * 1e3)})"
                          if ch.get("since_ack_ms") is not None else "")
                 con.line(f"{pad}{want} {ch['doc_id']}: {got}{since} {mark}", important=important)
             elif k == "expect_applied":
@@ -1287,16 +1481,21 @@ def print_summary(s: dict, meta: dict, console: Console) -> None:
         lines.append(f"answer checks    {', '.join(answers)}")
     fu, fa = s["fresh_under_1s"], s["fresh_after_1s"]
     if fu["total"] or fa["total"]:
-        # Buckets by when the search RAN after the doc's ack (not a visibility lag).
-        lines.append("freshness        " + "; ".join(
-            f"searched {name} after ack: found {b['found']}/{b['total']}"
-            for name, b in (("<1 s", fu), (">=1 s", fa)) if b["total"]))
+        # Buckets by when the search was SENT after the doc's ack: a fact about the script, NOT the
+        # visibility lag (a search sent 3 s after the ack says nothing about the first 3 s).
+        lines.append("expected docs    " + "; ".join(
+            f"search sent {name} after the ack: found {b['found']}/{b['total']}"
+            for name, b in (("<1 s", fu), (">=1 s", fa)) if b["total"]) + "   (when the search ran, not the lag)")
+    if meta.get("mode") == "sync" and s["writes_applied"]:
+        lines.append("visibility lag   0 for every acked write (sync mode applies the write before the ack)")
     if s["visibility_lags"]:
         lags = ", ".join(f"{v['doc_id']} {'gone' if v['absent'] else 'visible'} "
                          + (f"after {v['lag_ms']:.1f} ms" if v["lag_ms"] is not None else ("n/a" if v["ok"] else "TIMEOUT"))
                          for v in s["visibility_lags"][:6])
         more = f" (+{len(s['visibility_lags']) - 6} more)" if len(s["visibility_lags"]) > 6 else ""
-        lines.append(f"visibility lags  {lags}{more}   (the freshness number: ack -> first search that saw it; budget 1 s)")
+        measured = [v["lag_ms"] for v in s["visibility_lags"] if v["lag_ms"] is not None]
+        worst = f"; max {max(measured):.1f} ms" if measured else ""
+        lines.append(f"wait_visible     {lags}{more}   (measured lag: ack -> first poll that saw it; budget 1 s{worst})")
     if s["admin"]:
         lines.append("admin timeline   " + " -> ".join(
             f"{a['op']}{'(' + str(a['model'] if a['model'] is not None else a['shard']) + ')' if (a['model'] or a['shard'] is not None) else ''}"
@@ -1365,9 +1564,12 @@ def run_scenario(scenario: str | Path, *, url: str | None = None, start: bool = 
     are read from the cluster. ``sample_ms=0`` disables the background status sampler.
     """
     path = Path(scenario)
-    ops = parse_scenario(path.read_text(encoding="utf-8"))  # parse FIRST: no cluster for a typo
+    ops = load_scenario(path)  # parse FIRST: no cluster for a typo
     cfg = {k: v for k, v in ops[0].items() if k not in ("op", "_line")} if ops and ops[0]["op"] == "config" else {}
     console = Console(color, quiet, print_fn)
+    for op in ops:
+        if "_warn" in op:
+            console.line(console.c("WARNING: " + op["_warn"], "yellow"), important=True)
     if not url and not start:
         raise ValueError("pass url=... or start=True")
     if not start and any(o["op"] in ("kill_shard", "restart_shard") for o in _walk(ops)):
@@ -1462,7 +1664,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter,
                                  epilog="File format and examples: docs/scenarios.md")
-    ap.add_argument("scenario", nargs="?", help="scenario .jsonl file")
+    ap.add_argument("scenario", nargs="?", help="scenario file: .jsonl, or .csv for the simple format")
     ap.add_argument("--url", help="router URL of an already running cluster, e.g. http://127.0.0.1:8000")
     ap.add_argument("--start-cluster", action="store_true", help="start a fresh local cluster for this run")
     ap.add_argument("--mode", choices=["sync", "async"], help="apply mode for --start-cluster (overrides config)")
@@ -1485,6 +1687,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("-q", "--quiet", action="store_true", help="print only labels, admin ops, failures, summary")
     ap.add_argument("--no-color", action="store_true")
     ap.add_argument("--replay-only", type=Path, metavar="EVENTS_JSONL", help="just regenerate replay.html")
+    ap.add_argument("--open", action="store_true", help="open replay.html in the default browser at the end")
+    ap.add_argument("--to-jsonl", action="store_true",
+                    help="print the scenario as JSON Lines (e.g. to see what a .csv line becomes) and exit")
     ap.add_argument("--shard-of", nargs="+", metavar="DOC_ID",
                     help="print the owner shard of each doc id (crc32 %% --shards) and exit")
     a = ap.parse_args(argv)
@@ -1496,7 +1701,19 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{d}\tshard {shard_of(d, a.shards or 3)}")
         return 0
     if a.replay_only:
-        print(f"replay: {replay_only(a.replay_only, a.out / 'replay.html' if a.out else None)}")
+        replay = replay_only(a.replay_only, a.out / 'replay.html' if a.out else None)
+        print(f"replay: {replay}")
+        if a.open:
+            open_in_browser(replay)
+        return 0
+    if a.to_jsonl:
+        if not a.scenario:
+            ap.error("--to-jsonl needs a scenario file")
+        try:
+            sys.stdout.write(to_jsonl(load_scenario(Path(a.scenario))))
+        except ScenarioError as e:
+            print(f"scenario error: {e}", file=sys.stderr)
+            return 2
         return 0
     if not a.scenario or bool(a.url) == a.start_cluster:
         ap.error("give a scenario file and exactly one of --url or --start-cluster")
@@ -1512,7 +1729,16 @@ def main(argv: list[str] | None = None) -> int:
     except ScenarioError as e:
         print(f"scenario error: {e}", file=sys.stderr)
         return 2
+    if a.open:
+        open_in_browser(res.replay_path)
     return 0 if res.ok else 1
+
+
+def open_in_browser(path: Path) -> None:
+    """Open a local file in the default browser (Windows, macOS and Linux)."""
+    import webbrowser
+
+    webbrowser.open(Path(path).resolve().as_uri())
 
 
 if __name__ == "__main__":

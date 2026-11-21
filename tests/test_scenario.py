@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.scenario import ScenarioError, parse_scenario, resolve_actors, run_scenario
+from scripts.scenario import ScenarioError, parse_scenario, parse_simple, resolve_actors, run_scenario, to_jsonl
 from src.service.cluster import Cluster
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -193,3 +193,62 @@ def test_every_example_scenario_parses():
         ops = parse_scenario(f.read_text(encoding="utf-8"))
         # The catalog declares every actor, so nothing is left to guessing.
         assert all(a["how"] == "declared" for a in resolve_actors(ops)), f
+
+
+# ----------------------------------------------------------------------------- the simple CSV format
+def test_simple_format_parses_the_users_example_with_defaults():
+    ops = parse_simple('fox, search, "roth ira", 10\n'
+                       'elephant, search, "investments in mortgage", 20\n'
+                       'ADMIN, migrate, , 30\n'
+                       'bot1, upsert, "roth investments for IRA are as follows, with a comma", 40\n'
+                       'fox, wait_visible, , 50\n'
+                       'bot1, delete, , \n'
+                       'ADMIN, finalize, , 70\n')
+    assert [o["op"] for o in ops] == ["search", "search", "migrate", "upsert", "wait_visible", "delete", "finalize"]
+    assert ops[0]["actor"] == "fox" and ops[0]["at"] == 0.01 and ops[0]["query"] == "roth ira"
+    assert ops[2] == {**ops[2], "model": "bge-small", "actor": "ADMIN"}            # empty column 3 -> default model
+    assert ops[3]["text"].endswith("with a comma") and ops[3]["doc_id"] == "bot1-1-{run}"   # quoted comma, auto id
+    assert ops[4]["doc_id"] == "bot1-1-{run}" and ops[4]["query"] == ops[3]["text"]  # anyone's last doc + its text
+    assert ops[5]["doc_id"] == "bot1-1-{run}" and "at" not in ops[5]                  # empty t_ms = right after
+    assert "model" not in ops[6]                                    # finalize: the model kept for rollback
+    roles = {a["name"]: a["role"] for a in resolve_actors(ops)}
+    assert roles == {"fox": "user", "elephant": "user", "ADMIN": "admin", "bot1": "bot"}
+    assert '"actor": "ADMIN"' in to_jsonl(ops) and "# line 3: ADMIN, migrate, , 30" in to_jsonl(ops)
+
+
+@pytest.mark.parametrize("text, msg", [
+    ("fox, migrate, , 30", "line 1: 'migrate' is an admin operation"),
+    ("ADMIN, search, q, 30", "line 1: 'search' is a client operation"),
+    ("# c\nfox, serch, q, 30", "line 2: unknown operation 'serch'"),
+    ("fox, delete, , 30", "line 1: delete needs a doc id"),
+    ("fox, search, q, soon", "line 1: t_ms must be a number"),
+    ("fox, search:magic, q, 1", "only search takes a strategy"),
+    ("ADMIN, rollback, now, 1", "rollback takes no text"),
+])
+def test_simple_format_errors_name_the_line(text, msg):
+    with pytest.raises(ScenarioError, match=msg):
+        parse_simple(text)
+
+
+def test_simple_template_parses_and_uses_every_simple_operation():
+    ops = parse_simple((SCN / "simple_template.csv").read_text(encoding="utf-8"))
+    kinds = {o["op"] for o in ops} | {"wait_gone" for o in ops if o.get("absent")}
+    assert {"search", "upsert", "delete", "wait_visible", "wait_gone", "migrate", "wait_ready", "cutover",
+            "rollback", "finalize", "flush", "status", "label"} <= kinds
+    assert {o.get("strategy", "hybrid") for o in ops if o["op"] == "search"} == {"hybrid", "bm25", "dense"}
+
+
+@pytest.mark.parametrize("mode", ["sync", "async"])
+def test_simple_template_runs_green_and_honours_t_ms(mode, tmp_path):
+    res = run(SCN / "simple_template.csv", tmp_path, start=True, tiny=True, mode=mode, router_port=19540,
+              base_port=19641)
+    s = res.summary
+    assert res.ok and s["errors"] == 0 and s["checks_failed"] == 0, s
+    assert [a["op"] for a in s["admin"]] == ["migrate", "wait_ready", "cutover", "rollback", "finalize"]
+    events = [json.loads(ln) for ln in res.events_path.read_text(encoding="utf-8").splitlines()]
+    starts = [e for e in events if e["type"] == "op_start"]
+    cutover = next(e for e in starts if e["op"] == "cutover")
+    assert cutover["t"] >= 0.4 - 1e-3          # t_ms 400: never earlier
+    ts = [e["t"] for e in starts]
+    assert ts == sorted(ts)                     # file order, one after the other
+

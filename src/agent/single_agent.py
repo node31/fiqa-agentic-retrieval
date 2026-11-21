@@ -150,8 +150,10 @@ WORKED EXAMPLE (a real run: compound question c020 from the Azure gpt-6-sol eval
 WHY THE WHOLE HISTORY IS SENT AGAIN ON EVERY STEP
 
     1. The model API is stateless. Each llm.complete() is an independent HTTP request; the model
-       keeps nothing from the previous call. A chat app that "remembers" is doing exactly what
-       this loop does: resending the earlier turns. If step 2 only got the new block, the model
+       keeps nothing from the previous call. Chat products work the same way underneath: the
+       model only reads what is in its input, so the app (client or server) keeps the
+       conversation and puts earlier turns back into the input on every turn, often trimmed or
+       summarised once it gets long. If step 2 only got the new block, the model
        would not know that Search 1 happened, which half it already covered, or what it asked
        for last time.
     2. The finish action picks ids from ALL searches. In c020, half of the final list comes from
@@ -167,8 +169,9 @@ WHY THE WHOLE HISTORY IS SENT AGAIN ON EVERY STEP
     use the cheaper options:
         * re-sending only the doc ids of earlier searches: the model can't judge passages it
           can't read, so its final ordering would be guesswork for those ids;
-        * a provider-side conversation (a stored thread): the history still goes to the model
-          on every call, so it saves request bytes but not model input, and it ties the code to
+        * a provider-side conversation (e.g. OpenAI's previous_response_id): the provider
+          stores the history, but it still goes into the model's input on every call and is
+          billed as input tokens, so it saves request bytes, not cost, and it ties the code to
           one provider's API.
     Because each new prompt starts with the previous prompt unchanged (only appended to), a
     provider's prompt-prefix caching can reuse the repeated part. This code does not depend on

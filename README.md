@@ -6,7 +6,8 @@ idempotent writes and zero-downtime embedding-model migration. Part C is a hand-
 orchestrator on top, evaluated on plain and compound questions.
 
 The tasks and constraints are in [FIQA_RETRIEVAL_TASKS.md](FIQA_RETRIEVAL_TASKS.md). Design, results and trade-offs are
-in [DESIGN.md](DESIGN.md), also as a [Word document](docs/design/DESIGN.docx).
+in [DESIGN.md](DESIGN.md), also as a [Word document](docs/design/DESIGN.docx) and
+[slides](docs/design/DESIGN.pptx).
 
 ![Scenario 7 replay: reads and writes keep flowing while the cluster migrates from MiniLM to bge-small and rolls back](docs/assets/gifs/migrate_cutover_rollback.gif)
 
@@ -207,7 +208,7 @@ results/        bench.json · runs/ (incl. the one TEST run) · ablation_*.json 
 examples/       small standalone scripts
 FIQA_RETRIEVAL_TASKS.md  the task spec: parts A-C, constraints, deliverables
 AGENTS.md       how to set up, test and work in the repo (for coding agents)
-docs/           topics/ (00-16, one concept each) · from_zero/ (the whole system from scratch) · walkthroughs/ (eval, Part A/B results) · guides/ (scenarios, manual tests) · faq/ (concepts, this project) · design/ (DESIGN.docx) · assets/
+docs/           topics/ (00-16, one concept each) · from_zero/ (the whole system from scratch) · walkthroughs/ (eval, Part A/B results) · guides/ (scenarios, manual tests) · faq/ (concepts, this project) · design/ (DESIGN.docx, DESIGN.pptx) · assets/
 ```
 
 ## Measured on

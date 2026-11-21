@@ -259,6 +259,21 @@ TEMPLATE = r"""<!DOCTYPE html>
             background: linear-gradient(90deg, rgba(188,140,255,.25), rgba(188,140,255,.04)); border-left: 4px solid var(--purple); }
   .row.flow-row .react { color: var(--purple); }
 
+  /* ---------- filters (above the timeline) ---------- */
+  #filters { margin: 6px 0 0; padding: 6px 10px; border: 1px solid var(--border); border-radius: 10px;
+             background: var(--panel); display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 12.5px; }
+  #filters .grp { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+  #filters .grp > b { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-right: 2px; }
+  .fchip { cursor: pointer; border: 1px solid var(--lc, var(--border)); color: var(--text); background: rgba(255,255,255,.04);
+           border-radius: 999px; padding: 1px 9px; font-size: 12px; user-select: none; }
+  .fchip.off { opacity: .35; text-decoration: line-through; border-style: dashed; }
+  .fbtn { cursor: pointer; background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 6px;
+          padding: 1px 7px; font-size: 11.5px; }
+  #fText { background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 3px 8px;
+           width: 260px; font-size: 12.5px; }
+  #fCount { color: var(--muted); }
+  #fCount.active { color: var(--blue); font-weight: 600; }
+
   /* ---------- bottom panels ---------- */
   .bottom { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px; padding: 10px 20px 40px; }
   .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
@@ -302,6 +317,13 @@ TEMPLATE = r"""<!DOCTYPE html>
   </div>
   <div class="timeline" id="timeline"><input type="range" id="scrub" min="0" max="1000" step="1" value="0"></div>
   <div id="narration"></div>
+  <div id="filters">
+    <div class="grp" id="fClients"><b>clients</b></div>
+    <div class="grp" id="fAdmins"><b>admin &amp; ops</b></div>
+    <div class="grp"><button class="fbtn" id="fAll" title="show every persona">all</button><button class="fbtn" id="fNone" title="hide every persona">none</button></div>
+    <div class="grp"><input id="fText" type="search" autocomplete="off" placeholder="doc id or query text (e.g. roth, bot1-1)" title="shows ops that name this doc or query, and searches that returned or expected that doc"></div>
+    <div class="grp"><span id="fCount"></span><button class="fbtn" id="fClear">clear filters</button></div>
+  </div>
   <div id="stage">
     <div class="actor client" id="clientBox"><h2>Clients: users &amp; bots</h2><div class="chips" id="clientChips"></div></div>
     <div id="cluster">
@@ -318,7 +340,11 @@ TEMPLATE = r"""<!DOCTYPE html>
 
 <div class="bottom">
   <div class="panel"><h2>Scoreboard (at the playhead)</h2><div class="score" id="score"></div></div>
-  <div class="panel"><h2>Freshness: was the new doc found?</h2><p class="muted" style="margin:0 0 6px">&#128270; = a search that expected the doc (its time = when it was <i>sent</i> after the ack); &#9203; = wait_visible (its time = the real visibility lag).</p><ul class="list" id="fresh"></ul></div>
+  <div class="panel"><h2>Freshness: was the new doc found?</h2>
+    <p class="muted" style="margin:0 0 6px">&#128270; = a search that expected a doc: when the doc was acked, when the search
+      was sent, when the answer came back, and the difference. &#9203; = wait_visible: the measured lag from the ack until a
+      search first saw the doc.</p>
+    <ul class="list" id="fresh"></ul></div>
   <div class="panel"><h2>Answer checks: same answers as before?</h2><ul class="list" id="answers"></ul></div>
   <div class="panel"><h2>Cluster over time (status samples)</h2><canvas id="chart"></canvas></div>
 </div>
@@ -644,10 +670,13 @@ function shardRow(n, cx, y, w, h, gap, ownerIdx = -1) {
       The middle column shows what the cluster did, at the time it happened. The <b>stage</b> under the controls is the
       live picture: packets fly from an actor to the router and on to the shards.</p>
     <h3>The three request flows</h3>${flows}
-    <p><b>Two numbers, do not mix them up.</b> A search card's &ldquo;<i>searched 2.07 s after its ack</i>&rdquo; only says
-      <b>when that search ran</b> (e.g. after a 1 s sleep or a long load phase); it is <b>not</b> how long the doc took to
-      become searchable. The <b>visibility lag</b> (the freshness number, budget 1 s) is measured by <b>wait_visible</b>:
-      ack &rarr; first search that saw the doc, e.g. &ldquo;<i>VISIBLE after 34 ms (first poll)</i>&rdquo;.</p>
+    <p><b>Freshness.</b> A search card that expected a doc shows four times on the run's clock: when the doc was
+      <b>acked</b>, when the search was <b>sent</b>, when its answer <b>came back</b>, and the <b>difference</b> (how long
+      the search took). A search sent 3 s after the ack only says the script searched late. How fast a write becomes
+      searchable is what <b>wait_visible</b> measures: &ldquo;<i>VISIBLE after 34 ms (first poll)</i>&rdquo;.</p>
+    <p><b>Filters</b> (above the timeline): click a persona to hide or show its operations, or type a doc id or query
+      text to keep only the operations about it (including searches that returned or expected that doc). They change
+      what is listed, not what happened.</p>
     <h3>Who is who in this recording</h3>${legend}
     <p class="muted">Card colors: green = success / expectation met, red = a hard expectation failed or an error, amber = a
       no-op write or a <i>soft</i> expectation that missed (allowed, recorded for learning). Timeline markers: purple = label,
@@ -687,9 +716,29 @@ for (let i = 0; i < N_SHARDS; i++) {
   shardsEl.appendChild(el);
 }
 
+// ---- Freshness, shown as plain facts. For a search that expected a doc: when the doc was acked,
+// when the search was SENT, when its answer CAME BACK, and the difference (how long the search took).
+// fmtT: a run time in seconds ("1.234 s"); ackT = sent - since_ack_ms.
+const fmtT = (s) => `${s.toFixed(3)} s`;
+function searchTimes(c, st, en) {
+  if (!st || c.since_ack_ms == null) return "";
+  const ack = st.t - c.since_ack_ms / 1e3, back = en ? en.t : null;
+  return `doc acked at <b>${fmtT(ack)}</b> &middot; search sent at <b>${fmtT(st.t)}</b>` +
+    (back != null ? ` &middot; answer back at <b>${fmtT(back)}</b> &middot; difference <b>${fmtMs((back - st.t) * 1e3)}</b>` : "");
+}
+
 // ---- timeline rows: one per op (at its start time), plus "join" rows for parallel blocks
 const rowById = new Map(), joinById = new Map();
 const rowList = [];   // {t, el}, sorted by t (for "current row" and click-to-jump)
+const rowMeta = [];   // {el, kind: "op" | "label" | "flow", who, hay}: what the filters look at
+// Text a doc/query filter matches: the op's doc id, query and written text, plus every doc id the
+// search returned or was checked against ("broad": a search that returned bot1-1 matches "bot1-1").
+function hayOf(st, en) {
+  const r = st.req || {}, parts = [r.doc_id, r.query, r.text];
+  for (const h of ((en || {}).resp || {}).results || []) parts.push(h.doc_id);
+  for (const c of (en || {}).checks || []) parts.push(c.doc_id);
+  return parts.filter((x) => x != null).join("\n").toLowerCase();
+}
 (function buildRows() {
   const items = [];
   for (const st of starts.values()) {
@@ -735,6 +784,8 @@ const rowList = [];   // {t, el}, sorted by t (for "current row" and click-to-ju
       if (en) el.querySelector(".lat").textContent = " \u00b7 " + fmtMs(en.latency_ms);
     }
     el.addEventListener("click", () => { pause(); seek(it.t + 1e-6); });
+    const kind = st.op === "label" ? "label" : it.kind === "join" || st.op === "parallel" || side === "flow" ? "flow" : "op";
+    rowMeta.push({ el, kind, who: kind === "op" ? who : null, hay: kind === "op" ? hayOf(st, en) : "" });
     (it.kind === "join" ? joinById : rowById).set(st.id, el);
     rowList.push({ t: it.t, el });
     frag.appendChild(el);
@@ -760,6 +811,50 @@ const rowList = [];   // {t, el}, sorted by t (for "current row" and click-to-ju
     if ((e.checks || []).some((c) => c.hard && !c.pass) || e.error) add(e.t, "fail", `${e.op} failed at ${e.t.toFixed(3)} s`);
     else if ((e.checks || []).some((c) => !c.hard && !c.pass)) add(e.t, "soft", `soft miss at ${e.t.toFixed(3)} s`);
   }
+})();
+
+// =====================================================================================
+// Filters above the timeline: show only some personas and/or the ops about one doc or query.
+// Display only: the events, the playback, the stage and the scoreboard are unchanged; a hidden
+// row is just display:none. Works on any recording, old or new (no re-run needed).
+// =====================================================================================
+const FILTER = { off: new Set(), text: "" };   // off = actors whose ops are hidden; text = lower-case
+const docShown = (doc) => !FILTER.text || String(doc ?? "").toLowerCase().includes(FILTER.text);
+const opRows = () => rowMeta.filter((m) => m.kind === "op").length;
+function applyFilters() {
+  const active = FILTER.off.size > 0 || !!FILTER.text;
+  let shown = 0;
+  for (const m of rowMeta) {
+    let vis = true;
+    if (m.kind === "op") {
+      vis = !FILTER.off.has(m.who) && (!FILTER.text || m.hay.includes(FILTER.text));
+      if (vis) shown++;
+    } else if (m.kind === "flow") vis = !active;   // fork/join/pause rows only make sense unfiltered
+    m.el.style.display = vis ? "" : "none";          // label banners always stay, as section headings
+  }
+  for (const c of document.querySelectorAll(".fchip")) c.classList.toggle("off", FILTER.off.has(c.dataset.actor));
+  $("fCount").textContent = active ? `showing ${shown} of ${opRows()} operations` : `${opRows()} operations`;
+  $("fCount").classList.toggle("active", active);
+  renderScore();   // the freshness lists follow the doc filter
+}
+(function buildFilterBar() {
+  for (const name of actorNames) {
+    const role = roleOf(name);
+    const chip = document.createElement("span");
+    chip.className = "fchip";
+    chip.style.setProperty("--lc", actorColor(name));
+    chip.textContent = actorLabel(name);
+    chip.title = `${role || "actor"} ${name}: click to hide / show its operations`;
+    chip.dataset.actor = name;
+    chip.addEventListener("click", () => { FILTER.off.has(name) ? FILTER.off.delete(name) : FILTER.off.add(name); applyFilters(); });
+    $(role === "admin" || role === "ops" ? "fAdmins" : "fClients").appendChild(chip);
+  }
+  for (const g of ["fClients", "fAdmins"]) if (!$(g).querySelector(".fchip")) $(g).style.display = "none";
+  $("fAll").addEventListener("click", () => { FILTER.off.clear(); applyFilters(); });
+  $("fNone").addEventListener("click", () => { actorNames.forEach((n) => FILTER.off.add(n)); applyFilters(); });
+  $("fText").addEventListener("input", (e) => { FILTER.text = e.target.value.trim().toLowerCase(); applyFilters(); });
+  $("fClear").addEventListener("click", () => { FILTER.off.clear(); FILTER.text = ""; $("fText").value = ""; applyFilters(); });
+  $("fCount").textContent = `${opRows()} operations`;   // applyFilters() needs the scoreboard, set up later
 })();
 
 // =====================================================================================
@@ -905,14 +1000,14 @@ function endHtml(st, ev) {
     default: h = ev.ok ? `<span class="ok-t">&#10003; ok</span>` : `<span class="bad-t">&#10007; failed</span>`;
       if (r && Object.keys(r).length) h += ` <span class="muted mono">${esc(short(JSON.stringify(r), 100))}</span>`;
   }
-  for (const c of ev.checks || []) h += checkHtml(c);
+  for (const c of ev.checks || []) h += checkHtml(c, st, ev);
   return h;
 }
 
-function checkHtml(c) {
+function checkHtml(c, st, en) {
   const mark = c.pass ? '<span class="ok-t">&#10003;</span>' : c.hard ? '<span class="bad-t">&#10007; FAILED</span>' : '<span class="soft-t">~ soft miss (allowed)</span>';
-  const since = c.since_ack_ms != null ? ` &middot; <span class="muted" title="${SINCE_ACK_TIP}">searched ${fmtMs(c.since_ack_ms)} after its ack</span>` : "";
-  const sinceNote = c.since_ack_ms != null && c.found ? `<div class="muted" style="font-size:11px">(${c.since_ack_ms >= 1000 ? "this search simply ran later; " : ""}time between ack and this search, NOT the visibility lag. Visibility lag is measured by wait_visible)</div>` : "";
+  const since = "";
+  const sinceNote = c.since_ack_ms != null ? `<div class="muted" style="font-size:11.5px">${searchTimes(c, st, en)}</div>` : "";
   switch (c.kind) {
     case "expect": return `<div class="check">expect <b>${esc(c.doc_id)}</b>: ${c.found ? "FOUND #" + c.rank : "MISSING"}${since} ${mark}${sinceNote}</div>`;
     case "expect_absent": return `<div class="check">expect absent <b>${esc(c.doc_id)}</b>: ${c.found ? "still there (#" + c.rank + ")" : "absent"}${since} ${mark}</div>`;
@@ -1048,12 +1143,12 @@ function scoreEnd(st, ev) {
   if (st.op === "search" && !ev.error && ev.resp && "n" in ev.resp) {
     score.searches++; score.search.push(ev.latency_ms); if (ev.resp.partial) score.partial++;
     for (const c of ev.checks || []) if (c.kind === "expect" && c.since_ack_ms != null)
-      freshItems.unshift({ t: ev.t, html: `&#128270; <b>${esc(c.doc_id)}</b> ${c.found ? "found" : "MISSING"} by a search sent <span title="${SINCE_ACK_TIP}">${fmtMs(c.since_ack_ms)} after its ack</span>`,
-                           cls: c.found ? "ok-t" : c.hard ? "bad-t" : "soft-t", tag: c.since_ack_ms < 1000 ? "&lt; 1 s" : "&ge; 1 s" });
+      freshItems.unshift({ t: ev.t, doc: c.doc_id, html: `&#128270; <b>${esc(c.doc_id)}</b> ${c.found ? "found" : "MISSING"}: ${searchTimes(c, st, ev)}`,
+                           cls: c.found ? "ok-t" : c.hard ? "bad-t" : "soft-t", tag: "" });
   }
   if (st.op === "wait_visible" && !ev.error) {
     const r = ev.resp || {};
-    freshItems.unshift({ t: ev.t, html: `&#9203; <b>${esc(st.req.doc_id)}</b> ${st.req.absent ? "gone" : "visible"} ` +
+    freshItems.unshift({ t: ev.t, doc: st.req.doc_id, html: `&#9203; <b>${esc(st.req.doc_id)}</b> ${st.req.absent ? "gone" : "visible"} ` +
       (ev.ok ? (r.lag_ms != null ? `after <b>${fmtMs(r.lag_ms)}</b> (visibility lag)` : "") : "TIMEOUT"), cls: ev.ok ? "ok-t" : "bad-t", tag: r.first_poll || r.polls === 1 ? "first poll" : `${r.polls} polls` });
   }
 }
@@ -1300,8 +1395,8 @@ function renderScore() {
   $("miniScore").innerHTML = `<b class="ok-t">&#10003; ${score.pass}</b> &middot; <b class="${score.fail ? "bad-t" : ""}">&#10007; ${score.fail}</b>` +
     ` &middot; ~ ${score.softMiss} soft &middot; writes <b>${score.writes}</b> &middot; searches <b>${score.searches}</b>`;
   const list = (items, empty) => items.length ? items.slice(0, 80).map((f) =>
-    `<li><span class="${f.cls}">${f.html}</span><span class="muted">${f.tag} &middot; t=${f.t.toFixed(2)}</span></li>`).join("") : `<li class="muted">${empty}</li>`;
-  $("fresh").innerHTML = list(freshItems, "nothing yet (searches with expect and wait_visible ops show up here)");
+    `<li><span class="${f.cls}">${f.html}</span><span class="muted">${f.tag ? f.tag + " &middot; " : ""}t=${f.t.toFixed(2)}</span></li>`).join("") : `<li class="muted">${empty}</li>`;
+  $("fresh").innerHTML = list(freshItems.filter((f) => docShown(f.doc)), "nothing yet (searches with expect and wait_visible ops show up here)");
   $("answers").innerHTML = list(answerItems, "nothing yet (expect_same_as / expect_overlap_with / golden checks)");
 }
 

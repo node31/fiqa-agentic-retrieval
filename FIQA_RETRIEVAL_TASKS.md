@@ -1,20 +1,27 @@
-# FiQA retrieval tasks: a distributed, agentic retrieval system
+# Take-Home: Distributed, Agentic Retrieval System
 
-The tasks and constraints this project is built against. [DESIGN.md](DESIGN.md) reports how each one turned out,
-with the numbers.
+**Submission:** Link or zip of a git repo with commit history (no single-commit dumps).
+**Follow-up:** 60-minute technical debrief. We walk through your code, re-run parts of it live, and extend it together.
 
 ---
 
-## Goals
+## What we're evaluating
 
-- **Empirical rigor:** every number is real, reproducible and honestly reported.
-- **Distributed systems design:** the service stays correct under sharding, live updates and model changes.
-- **Agentic judgment:** single- and multi-agent systems are built by hand, and measured to show when each is worth its cost.
-- **ML judgment:** choices make empirical sense on *this* data under *these* constraints.
-- **Design for change:** the system can evolve (new data, new model, more scale) without rework or downtime.
-- **Code quality:** another engineer can read the code in 10 minutes.
-- **Communication:** trade-offs are stated specifically, not in generalities.
-- **Self-assessment:** the write-up names the system's own weak spots.
+- **Empirical rigor:** are your numbers real, reproducible and honestly reported?
+- **Distributed systems design:** does the service stay correct under sharding, live updates and model changes?
+- **Agentic judgment:** can you build single- and multi-agent systems yourself, and measure when each is worth its cost?
+- **ML judgment:** do your choices make empirical sense on *this* data under *these* constraints?
+- **Design for change:** can the system evolve (new data, new model, more scale) without rework or downtime?
+- **Code quality:** can another engineer read this in 10 minutes?
+- **Communication:** are trade-offs stated specifically, not in generalities?
+- **Self-assessment:** do you recognize your own system's weak spots?
+
+| Area | Weight |
+|---|---|
+| Part A: Retrieval quality and evaluation | 25% |
+| Part B: Distributed retrieval service | 30% |
+| Part C: Agentic and multi-agent retrieval | 25% |
+| Design doc, trade-offs and self-assessment | 20% |
 
 ---
 
@@ -93,7 +100,7 @@ Pick **3 specific failure cases** from your own eval run. For each, include:
 
 ## Part B: Distributed retrieval service
 
-Everything runs on one laptop with `docker compose up`. Simulate the cluster with separate processes or containers. Replicas, caching and chaos testing are out of scope.
+Everything runs on one laptop with `docker compose up`. Simulate the cluster with separate processes or containers. Replicas, caching and chaos testing are **not** required; we'll discuss them in the debrief.
 
 ### B1. Sharding
 
@@ -165,7 +172,7 @@ Then, in DESIGN.md:
 - Propose a **routing policy**: which queries should go to which path, and how the system decides.
 - Make a **ship / don't ship** call for each agentic path. "It costs more and doesn't help" is a fine answer if the numbers support it.
 
-The system should also run unchanged on a held-out compound set built from the test split.
+We will also run your system on a held-out compound set built from the test split during the debrief.
 
 ### Example complex queries
 
@@ -178,7 +185,7 @@ These show the *style* of question a single search tends to half-answer. They ar
 5. *Personal plan:* "I'm 25 with student loans at 6% and an employer 401(k) match. What should I prioritise, and how big should my emergency fund be?"
 6. *Sequential decision:* "If I'm self-employed, should I open a SEP IRA or a Solo 401(k), and can I still contribute to a Roth IRA on top of it?"
 
-**LLM access:** any hosted model behind an API key with a hard spending cap, or a local model. Document which model you used and your total spend.
+**LLM access:** we provide an API key with a hard spending cap. You may use a local model instead if you prefer. Document which model you used and your total spend.
 
 ---
 
@@ -231,11 +238,11 @@ Must include:
 
 ## Reproducibility contract
 
-Ship a `Dockerfile` and `docker-compose.yml`. Anyone with Docker must be able to bring up the service and run the eval end to end without installing Python locally.
+Ship a `Dockerfile` and `docker-compose.yml`. A reviewer with Docker must be able to bring up the service and run the eval end to end without installing Python locally.
 
-**Quality metrics** (nDCG@10, Recall@10, MRR, ablation deltas) are hardware-independent. A rerun in the containers must match DESIGN.md within a **5% relative tolerance**.
+**Quality metrics** (nDCG@10, Recall@10, MRR, ablation deltas) are hardware-independent. When we run your containers, they must match DESIGN.md within a **5% relative tolerance**. Submissions whose quality numbers don't reproduce are marked non-reproducible, which weighs heavily in grading.
 
-**Latency** is hardware-dependent. Document the machine you measured on (CPU model, core count, RAM), and report latency as measured there.
+**Latency** is hardware-dependent. Document the machine you measured on (CPU model, core count, RAM). We'll trust your reported numbers as measured on that hardware and sanity-check them against the spec; we won't re-measure.
 
 **Agent results** depend on the LLM and are not deterministic. Report the model and temperature.
 
@@ -255,6 +262,16 @@ If indexing is long, ship a pre-built index artifact *and* the script that regen
 
 ---
 
-## AI assistance
+## Assistance policy
 
-AI assistants, documentation and web search are fine. Every choice still needs its own reason, backed by the project's numbers.
+Use AI assistants (Claude, ChatGPT, Copilot), documentation or web search **as you would at work**. We care about *your* judgment on top of that help.
+
+In the debrief we'll probe why you made specific choices, what you observed in your runs, and what you'd change. "The assistant suggested it" is a fine part of an answer, paired with your own reasoning for keeping, changing or rejecting the suggestion. Expect to modify your own code live.
+
+---
+
+## Submission
+
+Send a repo link (or zip) within 7 days. We'll review, then schedule the 60-minute debrief.
+
+If you run out of time, **ship what you have with a short note on what's missing and what you'd do next.** Suggested priority if time is short: A1–A2, B1–B2, C, then the rest. A partial, honest submission with a clear write-up is stronger than a padded one.

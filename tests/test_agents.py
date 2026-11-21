@@ -104,3 +104,34 @@ def test_gate_and_interleave_helpers():
     assert looks_simple("Is gold a good hedge?")
     assert not looks_simple(COMPOUND)
     assert interleave([["a"], ["b", "c"]], k=10) == ["a", "b", "c"]
+
+
+def _load_ask():
+    """scripts/ask.py is a script, not a package module: load it from its path."""
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("ask", Path(__file__).resolve().parents[1] / "scripts" / "ask.py")
+    ask = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ask)
+    return ask
+
+
+@pytest.mark.parametrize("strategy", ["bm25", "dense", "hybrid", "single", "multi"])
+def test_ask_cli_prints_every_strategy(strategy, monkeypatch, capsys):
+    """scripts/ask.py end to end with the fake search and the fake LLM (heuristic policy)."""
+    ask = _load_ask()
+    monkeypatch.setattr(ask, "make_search_fn", lambda url: fake_search)
+    assert ask.main([COMPOUND, "--strategy", strategy, "--backend", "fake", "-k", "5"]) == 0
+    out = capsys.readouterr().out
+    assert "1. " in out and "passage about" in out
+    if strategy in ("single", "multi"):
+        assert "LLM calls" in out
+    if strategy == "multi":
+        assert "plan:" in out
+
+
+def test_ask_cli_refuses_azure_without_confirm_spend():
+    ask = _load_ask()
+    with pytest.raises(SystemExit):
+        ask.main(["q", "--strategy", "single", "--backend", "azure"])

@@ -417,8 +417,8 @@ more per query here) or errors on the new path.
 unpaired partner whose cosine similarity is below 0.25, falling back to the least similar partner when none qualifies.
 The halves end up on different topics: mean pair cosine 0.088, maximum 0.346. Each pair was rewritten
 into one natural question by an LLM from the two question texts only. Gold labels are the union of both halves' qrels,
-each tagged with the half it belongs to. Ten questions are listed in `data/compound_review_sheet.md` for a manual
-check, which is still open.
+each tagged with the half it belongs to. I hand-checked ten of the rewrites (`data/compound_review_sheet.md`): all ten
+read as one natural question and kept both halves' intents, so none needed a fix.
 
 | I chose | because | alternative | why I didn't use it |
 |---|---|---|---|

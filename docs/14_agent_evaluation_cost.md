@@ -53,8 +53,8 @@ gpt-6-sol made the single agent the quality winner. Even the fake backend, a reg
 compound coverage and slightly hurting plain recall, which is why the free gate exists.
 
 At n = 100 a ±0.03 Recall@10 difference is noise. Single minus multi on compound is R@10 +0.045 (bootstrap 95% CI
-[+0.007, +0.085]) and Cov@10 +0.08 (CI [+0.01, +0.15]), real but small. I have not yet hand-checked the compound
-questions (`data/compound_review_sheet.md`).
+[+0.007, +0.085]) and Cov@10 +0.08 (CI [+0.01, +0.15]), real but small. I hand-checked 10 of the compound
+questions (`data/compound_review_sheet.md`); all 10 read well and none needed a fix.
 
 Cost lessons: the dry run under-estimated by about 40% ($0.47 vs $0.79) because the fake policy makes fewer, shorter calls
 than a real model, so I treat it as a lower bound. About 610K of the 655K tokens were input, since prompts re-send search

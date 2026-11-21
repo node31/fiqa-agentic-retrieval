@@ -100,6 +100,6 @@ I ran the evaluation first with the free haiku backend as a dev run, then once o
 (`results/agent_eval.json`, $0.79 at placeholder prices). Done when I had the table in Chapter 8 §8.6 and a routing
 decision backed by it: plain questions go to non-agentic hybrid search, the single agent is an opt-in "deep search", and
 compound questions go to the single agent for quality (Recall@10 0.400, Coverage 0.40) or to the multi-agent team under a
-latency or cost budget (p95 4.75 s, 925 tokens). The 10-question hand-check of the compound rewrites is still open.
+latency or cost budget (p95 4.75 s, 925 tokens). I also hand-checked 10 of the compound rewrites; none needed a fix.
 
 Finally I wrote [`DESIGN.md`](../../DESIGN.md), justifying each choice with the numbers above.

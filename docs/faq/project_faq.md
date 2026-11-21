@@ -224,7 +224,7 @@ bound. About 610K of the tokens were input, since every step re-sends search res
 `data/build_compound.py` samples 200 dev queries with seed 42, embeds them with MiniLM and pairs each with a random
 partner below cosine 0.25 (mean pair cosine 0.088). GitHub Copilot wrote the rewrites from the two query texts only,
 never from gold passages. Gold is the union of both halves' qrels, each doc tagged "a" or "b" for Coverage@10. I
-selected 10 rewrites for the hand-check in `data/compound_review_sheet.md`; that check is still open.
+hand-checked 10 rewrites in `data/compound_review_sheet.md`: all 10 read as one natural question, so none needed a fix.
 
 ### Why your own JSON action protocol instead of native tool calling?
 One code path works for all three backends (fake, Copilot CLI, Azure Responses API), and every step is visible in the

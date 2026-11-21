@@ -278,5 +278,4 @@ most of the 4 ms.
 ### What would you do differently?
 I'd run the agent eval on the model I intend to ship much earlier, since the haiku results pointed me toward the wrong
 routing policy for a while. I'd also put WAL snapshots and replicas ahead of the async mode, because a production
-deployment needs them first. The 10-query hand-check of the compound rewrites is still open, and I'd close it before
-calling Part C finished.
+deployment needs them first.

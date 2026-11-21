@@ -79,8 +79,8 @@ flowchart LR
 
 An example (`c000`): "Why might a share price not change at all for several days, and what are the steps to buying a
 home?" Gold: `128888` (half a), `283141` and `390447` (half b). Plain search tends to fill the top 10 with one half, so
-baseline Coverage@10 is 0.10. I set aside 10 rewrites for a human hand-check in `data/compound_review_sheet.md`; that
-check is not done yet.
+baseline Coverage@10 is 0.10. I hand-checked 10 rewrites in `data/compound_review_sheet.md`; all 10 read well, so none
+needed a fix.
 
 ## 8.5 The multi-agent team
 

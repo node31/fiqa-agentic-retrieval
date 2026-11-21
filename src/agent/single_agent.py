@@ -34,7 +34,7 @@ HOW TO READ ``run_single_agent``
        "search" -> run it and loop again; anything else -> treat as finish and stop.
     3. Keep only chosen ids we actually showed, then fill up to k from the fused ranking.
 
-WORKED EXAMPLE (a real run: compound question c020 from the Azure gpt-6-sol eval)
+WORKED EXAMPLE 1 (a real run: compound question c020 from the Azure gpt-6-sol eval)
 
     Every prompt below is EXACTLY what the model received. I rebuilt each one with this code
     and found its sha256 in .llm_cache/azure/ (the cache key is a hash of the full prompt,
@@ -176,6 +176,98 @@ WHY THE WHOLE HISTORY IS SENT AGAIN ON EVERY STEP
     Because each new prompt starts with the previous prompt unchanged (only appended to), a
     provider's prompt-prefix caching can reuse the repeated part. This code does not depend on
     that.
+
+THE FINAL TOP 10: MODEL PICKS FIRST, THEN THE RRF FILL
+
+    The last two lines of run_single_agent are:
+
+        fill = fuse_lists([h for _, _, h in searches], k=k * 3)
+        res.doc_ids = list(dict.fromkeys(chosen + fill))[:k]
+
+    Line 1 takes the hit list out of every (strategy, query, hits) tuple and merges the lists
+    with RRF (src/retrieval/hybrid.py): each doc gets 1/(60 + rank) from every list it is in,
+    the parts are added up, and the ids come back best first (ties broken by doc id, A to Z).
+    RRF looks only at ranks. The scores of two different queries can't be compared, so ranks
+    are the fair way to mix them.
+
+    Line 2 puts the model's validated picks (chosen) first and the fused list after them.
+    dict.fromkeys(...) drops repeats and keeps each id at its FIRST position, so an id that is
+    in both lists stays where the model put it. [:k] cuts to 10.
+
+    Why it is there:
+        * The model often returns fewer than 10 ids. In the Azure run that happened on 38 of
+          100 plain and 25 of 100 compound questions. Recall and Coverage are measured @10, so
+          an empty slot is a wasted chance; the fill uses it.
+        * If the LLM step fails (bad JSON, budget, timeout), chosen is [] and the answer is the
+          fused ranking of the searches already done. The agent never returns an empty list.
+          Ids the model invented were already removed by the "d in seen" check, which can also
+          leave chosen short.
+        * RRF interleaves the searches, so on a compound question both halves get slots.
+        * The model's picks go first because it read the snippets and acted as a reranker. The
+          cost: a weak pick takes a top slot ahead of a fused result.
+        * k * 3 is spare room only. fill has no repeats of its own, so chosen + fill always
+          has at least len(fill) distinct ids; k would already be enough.
+
+WORKED EXAMPLE 2 (a real run: compound question c004, where the fill matters)
+
+    Question: "How do I book capital losses in GnuCash, and how exactly do companies make money from issuing warrants?"
+        half a: "Book capital losses in gnucash"
+        half b: "how exactly do companies make money from warrants?"
+        gold passages: 351123, 499454 (half a) and 415684 (half b)
+
+    Search 1 (the raw question, hybrid) returned, best first:
+        415684, 351123, 54354, 55463, 380474, 467508, 365721, 145892, 257258, 116631
+    Step 1: the model asked for a second search for the GnuCash half:
+        'GnuCash how to record book capital loss sale stock negative Income:Capital Gains transaction'
+    Search 2 returned:
+        351123, 266898, 185983, 152960, 490176, 552255, 578970, 33117, 543898, 385121
+    Step 2: the model finished with only FOUR ids:
+        chosen = ['351123', '415684', '145892', '116631']
+    (all four appear in Search 1, so all four pass the "d in seen" check)
+
+    Line 1, the RRF fill. The two lists hold 20 hits but only 19 distinct ids (351123 is in
+    both), so fill has 19 ids. The first 12, with where each came from:
+
+        pos  doc_id  rank1 rank2   from Search 1 + from Search 2 = RRF score
+         1   351123    2    1    1/(60+2) + 1/(60+1)  = 0.0325
+         2   415684    1    -    1/(60+1) + -         = 0.0164
+         3   266898    -    2           - + 1/(60+2)  = 0.0161
+         4   185983    -    3           - + 1/(60+3)  = 0.0159
+         5    54354    3    -    1/(60+3) + -         = 0.0159
+         6   152960    -    4           - + 1/(60+4)  = 0.0156
+         7    55463    4    -    1/(60+4) + -         = 0.0156
+         8   380474    5    -    1/(60+5) + -         = 0.0154
+         9   490176    -    5           - + 1/(60+5)  = 0.0154
+        10   467508    6    -    1/(60+6) + -         = 0.0152
+        11   552255    -    6           - + 1/(60+6)  = 0.0152
+        12   365721    7    -    1/(60+7) + -         = 0.0149
+
+    351123 is first because it is in BOTH lists (2nd and 1st): 1/62 + 1/61 = 0.0325, about
+    twice what any doc found by only one search can get. 415684 (rank 1 in Search 1 only) is
+    next with 1/61. After that the two searches alternate: 266898 (Search 2, rank 2), then a
+    tie at 1/63 between 185983 (Search 2) and 54354 (Search 1), broken by doc id. This
+    alternation is how both halves of a compound question get slots.
+
+    Line 2. chosen + fill is a list of 23 ids:
+        ['351123', '415684', '145892', '116631'] + ['351123', '415684', '266898', '185983'] + ...
+    dict.fromkeys keeps the first copy of each id. 351123 and 415684 are already in chosen, so
+    their copies at the front of fill are dropped. The 6 fill ids that come next take the empty
+    slots. [:10] gives the final answer:
+
+        ['351123', '415684', '145892', '116631', '266898', '185983', '54354', '152960', '55463', '380474']
+        |------- model's 4 --------|  |--------------- filled from RRF ----------------|
+
+    This is exactly the doc_ids recorded for c004 in results/agent_eval.json.
+
+    What the example shows:
+        * Without the fill the answer would have 4 ids, and 6 of the 10 slots would be empty.
+        * Both gold passages that any search found (351123 and 415684) are at the top. The
+          third, 499454, was in neither search, so no ordering could have recovered it.
+        * The model promoted 145892 and 116631 (ranks 8 and 10 in Search 1, fill positions 14
+          and below) above the fused results. Neither is gold. That is the cost noted above:
+          the model's picks win even when they are weak.
+        * If the LLM had failed at step 2, chosen would be [] and the answer would be the
+          first 10 ids of fill: ['351123', '415684', '266898', '185983', '54354', '152960', '55463', '380474', '490176', '467508'].
 """
 from __future__ import annotations
 

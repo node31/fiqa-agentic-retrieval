@@ -94,8 +94,38 @@ def run_single_agent(question: str, llm: LLM, tool: SearchTool, max_steps: int =
         system = prompts.SINGLE_AGENT.replace("{remaining}", str(remaining + 1))
         if remaining == 0:
             system += "\nThis is your LAST action: you must reply with finish."
-        # The user prompt is rebuilt from scratch each step: the model has no memory between
-        # calls, so everything it should know (question + every search so far) goes in again.
+        # Build the USER prompt for this step. The model has no memory between calls (each
+        # llm.complete is a fresh request), so the prompt is rebuilt from scratch every step and
+        # carries everything the model should know: the question + EVERY search done so far.
+        #
+        # Piece by piece:
+        #   searches              list of (strategy, query, hits) tuples. Step 0 put the original
+        #                         question there; each "search" action appends one more (below).
+        #   enumerate(..., 1)     numbers the searches 1, 2, 3 (start=1 reads better than 0).
+        #   (s, q, h)             unpacks one tuple: s = strategy, q = query text, h = hit list.
+        #   {q!r}                 repr(q): the query in quotes ('...'), so the model sees exactly
+        #                         what was searched, including spaces, and can avoid repeating it.
+        #   render_hits(h)        (src/agent/tools.py) turns the hits into one line per hit:
+        #                         "[doc_id] snippet". The snippet is the passage text already cut
+        #                         to 200 chars by SearchTool, with newlines and runs of spaces
+        #                         collapsed (" ".join(text.split())) so every hit stays on ONE
+        #                         line. Scores are left out on purpose: the model judges by text,
+        #                         and fewer characters means fewer tokens. No hits -> "(no results)".
+        #   "\n\n".join(...)      a blank line between search blocks; the question goes first.
+        #
+        # What the model receives after two searches (ids and text shortened):
+        #   Question: Should I pay off my mortgage or invest?
+        #
+        #   Search 1 (hybrid): 'Should I pay off my mortgage or invest?'
+        #   [12345] Paying down a 3% mortgage is a guaranteed return of 3% ...
+        #   [67890] If your employer matches 401k contributions, invest first ...
+        #
+        #   Search 2 (bm25): 'mortgage prepayment vs index fund'
+        #   [24680] Prepaying a mortgage reduces interest but locks money in the house ...
+        #
+        # The bracketed ids are what the model copies back in a finish action; the validation
+        # further down keeps only ids that appear in these blocks. Cost: the prompt grows with
+        # every search (up to 10 hits x ~200 chars each), so the 3-step cap also bounds its size.
         user = f"Question: {question}\n\n" + "\n\n".join(
             f"Search {i} ({s}): {q!r}\n{render_hits(h)}" for i, (s, q, h) in enumerate(searches, 1))
         try:

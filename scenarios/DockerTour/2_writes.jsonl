@@ -1,0 +1,18 @@
+# Docker tour, step 2 (guide 3c): upsert, search, delete, search, then a stale write.
+#
+# By hand: python scripts/scenario.py scenarios/DockerTour/2_writes.jsonl --url http://localhost:8000 --open
+# What to look at (sync mode): the doc is found by the very next search, it is gone right after the delete, and the
+# last upsert (version 1, older than the delete's version 2) is a no-op: "stale_or_duplicate".
+{"op": "config", "description": "guide 3c: a write is searchable at once (sync), a delete removes it, an older version can't bring it back", "actors": {
+  "owl": {"role": "user", "description": "writes a doc, deletes it, then sends an old version again"},
+  "fox": {"role": "user", "description": "searches for it after every write"}}}
+
+{"op": "label", "text": "3c. Owl writes a doc: it goes to the one shard that owns it"}
+{"op": "upsert", "actor": "owl", "doc_id": "tour-zebra-{run}", "version": 1, "text": "zebra bonds are a made up product for the docker tour", "expect_applied": true}
+{"op": "search", "actor": "fox", "query": "zebra bonds made up product docker tour", "strategy": "bm25", "k": 3, "expect_ok": true, "expect": ["tour-zebra-{run}"]}
+{"op": "label", "text": "Owl deletes it (version 2): the shard keeps a tombstone"}
+{"op": "delete", "actor": "owl", "doc_id": "tour-zebra-{run}", "version": 2, "expect_applied": true}
+{"op": "search", "actor": "fox", "query": "zebra bonds made up product docker tour", "strategy": "bm25", "k": 3, "expect_ok": true, "expect_absent": ["tour-zebra-{run}"]}
+{"op": "label", "text": "A late version 1 arrives: older than the tombstone, so a no-op"}
+{"op": "upsert", "actor": "owl", "doc_id": "tour-zebra-{run}", "version": 1, "text": "zebra again", "expect_applied": false}
+{"op": "search", "actor": "fox", "query": "zebra bonds made up product docker tour", "strategy": "bm25", "k": 3, "expect_ok": true, "expect_absent": ["tour-zebra-{run}"]}

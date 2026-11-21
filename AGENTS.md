@@ -40,6 +40,7 @@ cached, and on Windows `PYTHONIOENCODING=utf-8`.
 | Docker cluster | `docker compose up -d` (router :8000; stop the local cluster first) |
 | API page | `http://localhost:8000/docs`, or `python -m scripts.api_docs --local` without Docker |
 | dev eval | `python -m src.eval --strategy hybrid --fusion linear --alpha 0.7 --name <name> --out <scratch file>` |
+| Docker tour (guide section 3, checked; restores the stack) | `.\scripts\docker_tour.ps1` / `./scripts/docker_tour.sh` (needs a running stack) |
 | a scenario | `python scripts/scenario.py scenarios/SimpleScenarios/2_SimpleReadAfterWrite.csv --start-cluster --tiny` |
 
 Test clusters use their own ports (18000+, 19000+), so they can run while the dev cluster or Docker holds 8000.

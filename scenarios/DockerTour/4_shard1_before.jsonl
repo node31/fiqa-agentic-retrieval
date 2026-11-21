@@ -1,0 +1,10 @@
+# Docker tour, step 4 (guide 3g, part 1): before shard 1 is stopped, write one doc that shard 1 owns and one that
+# shard 0 owns. {on1:...} and {on0:...} are doc ids that docker_tour.py picks so they really hash to that shard.
+{"op": "config", "description": "guide 3g, before: one doc on shard 1 and one on shard 0, both acked", "actors": {
+  "fox": {"role": "user", "description": "writes a doc on shard 1 and one on shard 0"},
+  "elephant": {"role": "user", "description": "checks both are searchable"}}}
+
+{"op": "label", "text": "3g. Before the outage: fox writes a doc on shard 1 and one on shard 0"}
+{"op": "upsert", "actor": "fox", "doc_id": "{on1:tour-keep}", "version": 1, "text": "beaverprobe kept doc that lives on shard one", "expect_applied": true}
+{"op": "upsert", "actor": "fox", "doc_id": "{on0:tour-other}", "version": 1, "text": "beaverprobe other doc that lives on shard zero", "expect_applied": true}
+{"op": "search", "actor": "elephant", "query": "beaverprobe", "strategy": "bm25", "expect_ok": true, "expect": ["{on1:tour-keep}", "{on0:tour-other}"]}

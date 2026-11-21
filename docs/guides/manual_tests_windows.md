@@ -223,6 +223,15 @@ minilm, and scenario 8's retry and late writes are no-ops.
 Same tests, now through the router at `http://localhost:8000`: every search fans out to 3 shard containers, every
 write goes to the one shard that owns the doc.
 
+> **All of section 3 in one command.** `.\scripts\docker_tour.ps1` runs every step below except 3h and 3i against the
+> running stack, checks each result against the numbers in this section, and writes a report with an animated replay
+> per step (`toy_runs\docker_tour\<stamp>\index.html`, opened at the end). It stops and starts shard1, then deletes the docs
+> it wrote and verifies the stack is back in exactly the shape it found it: containers, write mode, models, live docs
+> per shard and the answers to six probe searches. About 2 to 3 minutes; needs only Docker and the stack in sync mode
+> (the bootstrap default). 3i stays manual: the tour never changes the write mode. `-Azure` adds the agent step
+> (3e, costs a few cents), `-Skip eval,simple` or `-Only writes,shard` pick phases (search, eval, writes, migration, simple,
+> agents, shard), and `-NoOpen` skips opening the report.
+
 ### 3a. Search with each strategy over raw HTTP
 
 ```powershell

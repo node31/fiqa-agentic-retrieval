@@ -123,7 +123,9 @@ From a fresh clone, with only Docker installed: `./scripts/bootstrap.sh` (Linux/
 Options and troubleshooting are in [DEPLOY.md](DEPLOY.md). Every API can be called from the browser at http://localhost:8000/docs, with
 ready-made examples (`python -m scripts.api_docs --local` gives the same page without Docker). To try everything by
 hand, step by step with the numbers to expect, follow [docs/guides/manual_tests_windows.md](docs/guides/manual_tests_windows.md) or
-[docs/guides/manual_tests_mac.md](docs/guides/manual_tests_mac.md).
+[docs/guides/manual_tests_mac.md](docs/guides/manual_tests_mac.md). Their whole Docker section also runs as one command,
+`.\scripts\docker_tour.ps1` or `./scripts/docker_tour.sh`: it checks every step, writes a report with a replay per step,
+and puts the stack back exactly as it found it.
 
 ### Docker by hand (no local Python)
 

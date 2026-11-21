@@ -1,0 +1,15 @@
+# Docker tour, step 5 (guide 3g, part 2): runs while the shard1 container is STOPPED (docker compose stop shard1).
+#
+# What to look at: searches still answer, but "partial": true with missing_shards [1], so shard 1's doc is missing
+# from them; a write owned by shard 1 fails (HTTP 503 after the router's retries) instead of being lost; a write to
+# shard 0 still works.
+{"op": "config", "description": "guide 3g, shard 1 down: partial answers, writes owned by shard 1 fail, the rest works", "actors": {
+  "elephant": {"role": "user", "description": "searches while shard 1 is down"},
+  "fox": {"role": "user", "description": "writes to shard 1 (fails) and to shard 0 (works)"}}}
+
+{"op": "label", "text": "Shard 1 is stopped: searches answer from shards 0 and 2, flagged partial"}
+{"op": "search", "actor": "elephant", "query": "what is a roth ira?", "strategy": "hybrid", "k": 3, "expect_partial": true, "expect_missing_shards": [1]}
+{"op": "search", "actor": "elephant", "query": "beaverprobe", "strategy": "bm25", "expect_partial": true, "expect": ["{on0:tour-other}"], "expect_absent": ["{on1:tour-keep}"]}
+{"op": "label", "text": "A write owned by shard 1 fails (503); a write to shard 0 still works"}
+{"op": "upsert", "actor": "fox", "doc_id": "{on1:tour-down}", "version": 1, "text": "beaverprobe written while its shard was down", "expect_error": true}
+{"op": "upsert", "actor": "fox", "doc_id": "{on0:tour-other}", "version": 2, "text": "beaverprobe other doc that lives on shard zero, version two", "expect_applied": true}

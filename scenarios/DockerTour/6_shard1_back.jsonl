@@ -1,0 +1,14 @@
+# Docker tour, step 6 (guide 3g, part 3): shard1 was started again (it replayed its WAL before turning healthy).
+#
+# What to look at: searches are complete again (partial false); the doc acked on shard 1 before the outage is back;
+# the write that failed was never acked, so it is absent until fox retries it.
+{"op": "config", "description": "guide 3g, shard 1 back: WAL replay restored every acked write; the failed write is retried", "actors": {
+  "elephant": {"role": "user", "description": "checks every acked doc is back"},
+  "fox": {"role": "user", "description": "retries the write that failed during the outage"}}}
+
+{"op": "label", "text": "Shard 1 is back: complete answers, and its acked doc survived (WAL replay)"}
+{"op": "search", "actor": "elephant", "query": "what is a roth ira?", "strategy": "hybrid", "k": 3, "expect_ok": true}
+{"op": "search", "actor": "elephant", "query": "beaverprobe", "strategy": "bm25", "expect_ok": true, "expect": ["{on1:tour-keep}", "{on0:tour-other}"], "expect_absent": ["{on1:tour-down}"]}
+{"op": "label", "text": "Fox retries the failed write: now it is applied"}
+{"op": "upsert", "actor": "fox", "doc_id": "{on1:tour-down}", "version": 1, "text": "beaverprobe written while its shard was down", "expect_applied": true}
+{"op": "search", "actor": "elephant", "query": "beaverprobe", "strategy": "bm25", "expect_ok": true, "expect": ["{on1:tour-down}"]}

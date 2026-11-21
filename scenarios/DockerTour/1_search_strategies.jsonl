@@ -1,0 +1,17 @@
+# Docker tour, step 1 (guide 3a): one question with each strategy, through the router and all 3 shard containers.
+#
+# Run by scripts/docker_tour.ps1 / docker_tour.sh. By hand, against a running stack:
+#   python scripts/scenario.py scenarios/DockerTour/1_search_strategies.jsonl --url http://localhost:8000 --open
+# What to look at: every search answers from all 3 shards (partial false), and hybrid finds the three passages
+# the guide lists (553031, 488556, 214174) for "what is a roth ira?".
+{"op": "config", "description": "guide 3a: the same question with bm25, dense and hybrid; every search fans out to 3 shard containers", "actors": {
+  "elephant": {"role": "user", "description": "asks one question with each strategy"},
+  "ops": {"role": "ops", "description": "reads the cluster status"}}}
+
+{"op": "status", "actor": "ops"}
+{"op": "label", "text": "3a. One question, three strategies"}
+{"op": "search", "actor": "elephant", "query": "what is a roth ira?", "strategy": "bm25", "k": 10, "expect_ok": true}
+{"op": "search", "actor": "elephant", "query": "what is a roth ira?", "strategy": "dense", "k": 10, "expect_ok": true}
+{"op": "search", "actor": "elephant", "query": "what is a roth ira?", "strategy": "hybrid", "k": 10, "expect_ok": true, "expect": ["553031", "488556", "214174"]}
+{"op": "label", "text": "One more question, as src/search.py would ask it"}
+{"op": "search", "actor": "elephant", "query": "what is short selling?", "strategy": "hybrid", "k": 10, "expect_ok": true}

@@ -55,6 +55,7 @@ state (`artifacts/docker/router_state.json`) survive restarts.
 | add / delete a document | `curl -s -X POST localhost:8000/upsert -H 'content-type: application/json' -d '{"doc_id":"my-1","version":1,"text":"..."}'` |
 | full dev evaluation (500 queries) | `docker compose --profile tools run --rm eval` (my run: nDCG@10 0.4190) |
 | scenario files (writes, searches, migrations, crashes) with an HTML replay | see [docs/guides/scenarios.md](docs/guides/scenarios.md) |
+| every Docker step of the manual tests, checked, with a report and a replay per step; the stack ends in the shape it started in (Docker only, stack in sync mode, ~3 min) | `.\scripts\docker_tour.ps1` / `./scripts/docker_tour.sh` (`-Azure` / `--azure` adds the agents) |
 | deeper Docker check: kill/restart a shard container, migration, memory, eval (needs host Python + venv) | `python -m scripts.docker_check --mode both --eval` |
 | show that the router talks to 3 separate containers: container IPs, DNS inside the router, writes landing in the predicted container (each shard asked directly via `docker exec`), one search merging all 3, TCP connections from the router's IP, stop/start one shard (needs host Python + venv and a running stack) | `python -m scripts.docker_trace --failover` |
 | migrate the embedding model by hand | `make migrate`, `make cutover`, `make rollback`, `make finalize` (or the `/admin/*` endpoints) |

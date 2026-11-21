@@ -1,0 +1,47 @@
+# Docker tour, step 3 (guide 3d): migrate to bge-small, cut over, roll back, finalize, while a bot keeps searching.
+#
+# By hand: python scripts/scenario.py scenarios/DockerTour/3_migration.jsonl --url http://localhost:8000 --open
+# What to look at: the first cutover is refused (bge-small is not built yet); elephant's searches are answered by
+# minilm, then bge-small after the cutover, then minilm again after the rollback; probe-bot never sees a failed query.
+# It ends on minilm with the bge-small index dropped, as the guide asks.
+{"op": "config", "description": "guide 3d: blue/green model migration under live queries; ends on minilm", "actors": {
+  "admin": {"role": "admin", "description": "migrate, wait until ready, cutover, rollback, finalize"},
+  "elephant": {"role": "user", "description": "asks the same question in every phase"},
+  "probe-bot": {"role": "bot", "description": "searches non-stop during the whole migration: zero failed queries"}}}
+
+{"op": "label", "text": "3d. Baseline: queries use minilm"}
+{"op": "search", "actor": "elephant", "query": "what is a roth ira?", "strategy": "hybrid", "expect_ok": true}
+{"op": "label", "text": "Safety gate: a cutover to a model that is not built yet is refused (HTTP 409)"}
+{"op": "cutover", "actor": "admin", "model": "bge-small", "expect_error": true}
+
+{"op": "parallel", "lanes": [
+  {"name": "admin", "ops": [
+    {"op": "label", "text": "MIGRATE: every shard builds a bge-small index next to minilm (dual-write on)"},
+    {"op": "migrate", "model": "bge-small"},
+    {"op": "wait_ready", "model": "bge-small", "timeout": 900},
+    {"op": "label", "text": "CUTOVER: one router flag, queries now use bge-small"},
+    {"op": "cutover", "model": "bge-small"},
+    {"op": "signal", "name": "cut-over"},
+    {"op": "wait_signal", "name": "checked-bge"},
+    {"op": "label", "text": "ROLLBACK: instant, minilm was kept up to date"},
+    {"op": "rollback"},
+    {"op": "signal", "name": "rolled-back"},
+    {"op": "wait_signal", "name": "checked-minilm"},
+    {"op": "label", "text": "FINALIZE: drop the bge-small index (the stack ends on minilm)"},
+    {"op": "finalize", "model": "bge-small"}
+  ]},
+  {"name": "elephant", "ops": [
+    {"op": "wait_signal", "name": "cut-over"},
+    {"op": "search", "query": "what is a roth ira?", "strategy": "hybrid", "expect_ok": true},
+    {"op": "signal", "name": "checked-bge"},
+    {"op": "wait_signal", "name": "rolled-back"},
+    {"op": "search", "query": "what is a roth ira?", "strategy": "hybrid", "expect_ok": true},
+    {"op": "signal", "name": "checked-minilm"}
+  ]},
+  {"name": "probe-bot", "ops": [
+    {"op": "repeat", "until_done": "admin", "ops": [
+      {"op": "search", "query": "what is an etf", "expect_ok": true},
+      {"op": "sleep", "seconds": 0.1}
+    ]}
+  ]}
+]}

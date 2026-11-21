@@ -5,7 +5,96 @@ an evaluation harness, ablations and failure analysis. Part B is a sharded servi
 idempotent writes and zero-downtime embedding-model migration. Part C is a hand-written single agent and multi-agent
 orchestrator on top, evaluated on plain and compound questions.
 
-The tasks and constraints are in [FIQA_RETRIEVAL_TASKS.md](FIQA_RETRIEVAL_TASKS.md). Design, results and trade-offs are in [DESIGN.md](DESIGN.md).
+The tasks and constraints are in [FIQA_RETRIEVAL_TASKS.md](FIQA_RETRIEVAL_TASKS.md). Design, results and trade-offs are
+in [DESIGN.md](DESIGN.md), also as a [Word document](docs/design/DESIGN.docx).
+
+![Scenario 7 replay: reads and writes keep flowing while the cluster migrates from MiniLM to bge-small and rolls back](docs/assets/gifs/migrate_cutover_rollback.gif)
+
+*A recorded run on the real corpus (router + 3 shards, async writes): searches and writes keep working while the
+embedding model is migrated from MiniLM to bge-small, cut over, and rolled back. The router's model chip and the star on each shard
+show which index answers.*
+
+## See it run
+
+Every endpoint can be called from the browser at http://localhost:8000/docs, with ready-made examples.
+
+| the API page | a live call |
+|---|---|
+| ![Swagger page listing every endpoint](docs/assets/screenshots/swagger_overview.png) | ![POST /search with the hybrid example and its response](docs/assets/screenshots/swagger_search.png) |
+| Search, writes, model migration and status, each with a short explanation and a quick tour. | Pick an example, press Execute, and read the ranked FiQA passages that came back. |
+
+Every scenario run also writes an animated `replay.html`: clients, the router and the three shards on a stage, with
+one animation per operation and a timeline of what each request did. The GIFs below are recorded from four of the
+[eight simple scenarios](scenarios/SimpleScenarios/README.md) on the full cluster in async mode. The HTML replays are in
+[docs/assets/replays/](docs/assets/replays/) and `scenarios/SimpleScenarios/results/`; GitHub doesn't render HTML, so
+download one and open it in a browser.
+
+| read after write | write, then delete |
+|---|---|
+| ![Read after write](docs/assets/gifs/read_after_write.gif) | ![Write then delete](docs/assets/gifs/write_then_delete.gif) |
+| Owl adds a doc. In async mode it is queued on its owner shard and applied in the background, and Fox's next search finds it. | Owl deletes its doc. The delete leaves a tombstone, and Fox's later searches no longer return it. |
+
+| writes during a migration | idempotent writes |
+|---|---|
+| ![Writes during a migration](docs/assets/gifs/write_during_migration.gif) | ![Idempotent writes](docs/assets/gifs/idempotent_writes.gif) |
+| Elephant writes while bge-small is being built, so the doc goes to both indexes; after the cutover bge-small answers. One search sent right after an async ack missed a doc, and the replay flags it as a soft miss. | Replaying the same `(doc_id, version)` or sending an older version changes nothing: three writes in this run are no-ops. |
+
+## Architecture
+
+Clients and agents talk to the router over HTTP. The router fans every search out to all shards and sends each write to
+the one shard that owns the doc. The infrastructure, request paths and every component are in DESIGN.md sections 4 to 6.
+
+```mermaid
+flowchart TB
+  subgraph CL["clients"]
+    direction LR
+    CLI["search.py · ask.py<br/>one question"]
+    SW["Swagger page /docs<br/>scripts/api_docs.py"]
+    SC["scenario runner<br/>scenario.py → replay.html"]
+    EV["eval · bench · ablations<br/>migration and load scripts"]
+  end
+  subgraph AG["agents (src/agent)"]
+    direction LR
+    SA["single agent<br/>≤ 3 LLM steps"]
+    OR["orchestrator<br/>planner · workers · verifier"]
+    LC["LLM client<br/>token budget · disk cache"]
+    LB["LLM backends<br/>Azure gpt-6-sol · Copilot CLI · fake"]
+  end
+  R["router :8000<br/>embed the query once · global BM25 stats (DFS)<br/>merge then fuse · send each write to crc32(doc_id) % 3<br/>active_model flag for migration"]
+  subgraph SH["shard × 3 (:8101), docker compose or local processes"]
+    direction LR
+    SS["shard server"]
+    ST["store<br/>BM25 + one dense index per model<br/>docs · versions · tombstones"]
+    AA["async applier<br/>APPLY_MODE=async"]
+    W["WAL<br/>fsync before the ack"]
+  end
+  subgraph OFF["offline and shared code"]
+    direction LR
+    IX["indexer<br/>download FiQA · embed the corpus"]
+    ART[("artifacts/<br/>embeddings · WAL · router state")]
+    LIB["retrieval library<br/>bm25 · dense · hybrid · rerank · sharding"]
+  end
+  CLI --> R
+  SW --> R
+  SC --> R
+  EV --> R
+  CLI --> SA
+  CLI --> OR
+  SA --> LC
+  OR --> LC
+  LC --> LB
+  SA -->|"search tool"| R
+  OR -->|"search tool"| R
+  R -->|"stats · search · writes"| SS
+  SS --> ST
+  ST -->|"queue"| AA
+  AA -->|"apply"| ST
+  ST --> W
+  W --> ART
+  IX --> ART
+  ST -.-> LIB
+  R -.-> LIB
+```
 
 ## Headline numbers (dev split, full table in DESIGN.md)
 

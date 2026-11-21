@@ -3,7 +3,7 @@
 WHAT
     Pure functions that score ONE ranked list against ONE query's qrels, plus
     ``mean`` helpers. No numpy, no magic: every line maps to a formula in
-    docs/04_ir_metrics.md.
+    docs/topics/04_ir_metrics.md.
 
 WHY OUR OWN
     Libraries (pytrec_eval, ranx) are great, but metrics are where silent bugs

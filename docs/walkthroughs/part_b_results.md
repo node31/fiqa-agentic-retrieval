@@ -67,4 +67,4 @@ single applier thread was serial. I only found that out by measuring it.
 Every `/search` response splits the router's time into parts that add up to `latency_ms`. For hybrid on 3 shards in
 scenario 04 (real corpus, light load): stats round trip ~15 ms, query-encode overhang 0 to 15 ms, slowest shard compute
 ~4 to 5 ms, network/queue ~8 to 12 ms, merge + fuse < 1 ms. The shards' own search work is the smallest part, so the
-extra 5 ms at p50 for 3 shards is round trips, not search. Details in [../scenarios.md](../scenarios.md).
+extra 5 ms at p50 for 3 shards is round trips, not search. Details in [../scenarios.md](../guides/scenarios.md).

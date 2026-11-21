@@ -1,7 +1,7 @@
 """Toy 02: BM25 by hand. Term-frequency saturation (k1) and length normalisation (b).
 
 Concept: the BM25 formula and its two knobs.
-Real code: src/retrieval/bm25.py::BM25Index.search     Doc: docs/01_lexical_retrieval_bm25.md
+Real code: src/retrieval/bm25.py::BM25Index.search     Doc: docs/topics/01_lexical_retrieval_bm25.md
 """
 from _common import banner, note, step, try_this
 

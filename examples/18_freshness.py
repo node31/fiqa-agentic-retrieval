@@ -1,7 +1,7 @@
 """Toy 18: freshness. Synchronous apply (searchable at ack) vs asynchronous apply (eventually).
 
 Concept: the freshness guarantee is a design choice trading write latency against read visibility.
-Real code: ShardStore._write (sync apply), tests/test_integration_service.py   Doc: docs/09
+Real code: ShardStore._write (sync apply), tests/test_integration_service.py   Doc: docs/topics/09_live_updates_consistency.md
 """
 import queue
 import threading

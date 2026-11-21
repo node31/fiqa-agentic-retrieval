@@ -59,4 +59,4 @@ Read them in order.
 8. [Part C: agents](08_part_c_agents.md): tool calling, the single agent, the multi-agent team, and whether they are worth it.
 9. [How I built it, in order](09_rebuild_it_yourself.md): the order I built the pieces in, and why.
 
-The topic docs (`docs/00` to `docs/15`) go deeper on each piece, and [GLOSSARY](../GLOSSARY.md) defines every term.
+The topic docs in [`docs/topics/`](../topics/) (00 to 16) go deeper on each piece.

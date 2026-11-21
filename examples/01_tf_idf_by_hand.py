@@ -1,7 +1,7 @@
 """Toy 01: TF and IDF by hand. Why rare words carry more evidence than common ones.
 
 Concept: term frequency (tf), document frequency (df), inverse document frequency (idf).
-Real code: src/retrieval/bm25.py::idf      Doc: docs/01_lexical_retrieval_bm25.md section 2
+Real code: src/retrieval/bm25.py::idf      Doc: docs/topics/01_lexical_retrieval_bm25.md section 2
 """
 import math
 from collections import Counter

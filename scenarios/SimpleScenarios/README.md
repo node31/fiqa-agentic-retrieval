@@ -2,7 +2,7 @@
 
 Eight short stories in the CSV scenario format, each one step beyond the last. I use them to see one behaviour of
 the service at a time before reading the longer JSONL scenarios in [../ComplexScenarios/](../ComplexScenarios/).
-The format is explained in [docs/scenarios.md](../../docs/scenarios.md#simple-format-csv); `simple_template.csv` is a
+The format is explained in [docs/guides/scenarios.md](../../docs/guides/scenarios.md#simple-format-csv); `simple_template.csv` is a
 copy-and-edit starting point that uses every operation.
 
 | file | what happens | what to look for |
@@ -78,5 +78,5 @@ All 32 runs passed (`results/SUMMARY.md`). Every soft check held except one, on 
 
 `--url http://localhost:8000` instead of `--start-cluster` runs a scenario against the running Docker stack. The
 writes stay there (the ids contain the run id, so reruns never collide), and 4, 5 and 6 leave bge-small active. The
-manual test guides ([Windows](../../docs/manual_tests_windows.md), [macOS](../../docs/manual_tests_mac.md)) show how to
+manual test guides ([Windows](../../docs/guides/manual_tests_windows.md), [macOS](../../docs/guides/manual_tests_mac.md)) show how to
 put it back on minilm.

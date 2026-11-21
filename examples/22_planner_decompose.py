@@ -1,7 +1,7 @@
 """Toy 22: planner decomposition + the free "is it simple?" gate (don't over-orchestrate).
 
 Concept: spend an LLM call on planning only when the question looks compound.
-Real code: src/agent/orchestrator.py::looks_simple, plan    Doc: docs/13_multi_agent_orchestration.md
+Real code: src/agent/orchestrator.py::looks_simple, plan    Doc: docs/topics/13_multi_agent_orchestration.md
 """
 import json
 import random

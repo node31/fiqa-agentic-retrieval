@@ -65,7 +65,7 @@ sharded equals single node (Chapter 7).
 For each configuration Part A wants quality (nDCG@10, Recall@10, MRR@10, overall and stratified), latency (p50/p95,
 cold and warm) and peak memory. `scripts/bench.py` runs every configuration in a fresh process, so "cold" really is cold,
 and merges the results into `results/bench.json`. The full protocol and every argument of `src/eval.py` are in
-[`docs/eval.md`](../eval.md).
+[`docs/walkthroughs/eval.md`](../walkthroughs/eval.md).
 
 One `python -m src.eval` run does this:
 

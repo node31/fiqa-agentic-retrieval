@@ -1,6 +1,6 @@
 r"""Single agent (Part C2): one LLM, one tool, at most 3 steps, then a final top-10.
 
-THE LOOP (docs/12_single_agent.md has a worked trace)
+THE LOOP (docs/topics/12_single_agent.md has a worked trace)
 
     results_1 = search(question, "hybrid")          # step 0: free, no LLM, grounds the agent
     for step in 1..3:                                # each step = exactly one LLM call

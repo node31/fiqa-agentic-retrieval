@@ -9,7 +9,7 @@ WHAT
                                                                                            (ack = durable; searchable soon)
 
 WHY HAVE BOTH
-    To compare them under heavy write load (scripts/write_load.py, docs/09_live_updates_consistency.md). Async makes the ack
+    To compare them under heavy write load (scripts/write_load.py, docs/topics/09_live_updates_consistency.md). Async makes the ack
     cheap (no embedding on the client's path: WAL + fsync only) and absorbs bursts. The price: a
     write is not searchable the instant it is acked, so the freshness guarantee becomes "within 1 s".
 

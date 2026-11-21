@@ -1,7 +1,6 @@
 # 06 · Reranking: a second, slower opinion
 
-Prerequisites: [02 dense retrieval](02_dense_retrieval.md), [05 hybrid fusion](05_hybrid_fusion.md). Terms:
-[bi-encoder, cross-encoder, two-stage retrieval](GLOSSARY.md).
+Prerequisites: [02 dense retrieval](02_dense_retrieval.md), [05 hybrid fusion](05_hybrid_fusion.md).
 
 ## Bi-encoder vs cross-encoder
 

@@ -1,7 +1,7 @@
 """Toy 05: the BGE query instruction prefix. Asymmetric retrieval in one line of config.
 
 Concept: some embedding models were trained with an instruction on the QUERY side only.
-Real code: src/config.py MODELS['bge-small'].query_prefix    Doc: docs/02_dense_retrieval.md
+Real code: src/config.py MODELS['bge-small'].query_prefix    Doc: docs/topics/02_dense_retrieval.md
 """
 import numpy as np
 from _common import TOY_DOCS, banner, load_st_model, note, step, try_this

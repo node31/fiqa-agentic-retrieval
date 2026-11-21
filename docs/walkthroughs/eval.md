@@ -107,7 +107,7 @@ instead of 0.419. I always pass `--strategy hybrid --model minilm --fusion linea
 | `--model` | `minilm` | `minilm` or `bge-small`, the embedding model for the dense side (local mode only) |
 | `--fusion` | `rrf` | hybrid only. `rrf` combines ranks; `linear` min-max normalises the scores, then takes a weighted sum |
 | `--alpha` | `0.5` | hybrid only, the weight on dense (0.0 to 1.0). `linear`: α·dense + (1−α)·bm25. `rrf`: list weights (1−α, α), so 0.5 is plain RRF |
-| `--rerank-k` | `0` | `0` is off; `N` re-scores the fused top N with the cross-encoder (~29 ms per doc, and it didn't help on FiQA, see [06_reranking.md](06_reranking.md)) |
+| `--rerank-k` | `0` | `0` is off; `N` re-scores the fused top N with the cross-encoder (~29 ms per doc, and it didn't help on FiQA, see [06_reranking.md](../topics/06_reranking.md)) |
 | `--bm25-stats` | `global` | `global`: the router sums IDF statistics from all shards (correct). `local`: each shard uses its own. No effect in local mode, which has one shard |
 | `--split` | `dev` | `dev` (500 questions) for all tuning; `test` (648) for the final run |
 | `--final-test-run` | off | `--split test` refuses to run without it. I used it exactly once |
@@ -148,7 +148,7 @@ That fixture has no train split, so eval prints
 
 The printed line has nDCG@10 (correct docs near the top, my headline number), R@10 (share of the correct docs in the
 top 10), MRR@10 (1 / rank of the first correct doc, averaged), warm p50/p95 (the 50 ms limit applies to this p95) and
-cold p50/p95 (the first 20 queries of a fresh process). The metrics are explained in [04_ir_metrics.md](04_ir_metrics.md).
+cold p50/p95 (the first 20 queries of a fresh process). The metrics are explained in [04_ir_metrics.md](../topics/04_ir_metrics.md).
 
 The results file `runs/<name>.json`, with values from the shipped run:
 
@@ -196,7 +196,7 @@ them (0.423) because it matches meaning. With n = 13 I treat that as a hint.
 Long gold docs hurt dense and barely touch BM25 (0.310 vs 0.315). Dense drops from 0.497 to 0.414 because MiniLM reads
 at most 256 tokens of a passage (`max_seq_length`), so the end of a long answer is never embedded, while BM25 indexes
 every word. Hybrid narrows the gap (0.464 vs 0.508) because BM25 rescues some of those docs. This is failure case 2 in
-[results/failures.md](../results/failures.md).
+[results/failures.md](../../results/failures.md).
 
 The BM25 file (`results\runs\bm25.json`) for comparison: nDCG@10 / R@10 / MRR@10 0.264 / 0.314 / 0.322, warm p50 / p95
 1.17 / 1.97 ms, peak memory 511 MB, startup 9.3 s (tokenising and indexing 57,638 passages). Every `run` list has 10

@@ -394,7 +394,7 @@ Elephant, Fox and Owl and the admin ADMIN, and every write uses a doc id with `{
 (`--start-cluster`): SimpleSyncTinyCluster and SimpleAsyncTinyCluster (`--tiny`), SimpleSyncFullCluster and
 SimpleAsyncFullCluster (the real corpus). It writes `scenarios/SimpleScenarios/results/<cluster>/<scenario>/` with the
 console output (`console.txt`), the events and the replay, all checked in, plus `results/SUMMARY.md`, a grid of
-all 32 runs. [scenarios/SimpleScenarios/README.md](../scenarios/SimpleScenarios/README.md) reads my results.
+all 32 runs. [scenarios/SimpleScenarios/README.md](../../scenarios/SimpleScenarios/README.md) reads my results.
 
 ## The scenario catalog
 

@@ -17,5 +17,5 @@ Top-level modules (shared by all parts):
 This file also makes ``src`` a Python package, which is why modules import each
 other as ``from src.config import ...`` and are run as ``python -m src.eval``.
 
-Start reading at docs/LEARNING_PATH.md.
+Start reading at docs/from_zero/README.md.
 """

@@ -4,7 +4,7 @@ INTERFACE
     ``llm.complete(system, user, max_output_tokens, budget) -> LLMResult``
     Text in, text out. Agents ask the model to answer with ONE JSON object
     (an "action"), and ``parse_json`` extracts it. That is the whole tool-calling
-    protocol (docs/11_llm_tool_calling.md).
+    protocol (docs/topics/11_llm_tool_calling.md).
     Native function-calling APIs are this same idea with the JSON schema enforced
     server-side. Using plain JSON keeps one code path across all three backends.
 
@@ -17,7 +17,7 @@ BACKENDS
     azure    Azure AI Foundry deployment via the OpenAI Responses API. COSTS MONEY.
              Refuses to construct without ``confirm_spend=True``.
 
-GUARDRAILS (docs/13_multi_agent_orchestration.md)
+GUARDRAILS (docs/topics/13_multi_agent_orchestration.md)
     ``Budget`` is shared by every agent working on ONE user query. It caps the
     number of LLM calls and total tokens. A call that would exceed it raises
     ``BudgetExceeded`` BEFORE any spend, and the orchestrator degrades gracefully.

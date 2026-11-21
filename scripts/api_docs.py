@@ -96,7 +96,7 @@ query, and `timings_ms`: where the time went (stats phase, query embedding, shar
         "more_bm25": ex("Hybrid leaning on BM25 (alpha 0.3)", {"query": Q, "k": 10, "fusion": "linear", "alpha": 0.3},
                         "alpha is the weight on the dense score; 0.3 gives keywords more say than the shipped 0.7."),
         "rerank": ex("Hybrid + cross-encoder rerank of the top 20", {"query": Q, "k": 10, "rerank_k": 20},
-                     "Slower (hundreds of ms on CPU). On FiQA it lowered nDCG in my ablations (docs/16_ablations.md)."),
+                     "Slower (hundreds of ms on CPU). On FiQA it lowered nDCG in my ablations (docs/topics/16_ablations.md)."),
         "my_doc": ex("Find my test doc (after the upsert example)", {"query": "zebra bonds manual test", "k": 3,
                                                                       "strategy": "bm25"}),
         "short": ex("A different question", {"query": "should I pay off my mortgage early?", "k": 5}),

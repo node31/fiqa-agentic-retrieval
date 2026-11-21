@@ -1,7 +1,7 @@
 """Toy 17: write-ahead log. Crash mid-write, restart, replay, nothing acknowledged is lost.
 
 Concept: log first, apply second; replay is idempotent; torn final records are skipped.
-Real code: src/service/wal.py, ShardStore.load (replay)    Doc: docs/09_live_updates_consistency.md
+Real code: src/service/wal.py, ShardStore.load (replay)    Doc: docs/topics/09_live_updates_consistency.md
 """
 import tempfile
 from pathlib import Path

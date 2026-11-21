@@ -1,7 +1,7 @@
 """Toy 20: a hand-written tool-calling loop with a scripted fake LLM. No framework, no magic.
 
 Concept: an "agent" = while loop: ask LLM -> parse action -> run tool -> append observation -> repeat.
-Real code: src/agent/single_agent.py, src/agent/llm.py::parse_json   Doc: docs/11_llm_tool_calling.md
+Real code: src/agent/single_agent.py, src/agent/llm.py::parse_json   Doc: docs/topics/11_llm_tool_calling.md
 """
 import json
 

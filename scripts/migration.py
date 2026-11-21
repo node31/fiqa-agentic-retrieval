@@ -6,7 +6,7 @@
     python scripts/migration.py finalize --model minilm      # stop dual-writing the old model
     python scripts/migration.py status
 
-LIFECYCLE (docs/10_model_migration.md)
+LIFECYCLE (docs/topics/10_model_migration.md)
     serving=minilm --migrate--> minilm serves, bge-small dual-written + backfilled
                    --cutover--> bge-small serves, minilm still dual-written (instant rollback)
                    --rollback-> minilm serves again (nothing rebuilt)

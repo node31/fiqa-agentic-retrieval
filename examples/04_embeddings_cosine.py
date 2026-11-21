@@ -1,7 +1,7 @@
 """Toy 04: sentence embeddings + cosine similarity. Matching MEANING instead of words.
 
 Concept: a bi-encoder maps text to a unit vector, and similarity = dot product = cosine.
-Real code: src/retrieval/dense.py (Embedder, DenseIndex)    Doc: docs/02_dense_retrieval.md
+Real code: src/retrieval/dense.py (Embedder, DenseIndex)    Doc: docs/topics/02_dense_retrieval.md
 """
 import numpy as np
 from _common import TOY_DOCS, banner, load_st_model, note, step, try_this

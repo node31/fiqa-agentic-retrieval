@@ -2,7 +2,7 @@
 
 Concept: estimate BEFORE you spend; per-query cost = sum over LLM calls of (in x p_in + out x p_out).
 Real code: src/agent/llm.py (cost_usd, estimate_tokens, cache), scripts/agent_eval.py --dry-run
-Doc: docs/14_agent_evaluation_cost.md
+Doc: docs/topics/14_agent_evaluation_cost.md
 """
 from _common import banner, note, step, try_this
 

@@ -1,7 +1,7 @@
 """Toy 08: RRF vs linear fusion, and why adding raw scores is wrong.
 
 Concept: BM25 and cosine scores live on different scales, so fuse by rank (RRF) or by normalised score.
-Real code: src/retrieval/hybrid.py     Doc: docs/05_hybrid_fusion.md
+Real code: src/retrieval/hybrid.py     Doc: docs/topics/05_hybrid_fusion.md
 """
 from _common import banner, note, step, try_this
 

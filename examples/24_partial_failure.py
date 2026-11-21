@@ -2,7 +2,7 @@
 
 Concept: isolate sub-agent failures with timeouts; never let one sub-task fail the whole request.
 Real code: Orchestrator._run_workers, tests/test_agents.py::test_orchestrator_partial_failure...
-Doc: docs/13_multi_agent_orchestration.md
+Doc: docs/topics/13_multi_agent_orchestration.md
 """
 import json
 import time

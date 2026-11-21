@@ -1,6 +1,6 @@
 """All agent prompts in one place, so they are easy to read, diff and study.
 
-Design rules (docs/11_llm_tool_calling.md):
+Design rules (docs/topics/11_llm_tool_calling.md):
   * First line "ROLE: <name>" so a reader, a log line or the fake LLM knows who is speaking.
   * The exact output format is shown as literal JSON. Exactly ONE JSON object per reply.
   * Tell the model what it CAN'T do (only ids it has seen, a hard action limit).

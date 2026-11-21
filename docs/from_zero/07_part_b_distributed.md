@@ -151,8 +151,8 @@ encode happens once at the router either way.
 The network cost stays roughly fixed per query (each shard always returns 100 + 100 hits), while the search saving grows
 with the corpus, because flat search is O(N). My rough estimate is that sharding starts winning at 2 to 3 times today's
 corpus (about 135K docs against router + 1 shard, about 185K against a single process). At 10M+ docs I would switch to an
-approximate index ([`docs/03_vector_indexes.md`](../03_vector_indexes.md),
-[`docs/15_scaling_to_100M.md`](../15_scaling_to_100M.md)), and sharding becomes mostly about memory: 10M x 384 floats is
+approximate index ([`docs/topics/03_vector_indexes.md`](../topics/03_vector_indexes.md),
+[`docs/topics/15_scaling_to_100M.md`](../topics/15_scaling_to_100M.md)), and sharding becomes mostly about memory: 10M x 384 floats is
 about 15 GB. At 57K docs, sharding buys capacity and fault isolation, not speed.
 
 ## 7.4 Live updates

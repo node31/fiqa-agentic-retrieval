@@ -49,7 +49,7 @@ I expected textbook RRF to give a free gain; it scored 0.373, below dense alone.
 an equal vote adds noise. Linear at α = 0.7 encodes the quality gap in α, keeps a close cosine race close, and gains
 +0.031 nDCG (+8% relative) over dense. bge-small has the same shape, best at linear 0.7 (0.4155). The full sweep and my
 reasoning are in [16](16_ablations.md). α was tuned on dev and these are dev numbers, so they are optimistic; the single
-test run is in [DESIGN.md](../DESIGN.md).
+test run is in [DESIGN.md](../../DESIGN.md).
 
 ```bash
 python scripts/ablations.py --model minilm      # the fusion sweep on dev

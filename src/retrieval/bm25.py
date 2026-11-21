@@ -4,14 +4,14 @@ WHAT
     An inverted index plus the Okapi BM25 scoring function. Given a query, it
     returns the top-k passages ranked by how well their *words* match.
 
-WHY FROM SCRATCH (see docs/01_lexical_retrieval_bm25.md)
+WHY FROM SCRATCH (see docs/topics/01_lexical_retrieval_bm25.md)
     * rank_bm25 has no deletes and scores every document for every query
       (O(N) per query term), which is too slow for a 50 ms budget.
     * Pyserini needs Java.
     * Part B needs two things libraries hide: (1) **global corpus statistics**
       injected at query time (sharding), and (2) **live upserts/deletes**.
 
-THE FORMULA (docs/01_lexical_retrieval_bm25.md works an example by hand)
+THE FORMULA (docs/topics/01_lexical_retrieval_bm25.md works an example by hand)
     score(q, d) = Σ_{t ∈ q}  IDF(t) · tf(t,d)·(k1+1) / (tf(t,d) + k1·(1 - b + b·|d|/avgdl))
     IDF(t)      = ln(1 + (N - df(t) + 0.5) / (df(t) + 0.5))      (Lucene variant, always > 0)
 
@@ -94,7 +94,7 @@ _TOKEN_RE = re.compile(r"[a-z0-9]+")
 # WHY this list: Lucene's classic English stop set (33 words), so our BM25 is
 # comparable to the published Pyserini/Anserini BEIR baselines. Note it DOES drop
 # "no"/"not". Negation is lost for lexical matching, a known BM25 weakness that
-# dense models partly fix (exercise in docs/01_lexical_retrieval_bm25.md).
+# dense models partly fix (exercise in docs/topics/01_lexical_retrieval_bm25.md).
 STOPWORDS = frozenset(
     "a an and are as at be but by for if in into is it no not of on or such that the "
     "their then there these they this to was will with".split()

@@ -1,7 +1,7 @@
 """Toy 15: hash partitioning. Modulo vs consistent hashing when the shard count changes.
 
 Concept: how documents are assigned to shards, and how much data moves on resharding.
-Real code: src/index/sharding.py::shard_of     Doc: docs/08_sharding_scatter_gather.md
+Real code: src/index/sharding.py::shard_of     Doc: docs/topics/08_sharding_scatter_gather.md
 """
 import bisect
 import zlib

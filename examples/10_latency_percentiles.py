@@ -1,7 +1,7 @@
 """Toy 10: latency percentiles, cold vs warm, and measuring honestly.
 
 Concept: p50/p95, tail latency, warmup effects, why averages lie.
-Real code: src/eval.py (cold/warm protocol), src/util.py::percentile   Doc: docs/07_benchmarking_latency_memory.md
+Real code: src/eval.py (cold/warm protocol), src/util.py::percentile   Doc: docs/topics/07_benchmarking_latency_memory.md
 """
 import random
 import statistics

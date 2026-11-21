@@ -1,7 +1,7 @@
 """Toy 13: merge-then-fuse vs fuse-then-merge. The order of operations matters.
 
 Concept: score normalisation is a GLOBAL operation. Doing it per shard changes the answer.
-Real code: src/service/router.py (phase 3 merge, phase 4 fuse)   Doc: docs/08_sharding_scatter_gather.md
+Real code: src/service/router.py (phase 3 merge, phase 4 fuse)   Doc: docs/topics/08_sharding_scatter_gather.md
 """
 from _common import banner, note, step, try_this
 

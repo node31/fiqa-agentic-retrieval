@@ -1,7 +1,7 @@
 """Toy 03: the inverted index as a sparse matrix, plus live add/delete with tombstones.
 
 Concept: postings lists, CSC columns, why deletes are "mark dead" instead of "erase".
-Real code: src/retrieval/bm25.py::BM25Index (build/add/delete)   Doc: docs/01_lexical_retrieval_bm25.md
+Real code: src/retrieval/bm25.py::BM25Index (build/add/delete)   Doc: docs/topics/01_lexical_retrieval_bm25.md
 """
 from _common import TOY_DOCS, banner, note, step, try_this
 

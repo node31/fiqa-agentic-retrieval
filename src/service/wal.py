@@ -9,7 +9,7 @@ WRITE-AHEAD LOG
     idempotent (see store.py). So the log only needs "at-least-once" semantics.
     A crash *during* the append leaves a torn last line, which replay() skips. That
     is safe, because that write was never acknowledged.
-    See docs/09_live_updates_consistency.md and examples/17_wal_crash_recovery.py.
+    See docs/topics/09_live_updates_consistency.md and examples/17_wal_crash_recovery.py.
 
 READERS-WRITER LOCK
     Many searches may run in parallel (they only read), but a write must update

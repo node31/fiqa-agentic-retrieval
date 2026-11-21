@@ -1,6 +1,6 @@
 """Evaluation harness: quality, stratified quality, cold/warm latency and peak RAM.
 
-Easier to read, with tables and diagrams: docs/eval.md
+Easier to read, with tables and diagrams: docs/walkthroughs/eval.md
 
 WHAT
     Runs one retrieval CONFIGURATION over a query split and reports:
@@ -46,14 +46,14 @@ ARGUMENTS (each one picks WHICH system to test, or HOW to run the test)
     --out         write the results JSON here instead of RESULTS_DIR/runs/<name>.json.
   Environment (not arguments): FIQA_DATA_DIR = which dataset, ARTIFACTS_DIR = index/cache folder,
     RESULTS_DIR = where results go. Point all three at a scratch folder to run on the tiny toy dataset
-    without touching the real results (docs/eval.md).
+    without touching the real results (docs/walkthroughs/eval.md).
 
   Examples
     python -m src.eval --name hybrid-linear-minilm --strategy hybrid --model minilm --fusion linear --alpha 0.7
     python -m src.eval --mode service --name svc3-hybrid --strategy hybrid --fusion linear --alpha 0.7
     python -m src.eval --name bm25-quick --strategy bm25 --limit 20
 
-PROTOCOL DECISIONS (docs/07_benchmarking_latency_memory.md)
+PROTOCOL DECISIONS (docs/topics/07_benchmarking_latency_memory.md)
     * Warmup uses TRAIN queries, so no dev query is ever "seen" before it is timed.
     * Each configuration runs in its own fresh process (scripts/bench.py does this),
       so "cold" really is cold: first inference, cold CPU caches, new connections.

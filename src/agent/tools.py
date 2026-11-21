@@ -4,7 +4,7 @@ WHAT
     ``SearchTool`` turns a search backend into what an LLM can consume: the top-k
     hits as (doc_id, short snippet). Snippets are truncated on purpose. Every
     character we show the model costs tokens, and 200 chars per passage is enough
-    to judge relevance (docs/14_agent_evaluation_cost.md does the arithmetic).
+    to judge relevance (docs/topics/14_agent_evaluation_cost.md does the arithmetic).
 
 BACKENDS
     http_search_fn(url)       the running router (what production agents would use)

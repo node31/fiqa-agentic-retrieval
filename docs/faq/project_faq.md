@@ -262,7 +262,7 @@ comments), then `ShardStore._write` / `_apply` in `src/service/store.py`, then `
 ### How did you use AI assistants?
 GitHub Copilot wrote the compound rewrites (from the query texts only), and I used assistants while coding, as I would
 at work. What I kept has a measured reason in DESIGN.md. Where an idea didn't survive measurement, such as
-plain RRF or batched async embedding, the numbers are in DESIGN.md §11 and [09](09_live_updates_consistency.md).
+plain RRF or batched async embedding, the numbers are in DESIGN.md §11 and [09](../topics/09_live_updates_consistency.md).
 
 ### Scaling to 100M passages?
 Flat vectors would be 100M × 384 × 4 B = 153.6 GB, so I'd move to IVF-PQ with 48-byte codes (4.8 GB) and rerank the

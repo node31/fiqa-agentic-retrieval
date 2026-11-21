@@ -1,6 +1,6 @@
 """Sync vs async apply under heavy write load: throughput, ack latency, freshness, search latency.
 
-QUESTION (docs/09_live_updates_consistency.md, ch07 §7.4)
+QUESTION (docs/topics/09_live_updates_consistency.md, ch07 §7.4)
     The sync write path acks only after a write is applied: freshness = 0, but every write
     pays for its own embedding before the ack. The async path acks after the WAL and applies in
     batches in the background, promising "searchable within 1 s". Under LOTS of writes, which one

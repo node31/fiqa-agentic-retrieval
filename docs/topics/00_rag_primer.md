@@ -1,7 +1,6 @@
 # 00 · RAG and retrieval primer
 
-This is the map of my system. Every later doc zooms into one box of the diagram below. Terms in *italics* are
-defined in [GLOSSARY.md](GLOSSARY.md).
+This is the map of my system. Every later doc zooms into one box of the diagram below.
 
 ## What I built
 

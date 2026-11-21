@@ -66,7 +66,7 @@ router waits for the slowest shard, so tails grow with shard count: if each shar
 100 shards is slow 63% of the time.
 
 Every `/search` response has `timings_ms`, which splits `latency_ms` into phases. Typical hybrid values on 3 shards under
-light load ([scenarios.md](scenarios.md) §4.1): DFS stats ~15 ms, embed wait 0 to 15 ms (the encoder overlaps the stats
+light load ([scenarios.md](../guides/scenarios.md) §4.1): DFS stats ~15 ms, embed wait 0 to 15 ms (the encoder overlaps the stats
 phase), slowest shard compute ~4 to 5 ms, network and queueing ~8 to 12 ms, merge and fuse under 1 ms. The shards' own
 work is a few ms; the rest is round trips.
 

@@ -1,7 +1,7 @@
 """Toy 23: budget guardrails. A shared call cap + token budget across all agents of one query.
 
 Concept: check BEFORE spending; degrade gracefully when the budget runs out.
-Real code: src/agent/llm.py::Budget, Orchestrator.run    Doc: docs/13_multi_agent_orchestration.md
+Real code: src/agent/llm.py::Budget, Orchestrator.run    Doc: docs/topics/13_multi_agent_orchestration.md
 """
 import json
 

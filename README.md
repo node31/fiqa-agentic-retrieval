@@ -32,8 +32,8 @@ From a fresh clone, with only Docker installed: `./scripts/bootstrap.sh` (Linux/
 (Windows). It builds the image, fetches the data and embedding caches, starts the 4 containers and checks them.
 Options and troubleshooting are in [DEPLOY.md](DEPLOY.md). Every API can be called from the browser at http://localhost:8000/docs, with
 ready-made examples (`python -m scripts.api_docs --local` gives the same page without Docker). To try everything by
-hand, step by step with the numbers to expect, follow [docs/manual_tests_windows.md](docs/manual_tests_windows.md) or
-[docs/manual_tests_mac.md](docs/manual_tests_mac.md).
+hand, step by step with the numbers to expect, follow [docs/guides/manual_tests_windows.md](docs/guides/manual_tests_windows.md) or
+[docs/guides/manual_tests_mac.md](docs/guides/manual_tests_mac.md).
 
 ### Docker by hand (no local Python)
 
@@ -91,7 +91,7 @@ A quicker way to write one is a CSV with one line per operation, `actor, operati
 [scenarios/SimpleScenarios/simple_template.csv](scenarios/SimpleScenarios/simple_template.csv), which uses every operation, and add `--open` to see
 the replay. Eight ready-made ones, from a plain read to a migration with a rollback and an idempotency check, are in
 [scenarios/SimpleScenarios/](scenarios/SimpleScenarios/README.md), with my runs on four clusters. The formats and the
-scenario catalog are in [docs/scenarios.md](docs/scenarios.md). For a single question,
+scenario catalog are in [docs/guides/scenarios.md](docs/guides/scenarios.md). For a single question,
 `python scripts/ask.py "what is a roth ira?" --strategy hybrid` (or `bm25`, `dense`, `single`, `multi`).
 
 ## LLM configuration (Part C)
@@ -117,7 +117,7 @@ tests/          unit, in-process and multi-process integration tests
 results/        bench.json · runs/ (incl. the one TEST run) · ablation_*.json · migration_demo.json · write_load.json · agent_eval*.json · failures.md
 examples/       small standalone scripts
 AGENTS.md       how to set up, test and work in the repo (for coding agents)
-docs/           topic docs 00-15 · 16_ablations · from_zero/ (the whole system from scratch) · walkthroughs/ · eval · scenarios · manual_tests_windows / _mac · GLOSSARY · LEARNING_PATH · project_faq · concepts_faq
+docs/           topics/ (00-16, one concept each) · from_zero/ (the whole system from scratch) · walkthroughs/ (eval, Part A/B results) · guides/ (scenarios, manual tests) · interview/ · design/ (DESIGN.docx) · assets/
 ```
 
 ## Measured on

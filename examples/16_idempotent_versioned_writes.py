@@ -1,7 +1,7 @@
 """Toy 16: idempotent, versioned writes. Replays and out-of-order delivery are harmless.
 
 Concept: (doc_id, version) makes every write safe to retry; tombstones stop deleted docs resurrecting.
-Real code: src/service/store.py::ShardStore._write     Doc: docs/09_live_updates_consistency.md
+Real code: src/service/store.py::ShardStore._write     Doc: docs/topics/09_live_updates_consistency.md
 """
 from _common import TOY_DOCS, banner, note, step, try_this
 

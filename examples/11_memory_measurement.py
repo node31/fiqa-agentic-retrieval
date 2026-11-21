@@ -1,7 +1,7 @@
 """Toy 11: measuring memory. RSS vs tracemalloc vs back-of-envelope arithmetic.
 
 Concept: where a shard's RAM goes (model weights vs vectors vs postings vs Python overhead).
-Real code: src/util.py::rss_mb       Doc: docs/07_benchmarking_latency_memory.md
+Real code: src/util.py::rss_mb       Doc: docs/topics/07_benchmarking_latency_memory.md
 """
 import gc
 import tracemalloc

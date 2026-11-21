@@ -1,7 +1,7 @@
 """Toy 21: the real single agent (src/agent/single_agent.py) on a toy corpus with a fake LLM.
 
 Concept: grounded first search, <=3 LLM steps, query rewrite, validated ids, RRF fill.
-Doc: docs/12_single_agent.md
+Doc: docs/topics/12_single_agent.md
 """
 import json
 

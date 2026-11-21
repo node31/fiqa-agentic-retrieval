@@ -12,10 +12,10 @@ WHY BOTH
     [0.2, 0.8]. Adding raw scores lets BM25 dominate. RRF sidesteps scale
     entirely. Linear fusion keeps score *magnitudes* (a dense score of 0.81 vs
     0.80 is "tied", while BM25 42 vs 7 is not), but it needs a tuned α. We
-    sweep α on dev in the ablation. See docs/05_hybrid_fusion.md and
+    sweep α on dev in the ablation. See docs/topics/05_hybrid_fusion.md and
     examples/08_fusion_rrf_vs_linear.py.
 
-DISTRIBUTED CORRECTNESS (docs/08_sharding_scatter_gather.md)
+DISTRIBUTED CORRECTNESS (docs/topics/08_sharding_scatter_gather.md)
     Fusion must run on the GLOBALLY merged BM25 list and the globally merged
     dense list, i.e. at the router, AFTER merging shards. Fusing on each shard
     and then merging is wrong for linear fusion, because min-max uses each

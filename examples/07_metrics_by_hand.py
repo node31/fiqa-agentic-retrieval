@@ -1,7 +1,7 @@
 """Toy 07: Recall@k, MRR and nDCG@k computed by hand for 3 queries, then checked against src/metrics.py.
 
 Concept: what each metric rewards, and how they disagree.
-Real code: src/metrics.py     Doc: docs/04_ir_metrics.md
+Real code: src/metrics.py     Doc: docs/topics/04_ir_metrics.md
 """
 import math
 

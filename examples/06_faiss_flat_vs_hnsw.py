@@ -1,7 +1,7 @@
 """Toy 06: exact (flat) vs approximate (HNSW) vector search. Recall vs speed vs memory.
 
 Concept: brute force is exact and O(N); HNSW is a navigable graph, ~O(log N) but approximate.
-Real code: src/retrieval/dense.py::DenseIndex (flat)    Doc: docs/03_vector_indexes.md
+Real code: src/retrieval/dense.py::DenseIndex (flat)    Doc: docs/topics/03_vector_indexes.md
 """
 import json
 import time
@@ -53,7 +53,7 @@ note(f"At FiQA scale (19K vectors per shard) flat search costs ~{t_flat:.1f} ms 
      + (f"well below the {enc_ms:.0f} ms warm query encode in results/microbench.json, " if enc_ms else
         "well below the cost of encoding the query, ")
      + "so an ANN index would save little and cost recall. At 100M vectors flat is impossible: "
-     "see docs/15_scaling_to_100M.md for IVF-PQ arithmetic.")
+     "see docs/topics/15_scaling_to_100M.md for IVF-PQ arithmetic.")
 try_this("Increase N to 200,000. How do flat and HNSW query times scale? (linear vs ~log)",
          "Raise efSearch until recall >= 0.99. What is the speedup over flat at that point?",
          "Add faiss.IndexIVFFlat with nlist=256, nprobe in {1, 8, 32}: plot recall vs time.")

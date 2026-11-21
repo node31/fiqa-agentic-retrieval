@@ -33,7 +33,7 @@ $env:PATH = "$env:LOCALAPPDATA\Programs\DockerDesktop\resources\bin;$env:PATH"
 It checks prerequisites, creates `.env` from `.env.example`, builds the image, downloads FiQA and the embedding caches
 into `data\` and `artifacts\`, starts the 4 containers and runs a 6-check smoke test inside a container. It took ~509 s
 on a fresh Windows box; a re-run skips what is already there. `-Mode async` starts the async write mode, `-Down` stops
-everything and keeps the data. More options are in [DEPLOY.md](../DEPLOY.md).
+everything and keeps the data. More options are in [DEPLOY.md](../../DEPLOY.md).
 
 Check it:
 
@@ -99,7 +99,7 @@ prints fewer hits.
 | hybrid (linear, α 0.7) | 0.4190 | 0.4914 | ~21 ms |
 
 Hybrid needs `--fusion linear --alpha 0.7`: the eval's own defaults are RRF and α 0.5, while the service ships linear
-0.7 (tuned on dev, [16_ablations.md](16_ablations.md)). `--limit 50` gives a quick partial run. Never pass
+0.7 (tuned on dev, [16_ablations.md](../topics/16_ablations.md)). `--limit 50` gives a quick partial run. Never pass
 `--split test`: the test split was used once, for the final number.
 
 ### 2c. Single agent and multi-agent on your own question
@@ -189,7 +189,7 @@ The full format, every operation and the JSONL format for parallel lanes are in 
 `scenarios\SimpleScenarios\` has eight short stories in the CSV format, each building on the one before: two users
 searching, a write then a search for it, a delete, a model migration, a migration with a write before it, one with a
 write during it, a rollback, and retries and stale writes (idempotency). Each file's header says what it shows and what
-to look for; [scenarios/SimpleScenarios/README.md](../scenarios/SimpleScenarios/README.md) has the overview.
+to look for; [scenarios/SimpleScenarios/README.md](../../scenarios/SimpleScenarios/README.md) has the overview.
 
 One scenario, one cluster, replay opened at the end:
 

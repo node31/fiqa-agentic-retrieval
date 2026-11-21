@@ -1,7 +1,7 @@
 """Toy 09: bi-encoder vs cross-encoder. Why rerankers are accurate, slow, and used only on the top-k.
 
 Concept: two-stage retrieval (cheap recall, then expensive precision).
-Real code: src/retrieval/rerank.py      Doc: docs/06_reranking.md
+Real code: src/retrieval/rerank.py      Doc: docs/topics/06_reranking.md
 """
 import time
 

@@ -11,7 +11,7 @@ WHAT
     cluster faults (kill_shard, restart_shard). This tool sends them to the router over real HTTP,
     prints one line per operation (did it work? did the search return what we expected?), and
     records every event to ``events.jsonl`` plus a self-contained animated ``replay.html``
-    (scripts/replay_html.py). Full guide with the file format: docs/scenarios.md.
+    (scripts/replay_html.py). Full guide with the file format: docs/guides/scenarios.md.
     Every op is performed by an ACTOR (user, bot, admin, ops; see resolve_actors): clients search
     and write, admins/ops managers run admin and cluster ops, never the other way round. Lanes
     (threads) run in parallel and coordinate with ``signal`` / ``wait_signal``.
@@ -177,7 +177,7 @@ def parse_scenario(text: str) -> list[dict]:
 
 
 # ----------------------------------------------------------------------------- the simple CSV format
-# One op per line:  actor, operation, text, t_ms[, doc_id[, version]]   (docs/scenarios.md "Simple format").
+# One op per line:  actor, operation, text, t_ms[, doc_id[, version]]   (docs/guides/scenarios.md "Simple format").
 # Lines run in FILE ORDER. t_ms = "do not start before t ms after the run started" (empty = right
 # after the previous line). Column 3 depends on the operation:
 SIMPLE_TEXT = {
@@ -583,7 +583,7 @@ def role_from_name(name: str) -> str | None:
 def resolve_actors(ops: list[dict]) -> list[dict]:
     """Decide the actor of every op (sets ``op["_actor"]``) and return the actor table.
 
-    Rules (docs/scenarios.md "Actors"):
+    Rules (docs/guides/scenarios.md "Actors"):
       * the actor of an op = its ``"actor"`` field, else its lane's actor (the lane's ``"actor"``
         field, else the lane's own name). Top-level ops (lane "main") without ``"actor"`` go to a
         default actor by op type: client ops -> the first declared user (else "user"), admin ops ->
@@ -1677,7 +1677,7 @@ def replay_only(events_path: Path, out: Path | None = None) -> Path:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter,
-                                 epilog="File format and examples: docs/scenarios.md")
+                                 epilog="File format and examples: docs/guides/scenarios.md")
     ap.add_argument("scenario", nargs="?", help="scenario file: .jsonl, or .csv for the simple format")
     ap.add_argument("--url", help="router URL of an already running cluster, e.g. http://127.0.0.1:8000")
     ap.add_argument("--start-cluster", action="store_true", help="start a fresh local cluster for this run")

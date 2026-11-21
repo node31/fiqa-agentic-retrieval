@@ -20,7 +20,7 @@ PITFALLS
       model identity for reproducibility, so it lives in the registry too.
 
 SEE ALSO
-    docs/02_dense_retrieval.md, examples/05_bge_query_prefix.py
+    docs/topics/02_dense_retrieval.md, examples/05_bge_query_prefix.py
 
 HOW TO READ THIS FILE (top to bottom)
     1. paths       ROOT, DATA_DIR, ARTIFACTS_DIR, RESULTS_DIR (+ .env loading)
@@ -110,7 +110,7 @@ RERANKER_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 CANDIDATE_DEPTH = 100  # per-component list depth fed into fusion
 # RRF ("reciprocal rank fusion") scores a doc as sum of 1 / (RRF_K + rank) over the
 # lists. e.g. rank 1 -> 1/61, rank 2 -> 1/62: a large k flattens the gap between ranks.
-RRF_K = 60  # Cormack et al. 2009 default; see docs/05_hybrid_fusion.md
+RRF_K = 60  # Cormack et al. 2009 default; see docs/topics/05_hybrid_fusion.md
 # BM25 keyword-scoring knobs (standard textbook values): k1 = how fast repeated
 # words stop adding score, b = how strongly long documents are penalised (0..1).
 BM25_K1 = 1.2

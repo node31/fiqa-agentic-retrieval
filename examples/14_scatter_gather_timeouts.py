@@ -1,7 +1,7 @@
 """Toy 14: scatter-gather with asyncio, per-shard timeouts and partial results.
 
 Concept: fan out concurrently, bound the wait, and TELL the caller what is missing.
-Real code: src/service/router.py::Router._fan    Doc: docs/08_sharding_scatter_gather.md
+Real code: src/service/router.py::Router._fan    Doc: docs/topics/08_sharding_scatter_gather.md
 """
 import asyncio
 import time

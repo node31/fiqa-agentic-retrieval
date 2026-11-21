@@ -1,7 +1,7 @@
 """Toy 00: tokenisation. Why "Investing" can match "invest", and what we throw away.
 
 Concept: lexical retrieval only matches what the tokenizer makes identical.
-Real code: src/retrieval/bm25.py::tokenize       Doc: docs/01_lexical_retrieval_bm25.md
+Real code: src/retrieval/bm25.py::tokenize       Doc: docs/topics/01_lexical_retrieval_bm25.md
 """
 from _common import banner, note, step, try_this
 

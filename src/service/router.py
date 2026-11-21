@@ -1,6 +1,6 @@
 """Router: scatter a query to every shard, gather, merge globally, fuse, return top-k.
 
-REQUEST PATH FOR A QUERY (docs/08_sharding_scatter_gather.md has the diagram)
+REQUEST PATH FOR A QUERY (docs/topics/08_sharding_scatter_gather.md has the diagram)
     0. Tokenise the query (BM25) and, IN PARALLEL, embed it once with the active
        model. Embedding at the router means N shards do not each repeat ~5 ms of work.
     1. DFS phase ("distributed frequency statistics", the name Elasticsearch uses
@@ -10,10 +10,10 @@ REQUEST PATH FOR A QUERY (docs/08_sharding_scatter_gather.md has the diagram)
        returns its top-``depth`` BM25 list and top-``depth`` dense list.
     3. Merge: global BM25 top-depth and global dense top-depth (scores are
        comparable because of step 1 and because of the shared model).
-    4. Fuse (RRF/linear) on the GLOBAL lists. Merge, THEN fuse (docs/08_sharding_scatter_gather.md).
+    4. Fuse (RRF/linear) on the GLOBAL lists. Merge, THEN fuse (docs/topics/08_sharding_scatter_gather.md).
     5. Optional fetch phase: get passage text for the final ids (and rerank).
 
-FAILURE POLICY (docs/08_sharding_scatter_gather.md)
+FAILURE POLICY (docs/topics/08_sharding_scatter_gather.md)
     Every shard call has a timeout. A slow or dead shard is reported, not hidden:
     the response carries ``partial: true`` and ``missing_shards: [...]``.
     ``failure_policy="partial"`` (default) returns what we have, because for a
@@ -45,7 +45,7 @@ LIFECYCLE OF ONE WRITE
     the text, appends the record to its WAL (write-ahead log: an append-only
     file written BEFORE the in-memory change, replayed on restart), applies it
     to BM25 + dense indexes, and only then replies. So "acked" means "durable
-    AND already searchable" (docs/09_live_updates_consistency.md).
+    AND already searchable" (docs/topics/09_live_updates_consistency.md).
 
 HOW TO READ THIS FILE (top to bottom)
     1. ``ShardClient``, ``dispatch``, ``LocalShardClient``, ``HttpShardClient``:

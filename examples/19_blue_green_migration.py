@@ -1,7 +1,7 @@
 """Toy 19: blue/green embedding migration. Dual-write, backfill race, cutover, rollback.
 
 Concept: build the new index alongside the old one, flip a flag, and keep the old one warm for rollback.
-Real code: ShardStore.start_build/_backfill, Router.cutover/rollback    Doc: docs/10_model_migration.md
+Real code: ShardStore.start_build/_backfill, Router.cutover/rollback    Doc: docs/topics/10_model_migration.md
 """
 import threading
 

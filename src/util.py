@@ -17,7 +17,7 @@ def rss_mb() -> dict:
 
     PITFALL: "peak" is OS-specific. Windows exposes peak working set,
     Linux exposes ru_maxrss (in KB). macOS exposes ru_maxrss in bytes.
-    See docs/07_benchmarking_latency_memory.md.
+    See docs/topics/07_benchmarking_latency_memory.md.
 
     Jargon:
         RSS ("resident set size") = the bytes of this process that are actually

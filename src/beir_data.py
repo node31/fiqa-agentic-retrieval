@@ -13,7 +13,7 @@ WHY
 KEY CONCEPT: qrels
     "Query relevance judgements". For FiQA every judged pair has score 1 and
     unjudged documents are assumed non-relevant. A query has ~2.6 relevant
-    passages on average. See docs/04_ir_metrics.md.
+    passages on average. See docs/topics/04_ir_metrics.md.
 
 PITFALLS
     * Queries for all splits live in one file. Always filter by the split's

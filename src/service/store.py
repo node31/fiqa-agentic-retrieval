@@ -13,7 +13,7 @@ STATE
     dense     {model_key: DenseIndex}          one exact index per embedding model
     ready     {model_key: bool}                False while a migration backfill runs
 
-WRITE PATH (upsert/delete), docs/09_live_updates_consistency.md
+WRITE PATH (upsert/delete), docs/topics/09_live_updates_consistency.md
     1. Fast idempotency check: if stored version >= incoming, it is a no-op.
     2. Compute embeddings for every model this shard maintains, OUTSIDE the lock.
        This is slow work (~10 ms), so readers are not blocked during it.
@@ -37,7 +37,7 @@ CRASH-ONLY RECOVERY
     down (partial results), and a restart rebuilds state from base corpus +
     WAL replay. Restart is the ONE recovery path, so it is the tested path.
 
-MIGRATION (Part B3), docs/10_model_migration.md
+MIGRATION (Part B3), docs/topics/10_model_migration.md
     ``start_build(model)`` adds an empty index for the new model. From that
     instant every write is DUAL-WRITTEN to both models. A background thread
     then backfills existing docs, skipping any doc whose version changed since

@@ -9,7 +9,7 @@ WHAT
 
 THE TRADE-OFF WE MEASURE (results/ablation_rerank_minilm.json)
     quality vs. rerank depth k ∈ {10, 20, 50}, and latency grows ~linearly in k.
-    See docs/06_reranking.md and examples/09_bi_vs_cross_encoder.py.
+    See docs/topics/06_reranking.md and examples/09_bi_vs_cross_encoder.py.
 
 PITFALL
     ms-marco cross-encoders output unbounded logits, not probabilities. Only

@@ -117,7 +117,7 @@ feeds, the same trade Elasticsearch makes with its 1 s refresh.
 The scenario replays show a different number that is easy to mistake for the lag: when a search was sent after the
 write's ack. A search sent 3 s after the ack that finds the doc only proves it was visible by then. The lag itself is
 what `wait_visible` measures (every probe in my scenario runs saw the doc on its first poll, 9.8 to 95 ms, which is one search round trip) and what the table above reports under load; the
-numbers are in [scenarios.md](scenarios.md#freshness-what-the-numbers-mean).
+numbers are in [scenarios.md](../guides/scenarios.md#freshness-what-the-numbers-mean).
 
 ```bash
 pytest -q tests/test_integration_service.py   # sync: idempotency, freshness, crash recovery, partial results

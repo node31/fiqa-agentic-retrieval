@@ -10,7 +10,7 @@ and a smoke test. I made it safe to re-run: every step skips work that is alread
 
 | bash | PowerShell | what it does |
 |---|---|---|
-| `--mode async` | `-Mode async` | start the shards in async write mode ([09](docs/09_live_updates_consistency.md)); default `sync` |
+| `--mode async` | `-Mode async` | start the shards in async write mode ([09](docs/topics/09_live_updates_consistency.md)); default `sync` |
 | `--migrate-check` | `-MigrateCheck` | also run a live blue/green model migration (minilm → bge-small → rollback → cleanup) as part of the check |
 | `--build-index` | `-BuildIndex` | encode the embeddings locally (~30 to 40 min CPU) instead of downloading them |
 | `--down` | `-Down` | stop all containers (data, caches and WALs stay on disk) |
@@ -54,7 +54,7 @@ state (`artifacts/docker/router_state.json`) survive restarts.
 | browse the API | http://localhost:8000/docs |
 | add / delete a document | `curl -s -X POST localhost:8000/upsert -H 'content-type: application/json' -d '{"doc_id":"my-1","version":1,"text":"..."}'` |
 | full dev evaluation (500 queries) | `docker compose --profile tools run --rm eval` (my run: nDCG@10 0.4190) |
-| scenario files (writes, searches, migrations, crashes) with an HTML replay | see [docs/scenarios.md](docs/scenarios.md) |
+| scenario files (writes, searches, migrations, crashes) with an HTML replay | see [docs/guides/scenarios.md](docs/guides/scenarios.md) |
 | deeper Docker check: kill/restart a shard container, migration, memory, eval (needs host Python + venv) | `python -m scripts.docker_check --mode both --eval` |
 | show that the router talks to 3 separate containers: container IPs, DNS inside the router, writes landing in the predicted container (each shard asked directly via `docker exec`), one search merging all 3, TCP connections from the router's IP, stop/start one shard (needs host Python + venv and a running stack) | `python -m scripts.docker_trace --failover` |
 | migrate the embedding model by hand | `make migrate`, `make cutover`, `make rollback`, `make finalize` (or the `/admin/*` endpoints) |

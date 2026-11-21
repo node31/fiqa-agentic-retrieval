@@ -176,7 +176,7 @@ faiss is a library for finding the vectors closest to a query vector.
 
 "IP" is inner product, which equals cosine for normalised vectors. I use Flat because it is exact and already fast at this
 size. At 100M vectors Flat would take about 9 s per query, so there approximate search is mandatory
-([docs/15_scaling_to_100M.md](../15_scaling_to_100M.md)). I wrap the index in `IndexIDMap2` so each vector carries my own
+([docs/topics/15_scaling_to_100M.md](../topics/15_scaling_to_100M.md)). I wrap the index in `IndexIDMap2` so each vector carries my own
 id and can be removed, which live deletes need.
 
 ## Results

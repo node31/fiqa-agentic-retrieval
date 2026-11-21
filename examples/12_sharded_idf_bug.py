@@ -2,7 +2,7 @@
 
 Concept: BM25 needs corpus-wide statistics, but shards only know their own slice.
 Fix: the DFS phase (router sums N, total length and df across shards, then sends them back).
-Real code: src/service/router.py::Router.search (phase 1)   Doc: docs/08_sharding_scatter_gather.md
+Real code: src/service/router.py::Router.search (phase 1)   Doc: docs/topics/08_sharding_scatter_gather.md
 """
 import json
 

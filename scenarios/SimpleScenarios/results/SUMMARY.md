@@ -1,6 +1,6 @@
 # Simple scenarios: recorded runs
 
-Written by `python scripts/run_simple_scenarios.py` on 2026-11-21. Each cell: result · soft checks passed/total · which model answered the searches, in order. A soft check is a search that expected a doc (found) or expected it gone (`!doc`); a miss is reported but never fails the run. The console output of every run is in `<cluster>/<scenario>/console.txt`; rerun a scenario to get its `replay.html`.
+Written by `python scripts/run_simple_scenarios.py` on 2026-11-21. Each cell: result · soft checks passed/total · which model answered the searches, in order. A soft check is a search that expected a doc (found) or expected it gone (`!doc`); a miss is reported but never fails the run. The console output of every run is in `<cluster>/<scenario>/console.txt`, and its animated replay in `replay.html` (download it and open it in a browser).
 
 | scenario | SimpleSyncTinyCluster | SimpleAsyncTinyCluster | SimpleSyncFullCluster | SimpleAsyncFullCluster |
 |---|---|---|---|---|

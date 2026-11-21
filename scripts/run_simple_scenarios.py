@@ -16,15 +16,15 @@ THE FOUR CLUSTERS
 
 WHAT IT WRITES  (scenarios/SimpleScenarios/results/)
     <cluster>/<scenario>/console.txt    the console output, paths made repo-relative     (checked in)
-    <cluster>/<scenario>/events.jsonl   every recorded event                              (gitignored)
-    <cluster>/<scenario>/replay.html    the animated replay; open it in a browser         (gitignored)
-    <cluster>/<scenario>/cluster_logs/  router and shard logs                             (gitignored)
+    <cluster>/<scenario>/events.jsonl   every recorded event                              (checked in)
+    <cluster>/<scenario>/replay.html    the animated replay; open it in a browser         (checked in)
+    <cluster>/<scenario>/cluster_logs/  router and shard logs (absolute local paths)      (gitignored)
     <cluster>/<scenario>/run.json       exit code and wall time, for SUMMARY.md            (gitignored)
     SUMMARY.md                          one row per scenario, one column per cluster      (checked in)
 
     A scenario's folder is emptied before it runs, so a folder always holds exactly one run.
-    The events and replays are gitignored because they are large and change on every run; rerun this
-    script (or one scenario) to get them back.
+    The cluster logs stay out of git: they hold this machine's absolute paths and say nothing the
+    console and events do not.
 """
 from __future__ import annotations
 
@@ -119,7 +119,8 @@ def write_summary(table: dict[str, dict[str, dict]]) -> Path:
              f"{time.strftime('%Y-%m-%d')}. Each cell: result · soft checks passed/total · which model answered "
              "the searches, in order. A soft check is a search that expected a doc (found) or expected it gone "
              "(`!doc`); a miss is reported but never fails the run. The console output of every run is in "
-             "`<cluster>/<scenario>/console.txt`; rerun a scenario to get its `replay.html`.", "",
+             "`<cluster>/<scenario>/console.txt`, and its animated replay in `replay.html` (download it and "
+             "open it in a browser).", "",
              "| scenario | " + " | ".join(configs) + " |", "|---|" + "---|" * len(configs)]
     for stem, row in table.items():
         cells = []

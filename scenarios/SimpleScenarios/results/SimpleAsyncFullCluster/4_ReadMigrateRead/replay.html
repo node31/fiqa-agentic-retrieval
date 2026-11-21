@@ -1,0 +1,1460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Replay: 4_ReadMigrateRead (async)</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel2: #1c2330; --border: #30363d; --text: #e6edf3;
+    --muted: #8b949e; --green: #3fb950; --red: #f85149; --amber: #d29922; --blue: #58a6ff;
+    --purple: #bc8cff; --cyan: #39c5cf; --orange: #f0883e;
+    --mid: 460px;                       /* width of the middle (cluster) column; set from the shard count */
+    --cols: minmax(230px, 1fr) var(--mid) minmax(230px, 1fr);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: auto; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; }
+  code, .mono { font-family: "Cascadia Code", Consolas, "SF Mono", monospace; font-size: 12.5px; }
+  .muted { color: var(--muted); }
+  .ok-t { color: var(--green); } .bad-t { color: var(--red); } .soft-t { color: var(--amber); }
+
+  /* ---------- header ---------- */
+  header { padding: 14px 20px 10px; background: linear-gradient(90deg, #161b22, #10151d); border-bottom: 1px solid var(--border); }
+  h1 { margin: 0 0 6px; font-size: 20px; font-weight: 600; }
+  h1 .scn { color: var(--blue); }
+  .badges { display: flex; flex-wrap: wrap; gap: 6px; }
+  .badge { padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted);
+           font-size: 12px; background: var(--panel); }
+  .badge.mode-sync { color: #fff; background: #1f6feb; border-color: #1f6feb; font-weight: 600; }
+  .badge.mode-async { color: #111; background: var(--orange); border-color: var(--orange); font-weight: 600; }
+  .badge.pass { color: #fff; background: #238636; border-color: #238636; font-weight: 600; }
+  .badge.fail { color: #fff; background: #da3633; border-color: #da3633; font-weight: 600; }
+
+  /* ---------- how to read this ---------- */
+  details.howto { margin: 12px 20px 0; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
+  details.howto > summary { cursor: pointer; padding: 10px 14px; font-weight: 600; color: var(--blue); }
+  .howto-body { padding: 0 16px 14px; }
+  .howto h3 { margin: 14px 0 6px; font-size: 14px; color: var(--text); }
+  .howto p { margin: 4px 0; color: #c9d1d9; max-width: 1200px; }
+  .flows { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px; }
+  .flow { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+  .flow h4 { margin: 0 0 4px; font-size: 13px; }
+  .flow ol { margin: 4px 0 0 18px; padding: 0; color: #c9d1d9; font-size: 12.5px; }
+  svg.diagram { width: 100%; height: auto; display: block; }
+  svg .bx { fill: #1c2330; stroke: #30363d; stroke-width: 1.5; }
+  svg .bx.router { stroke: #58a6ff; fill: rgba(88,166,255,.10); }
+  svg .bx.client { stroke: #39c5cf; fill: rgba(57,197,207,.08); }
+  svg .bx.admin { stroke: #f0883e; fill: rgba(240,136,62,.08); }
+  svg .bx.owner { stroke: #3fb950; fill: rgba(63,185,80,.12); }
+  svg .tx { fill: #e6edf3; font: 600 12px "Segoe UI", sans-serif; text-anchor: middle; }
+  svg .tx.sm { font: 11px "Segoe UI", sans-serif; fill: #8b949e; }
+  svg .ar { stroke: #8b949e; stroke-width: 1.6; fill: none; marker-end: url(#ah); }
+  svg .ar.c { stroke: #39c5cf; } svg .ar.a { stroke: #f0883e; } svg .ar.g { stroke: #3fb950; } svg .ar.p { stroke: #bc8cff; }
+  svg .al { fill: #8b949e; font: 10.5px "Segoe UI", sans-serif; }
+  table.legend { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  table.legend th, table.legend td { border-bottom: 1px solid #21262d; padding: 4px 6px; text-align: left; vertical-align: top; }
+  table.legend th { color: var(--muted); font-weight: 600; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+
+  /* ---------- sticky dock: controls + cluster stage ---------- */
+  #dock { position: sticky; top: 0; z-index: 20; background: #0d1117; border-bottom: 1px solid var(--border);
+          box-shadow: 0 6px 18px rgba(0,0,0,.45); margin-top: 12px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 20px 0; }
+  button, select { background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+                   border-radius: 6px; padding: 4px 10px; font-size: 13.5px; cursor: pointer; }
+  button:hover, select:hover { border-color: var(--blue); }
+  button.primary { background: #1f6feb; border-color: #1f6feb; min-width: 84px; }
+  #clock { font-variant-numeric: tabular-nums; color: var(--text); }
+  #miniScore { margin-left: auto; font-size: 12.5px; color: var(--muted); }
+  #miniScore b { color: var(--text); }
+  label.chk { color: var(--muted); font-size: 12.5px; user-select: none; }
+  .timeline { position: relative; margin: 4px 20px 0; height: 30px; }
+  .timeline input { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; margin: 0; accent-color: var(--blue); }
+  .marker { position: absolute; top: 0; width: 3px; height: 13px; border-radius: 2px; cursor: pointer; transform: translateX(-1px); }
+  .marker.label { background: var(--purple); } .marker.admin { background: var(--orange); height: 17px; width: 4px; }
+  .marker.fail { background: var(--red); height: 17px; } .marker.soft { background: var(--amber); }
+  #narration { padding: 3px 20px 6px; font-size: 13.5px; min-height: 26px; color: #d2a8ff; white-space: nowrap;
+               overflow: hidden; text-overflow: ellipsis; }
+
+  #stage { position: relative; display: grid; grid-template-columns: var(--cols); gap: 14px; padding: 4px 20px 12px; }
+  #stage.hidden { display: none; }
+  .actor { border-radius: 10px; padding: 8px 10px; align-self: start; }
+  .actor h2 { margin: 0 0 6px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+  .actor.client { border: 1px solid rgba(57,197,207,.55); background: rgba(57,197,207,.06); }
+  .actor.client h2 { color: var(--cyan); }
+  .actor.admin { border: 1px solid rgba(240,136,62,.55); background: rgba(240,136,62,.06); }
+  .actor.admin h2 { color: var(--orange); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { border: 1px solid var(--border); background: var(--panel2); border-radius: 8px; padding: 3px 8px;
+          font-size: 12px; max-width: 100%; transition: box-shadow .25s, border-color .25s; }
+  .chip .nm { font-weight: 600; }
+  .chip .act { display: block; color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden;
+               text-overflow: ellipsis; max-width: 230px; min-height: 14px; }
+  .chip.busy { border-color: var(--lc, var(--blue)); box-shadow: 0 0 10px -2px var(--lc, var(--blue)); }
+  .chip.sampler { opacity: .7; border-style: dashed; }
+  #cluster { position: relative; }
+  #wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  #routerBox { position: relative; margin: 0 auto 22px; width: 230px; text-align: center; padding: 6px 8px;
+               border-radius: 10px; border: 1px solid var(--blue); background: rgba(88,166,255,.10); font-weight: 600; z-index: 1; }
+  #routerBox small { display: block; color: var(--muted); font-weight: 400; font-size: 11px; }
+  #routerModel { display: inline-block; margin-top: 3px; padding: 1px 9px; border-radius: 999px; font-size: 12px;
+                 background: rgba(63,185,80,.18); color: #7ee787; }
+  #routerModel.flip { animation: flip .9s ease-out; }
+  @keyframes flip { 0% { transform: rotateX(0); background: rgba(240,136,62,.8); color: #fff; }
+                    50% { transform: rotateX(90deg); } 100% { transform: rotateX(0); } }
+  #shards { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 8px; position: relative; z-index: 1; }
+  .shard { border: 1px solid var(--border); border-radius: 10px; padding: 5px 7px; background: var(--panel2);
+           font-size: 11.5px; transition: box-shadow .3s, border-color .3s; min-width: 0; }
+  .shard.hit { border-color: var(--green); box-shadow: 0 0 14px rgba(63,185,80,.65); }
+  .shard.owner { border-color: var(--orange); box-shadow: 0 0 14px rgba(240,136,62,.65); }
+  .shard.down { border-color: var(--red); opacity: .55; filter: grayscale(.9);
+                background: repeating-linear-gradient(45deg, #1c2330, #1c2330 6px, #2a1a1d 6px, #2a1a1d 12px); }
+  .shard .name { font-weight: 600; font-size: 12.5px; display: flex; justify-content: space-between; }
+  .kv { display: flex; justify-content: space-between; color: var(--muted); gap: 4px; }
+  .kv b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .queue { display: flex; flex-wrap: wrap; gap: 2px; min-height: 9px; margin: 2px 0; }
+  .queue i { width: 7px; height: 7px; border-radius: 2px; background: var(--orange); display: block; }
+  .mbar { margin-top: 2px; font-size: 10.5px; }
+  .mbar .lbl { display: flex; justify-content: space-between; color: var(--muted); }
+  .mbar .lbl b.active { color: var(--green); }
+  .mbar .track { height: 4px; background: #0b0f14; border-radius: 3px; overflow: hidden; }
+  .mbar .track div { height: 100%; background: var(--purple); transition: width .3s; }
+  .mbar .track div.ready { background: var(--green); }
+  .docchips { display: flex; flex-direction: column; gap: 2px; margin-top: 3px; min-height: 0; }
+  .docchip { font-size: 10.5px; padding: 0 5px; border-radius: 4px; white-space: nowrap; overflow: hidden;
+             text-overflow: ellipsis; transition: opacity .6s, background .4s; }
+  .docchip.queued { background: rgba(240,136,62,.25); color: #ffa657; }
+  .docchip.applied { background: rgba(63,185,80,.22); color: #7ee787; }
+  .docchip.gone { opacity: 0; }
+  .packet { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 6; display: flex; align-items: center;
+            gap: 5px; white-space: nowrap; }
+  .packet i { width: 11px; height: 11px; border-radius: 50%; display: block; box-shadow: 0 0 9px currentColor; background: currentColor; flex: none; }
+  .packet span { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: rgba(13,17,23,.92);
+                 border: 1px solid currentColor; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+  .toast { position: absolute; z-index: 7; pointer-events: none; font-size: 12px; padding: 3px 9px; border-radius: 6px;
+           background: rgba(13,17,23,.95); border: 1px solid var(--border); white-space: nowrap; max-width: 420px;
+           overflow: hidden; text-overflow: ellipsis; transform: translateX(-50%); }
+
+  /* ---------- the vertical timeline ---------- */
+  .colheads, .row { display: grid; grid-template-columns: var(--cols); gap: 14px; padding: 0 20px; }
+  .colheads { padding-top: 10px; padding-bottom: 4px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+              color: var(--muted); position: relative; }
+  .colheads div:nth-child(1) { color: var(--cyan); } .colheads div:nth-child(2) { text-align: center; }
+  .colheads div:nth-child(3) { color: var(--orange); text-align: right; }
+  #rows { position: relative; padding-bottom: 30px; }
+  #rows::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; background: #21262d; }
+  .row { position: relative; margin: 6px 0; cursor: pointer; transition: opacity .25s; }
+  .row.future { opacity: .32; }
+  .row .c-mid { text-align: center; position: relative; padding-top: 4px; }
+  .tick { display: inline-block; font: 12px "Cascadia Code", Consolas, monospace; color: var(--muted); background: var(--bg);
+          padding: 0 8px; border: 1px solid #21262d; border-radius: 999px; position: relative; z-index: 1; }
+  .react { font-size: 12px; color: #c9d1d9; margin-top: 3px; background: rgba(22,27,34,.9); border-radius: 6px; padding: 2px 6px;
+           display: inline-block; max-width: 100%; position: relative; z-index: 1; }
+  .react .r-end { display: none; }
+  .row.done .react .r-end { display: inline; }
+  .row.current .tick { color: #fff; background: #1f6feb; border-color: #1f6feb; }
+  .row.current .card { box-shadow: 0 0 0 2px #1f6feb, 0 0 18px rgba(31,111,235,.45); }
+  .card { border: 1px solid var(--border); border-left: 5px solid var(--lc, var(--blue)); border-radius: 8px;
+          background: var(--panel2); padding: 6px 10px; }
+  .c-right .card { border-left-width: 1px; border-right: 5px solid var(--lc, var(--orange)); }
+  .card .top { display: flex; justify-content: space-between; gap: 6px; font-size: 11.5px; color: var(--muted); }
+  .lane { font-weight: 600; color: var(--lc, var(--text)); }
+  .card .title { margin: 2px 0; word-break: break-word; }
+  .card .res { font-size: 13px; display: none; }
+  .row.done .card .res { display: block; }
+  .row.done .card.ok { background: #18221c; } .row.done .card.fail { background: #2a1618; }
+  .row.done .card.soft, .row.done .card.noop { background: #272114; }
+  .status-ic { font-weight: 700; }
+  .spin { display: none; width: 10px; height: 10px; border: 2px solid var(--blue); border-right-color: transparent;
+          border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -1px; margin-right: 5px; }
+  .row.active .spin { display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .bar { height: 6px; background: #0b0f14; border-radius: 3px; overflow: hidden; margin-top: 4px; }
+  .bar > div { height: 100%; width: 0; background: linear-gradient(90deg, var(--blue), var(--cyan)); }
+  .hits { margin: 3px 0 0; padding: 0; list-style: none; font-size: 12px; }
+  .hits li { display: flex; justify-content: space-between; gap: 8px; padding: 0 6px; border-radius: 4px; }
+  .hits li.exp { background: rgba(63,185,80,.18); color: #7ee787; font-weight: 600; }
+  .hits li.bad { background: rgba(248,81,73,.2); color: #ff7b72; font-weight: 600; }
+  .hits li.softmiss { background: rgba(210,153,34,.18); color: #e3b341; font-weight: 600; }
+  .check { font-size: 12px; margin-top: 2px; }
+  .tag { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 11px; margin-left: 4px;
+         background: rgba(88,166,255,.15); color: var(--blue); }
+  /* per-query time split (search cards) */
+  .split { margin-top: 4px; font-size: 11px; }
+  .split .sbar { display: flex; height: 8px; border-radius: 3px; overflow: hidden; background: #0b0f14; margin: 2px 0; }
+  .split .sbar > i { display: block; height: 100%; min-width: 1px; }
+  .split .sleg { display: flex; flex-wrap: wrap; gap: 2px 10px; color: var(--muted, #8b949e); }
+  .split .sleg b { color: #c9d1d9; font-weight: 600; }
+  .split .dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 3px; vertical-align: -1px; }
+  .row.label-row { display: block; }
+  .banner { margin: 8px 0 2px; padding: 7px 12px; border-radius: 8px; font-weight: 600; font-size: 14px;
+            background: linear-gradient(90deg, rgba(188,140,255,.25), rgba(188,140,255,.04)); border-left: 4px solid var(--purple); }
+  .row.flow-row .react { color: var(--purple); }
+
+  /* ---------- filters (above the timeline) ---------- */
+  #filters { margin: 6px 0 0; padding: 6px 10px; border: 1px solid var(--border); border-radius: 10px;
+             background: var(--panel); display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 12.5px; }
+  #filters .grp { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+  #filters .grp > b { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-right: 2px; }
+  .fchip { cursor: pointer; border: 1px solid var(--lc, var(--border)); color: var(--text); background: rgba(255,255,255,.04);
+           border-radius: 999px; padding: 1px 9px; font-size: 12px; user-select: none; }
+  .fchip.off { opacity: .35; text-decoration: line-through; border-style: dashed; }
+  .fbtn { cursor: pointer; background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 6px;
+          padding: 1px 7px; font-size: 11.5px; }
+  #fText { background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 3px 8px;
+           width: 260px; font-size: 12.5px; }
+  #fCount { color: var(--muted); }
+  #fCount.active { color: var(--blue); font-weight: 600; }
+
+  /* ---------- bottom panels ---------- */
+  .bottom { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px; padding: 10px 20px 40px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+  .panel h2 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .score { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .tile { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; }
+  .tile .v { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tile .k { color: var(--muted); font-size: 11.5px; }
+  .list { max-height: 300px; overflow-y: auto; margin: 0; padding: 0; list-style: none; font-size: 12.5px; }
+  .list li { padding: 3px 6px; border-bottom: 1px solid #21262d; display: flex; justify-content: space-between; gap: 8px; }
+  canvas#chart { width: 100%; height: 220px; display: block; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Scenario replay: <span class="scn" id="scnName"></span></h1>
+  <div class="badges" id="badges"></div>
+</header>
+
+<details class="howto" id="howto" open>
+  <summary>How to read this page (architecture, the three request flows, who is who in this recording)</summary>
+  <div class="howto-body" id="howtoBody"></div>
+</details>
+
+<div id="dock">
+  <div class="controls">
+    <button id="btnBack" title="previous event (Left arrow)">&#9198; prev</button>
+    <button id="btnPlay" class="primary" title="play / pause (Space)">&#9654; play</button>
+    <button id="btnStep" title="next event (Right arrow)">next &#9197;</button>
+    <button id="btnRestart" title="restart (Home)">&#8634; restart</button>
+    <label class="muted">speed
+      <select id="speed">
+        <option value="0.25">0.25&times;</option><option value="0.5">0.5&times;</option>
+        <option value="1" selected>1&times;</option><option value="2">2&times;</option><option value="4">4&times;</option>
+      </select>
+    </label>
+    <span id="clock" class="mono"></span>
+    <label class="chk"><input type="checkbox" id="follow" checked> auto-scroll</label>
+    <label class="chk"><input type="checkbox" id="showStage" checked> cluster stage</label>
+    <span id="miniScore"></span>
+  </div>
+  <div class="timeline" id="timeline"><input type="range" id="scrub" min="0" max="1000" step="1" value="0"></div>
+  <div id="narration"></div>
+  <div id="filters">
+    <div class="grp" id="fClients"><b>clients</b></div>
+    <div class="grp" id="fAdmins"><b>admin &amp; ops</b></div>
+    <div class="grp"><button class="fbtn" id="fAll" title="show every persona">all</button><button class="fbtn" id="fNone" title="hide every persona">none</button></div>
+    <div class="grp"><input id="fText" type="search" autocomplete="off" placeholder="doc id or query text (e.g. roth, bot1-1)" title="shows ops that name this doc or query, and searches that returned or expected that doc"></div>
+    <div class="grp"><span id="fCount"></span><button class="fbtn" id="fClear">clear filters</button></div>
+  </div>
+  <div id="stage">
+    <div class="actor client" id="clientBox"><h2>Clients: users &amp; bots</h2><div class="chips" id="clientChips"></div></div>
+    <div id="cluster">
+      <svg id="wires"></svg>
+      <div id="routerBox">router<small id="routerInfo"></small><span id="routerModel" title="model used for queries (active_model)"></span></div>
+      <div id="shards"></div>
+    </div>
+    <div class="actor admin" id="adminBox"><h2>Admin &amp; Ops</h2><div class="chips" id="adminChips"></div></div>
+  </div>
+</div>
+
+<div class="colheads"><div>&#8592; clients: users &amp; bots</div><div>time &middot; what the cluster did</div><div>admin &amp; ops &#8594;</div></div>
+<div id="rows"></div>
+
+<div class="bottom">
+  <div class="panel"><h2>Scoreboard (at the playhead)</h2><div class="score" id="score"></div></div>
+  <div class="panel"><h2>Freshness: was the new doc found?</h2>
+    <p class="muted" style="margin:0 0 6px">&#128270; = a search that expected a doc: when the doc was acked, when the search
+      was sent, when the answer came back, and the difference. &#9203; = wait_visible: the measured lag from the ack until a
+      search first saw the doc.</p>
+    <ul class="list" id="fresh"></ul></div>
+  <div class="panel"><h2>Answer checks: same answers as before?</h2><ul class="list" id="answers"></ul></div>
+  <div class="panel"><h2>Cluster over time (status samples)</h2><canvas id="chart"></canvas></div>
+</div>
+
+<script id="scenario-data" type="application/json">{"meta":{"type":"meta","t":0.0,"scenario":"4_ReadMigrateRead","file":"scenarios\\SimpleScenarios\\4_ReadMigrateRead.csv","mode":"async","url":"http://127.0.0.1:19000","n_shards":3,"run_id":"840890","started_at":"2026-11-21T14:57:15","cluster":"started by runner, real FiQA corpus","active_model":"minilm","models":"minilm","config":{},"description":null,"lanes":[{"name":"main","parent":null,"line":1,"plan":"search(hybrid) x2, migrate bge-small, wait_ready bge-small, cutover bge-small, search(hybrid) x2","actor":null,"description":"the top-level ops of the file, run one after another"}],"actors":[{"name":"Elephant","display":"Elephant","role":"user","emoji":"🐘","how":"from its name","description":null,"op_counts":{"search":2}},{"name":"Fox","display":"Fox","role":"user","emoji":"🦊","how":"from its name","description":null,"op_counts":{"search":2}},{"name":"ADMIN","display":"ADMIN","role":"admin","emoji":"🛠️","how":"from its name","description":null,"op_counts":{"migrate":1,"wait_ready":1,"cutover":1}}],"base_docs":57638,"sample_ms":150.0},"summary":{"type":"summary","t":1.143,"ops":7,"errors":0,"checks_passed":1,"checks_failed":0,"soft_found":0,"soft_missed":0,"writes":0,"writes_applied":0,"write_ack_ms":null,"searches":4,"search_ms":{"p50":32.52,"p95":42.72},"partial_searches":0,"same_as":{"passed":0,"total":0},"overlap":{"passed":0,"total":0},"golden":{"passed":0,"total":0},"visibility_lags":[],"admin":[{"t":0.5409,"op":"migrate","ok":true,"model":"bge-small","shard":null},{"t":0.5503,"op":"wait_ready","ok":true,"model":"bge-small","shard":null},{"t":0.576,"op":"cutover","ok":true,"model":"bge-small","shard":null}],"fresh_under_1s":{"found":0,"total":0},"fresh_after_1s":{"found":0,"total":0},"duration_s":1.143,"passed":true},"events":[{"type":"status","t":0.0,"src":"initial","active_model":"minilm","previous_model":null,"shards":{"0":{"n_docs":19167,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19167}}},"1":{"n_docs":19254,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19254}}},"2":{"n_docs":19217,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19217}}}}},{"type":"status","t":0.01,"src":"sampler","active_model":"minilm","previous_model":null,"shards":{"0":{"n_docs":19167,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19167}}},"1":{"n_docs":19254,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19254}}},"2":{"n_docs":19217,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19217}}}}},{"type":"op_start","id":1,"t":0.0102,"lane":"main","op":"search","line":21,"req":{"query":"what is short selling?","k":10,"strategy":"hybrid"},"actor":"Elephant"},{"type":"op_end","id":1,"t":0.042,"lane":"main","op":"search","ok":true,"latency_ms":31.82,"resp":{"n":10,"partial":false,"missing_shards":[],"server_ms":29.18,"model":"minilm","timings":{"stats":8.21,"embed":13.46,"embed_wait":6.09,"scatter":13.65,"merge":0.74,"fuse":0.15,"fetch":0.0,"rerank":0.0,"shard_compute":6.85,"network":6.8,"per_shard":{"0":6.85,"1":6.56,"2":5.17},"other":0.34},"results":[{"doc_id":"336018","score":0.9688},{"doc_id":"409350","score":0.7485},{"doc_id":"127585","score":0.6483},{"doc_id":"564611","score":0.5889},{"doc_id":"84761","score":0.4997},{"doc_id":"188531","score":0.4986},{"doc_id":"345368","score":0.4894},{"doc_id":"233379","score":0.4807},{"doc_id":"499877","score":0.4791},{"doc_id":"35500","score":0.451}]},"checks":[],"error":null},{"type":"op_start","id":2,"t":0.0422,"lane":"main","op":"search","line":22,"req":{"query":"should I pay off my mortgage early?","k":10,"strategy":"hybrid"},"actor":"Fox"},{"type":"op_end","id":2,"t":0.0747,"lane":"main","op":"search","ok":true,"latency_ms":32.52,"resp":{"n":10,"partial":false,"missing_shards":[],"server_ms":30.53,"model":"minilm","timings":{"stats":9.93,"embed":16.12,"embed_wait":7.12,"scatter":12.72,"merge":0.33,"fuse":0.16,"fetch":0.0,"rerank":0.0,"shard_compute":4.78,"network":7.94,"per_shard":{"0":4.28,"1":4.78,"2":4.76},"other":0.27},"results":[{"doc_id":"188672","score":0.9848},{"doc_id":"498881","score":0.7537},{"doc_id":"107152","score":0.7092},{"doc_id":"243065","score":0.6385},{"doc_id":"119351","score":0.5947},{"doc_id":"487503","score":0.5582},{"doc_id":"386994","score":0.5521},{"doc_id":"559539","score":0.5289},{"doc_id":"29271","score":0.5079},{"doc_id":"479861","score":0.4986}]},"checks":[],"error":null},{"type":"op_start","id":3,"t":0.0749,"lane":"main","op":"migrate","line":25,"req":{"model":"bge-small","reencode":false,"throttle_s":0.0},"actor":"ADMIN","from_model":"minilm"},{"type":"status","t":0.1842,"src":"sampler","active_model":"minilm","previous_model":null,"shards":{"0":{"n_docs":19167,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19167},"bge-small":{"ready":false,"progress":0.16,"n":3072}}},"1":{"n_docs":19254,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19254},"bge-small":{"ready":false,"progress":0.146,"n":2816}}},"2":{"n_docs":19217,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19217},"bge-small":{"ready":false,"progress":0.133,"n":2816}}}}},{"type":"status","t":0.3807,"src":"sampler","active_model":"minilm","previous_model":null,"shards":{"0":{"n_docs":19167,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19167},"bge-small":{"ready":true,"progress":1.0,"n":19167}}},"1":{"n_docs":19254,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19254},"bge-small":{"ready":true,"progress":1.0,"n":19254}}},"2":{"n_docs":19217,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19217},"bge-small":{"ready":true,"progress":1.0,"n":19217}}}}},{"type":"op_end","id":3,"t":0.5409,"lane":"main","op":"migrate","ok":true,"latency_ms":466.04,"resp":{"target":"bge-small","shards":{"0":{"status":"started","n_docs":19167},"1":{"status":"started","n_docs":19254},"2":{"status":"started","n_docs":19217}}},"checks":[],"error":null},{"type":"op_start","id":4,"t":0.5411,"lane":"main","op":"wait_ready","line":26,"req":{"model":"bge-small"},"actor":"ADMIN"},{"type":"status","t":0.5458,"src":"sampler","active_model":"minilm","previous_model":null,"shards":{"0":{"n_docs":19167,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19167},"bge-small":{"ready":true,"progress":1.0,"n":19167}}},"1":{"n_docs":19254,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19254},"bge-small":{"ready":true,"progress":1.0,"n":19254}}},"2":{"n_docs":19217,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19217},"bge-small":{"ready":true,"progress":1.0,"n":19217}}}}},{"type":"status","t":0.5503,"src":"wait_ready","active_model":"minilm","previous_model":null,"shards":{"0":{"n_docs":19167,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19167},"bge-small":{"ready":true,"progress":1.0,"n":19167}}},"1":{"n_docs":19254,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19254},"bge-small":{"ready":true,"progress":1.0,"n":19254}}},"2":{"n_docs":19217,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19217},"bge-small":{"ready":true,"progress":1.0,"n":19217}}}}},{"type":"op_end","id":4,"t":0.5503,"lane":"main","op":"wait_ready","ok":true,"latency_ms":9.29,"resp":{"polls":1,"waited_ms":9.3,"progress":{"0":1.0,"1":1.0,"2":1.0}},"checks":[{"kind":"ready","model":"bge-small","pass":true,"hard":true}],"error":null},{"type":"op_start","id":5,"t":0.5505,"lane":"main","op":"cutover","line":27,"req":{"model":"bge-small"},"actor":"ADMIN","from_model":"minilm"},{"type":"op_end","id":5,"t":0.576,"lane":"main","op":"cutover","ok":true,"latency_ms":25.56,"resp":{"active_model":"bge-small","previous_model":"minilm"},"checks":[],"error":null},{"type":"status","t":0.713,"src":"sampler","active_model":"bge-small","previous_model":"minilm","shards":{"0":{"n_docs":19167,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19167},"bge-small":{"ready":true,"progress":1.0,"n":19167}}},"1":{"n_docs":19254,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19254},"bge-small":{"ready":true,"progress":1.0,"n":19254}}},"2":{"n_docs":19217,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19217},"bge-small":{"ready":true,"progress":1.0,"n":19217}}}}},{"type":"status","t":0.8857,"src":"sampler","active_model":"bge-small","previous_model":"minilm","shards":{"0":{"n_docs":19167,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19167},"bge-small":{"ready":true,"progress":1.0,"n":19167}}},"1":{"n_docs":19254,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19254},"bge-small":{"ready":true,"progress":1.0,"n":19254}}},"2":{"n_docs":19217,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19217},"bge-small":{"ready":true,"progress":1.0,"n":19217}}}}},{"type":"op_start","id":6,"t":1.0005,"lane":"main","op":"search","line":29,"req":{"query":"what is short selling?","k":10,"strategy":"hybrid"},"actor":"Elephant"},{"type":"op_end","id":6,"t":1.0397,"lane":"main","op":"search","ok":true,"latency_ms":39.18,"resp":{"n":10,"partial":false,"missing_shards":[],"server_ms":36.73,"model":"bge-small","timings":{"stats":10.53,"embed":23.7,"embed_wait":14.18,"scatter":11.48,"merge":0.3,"fuse":0.14,"fetch":0.0,"rerank":0.0,"shard_compute":3.95,"network":7.53,"per_shard":{"0":3.82,"1":3.76,"2":3.95},"other":0.1},"results":[{"doc_id":"336018","score":0.9729},{"doc_id":"35500","score":0.8065},{"doc_id":"459494","score":0.7453},{"doc_id":"127585","score":0.6669},{"doc_id":"94690","score":0.5496},{"doc_id":"107045","score":0.5288},{"doc_id":"409350","score":0.4899},{"doc_id":"188531","score":0.4772},{"doc_id":"118039","score":0.4465},{"doc_id":"233379","score":0.4401}]},"checks":[],"error":null},{"type":"status","t":1.0589,"src":"sampler","active_model":"bge-small","previous_model":"minilm","shards":{"0":{"n_docs":19167,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19167},"bge-small":{"ready":true,"progress":1.0,"n":19167}}},"1":{"n_docs":19254,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19254},"bge-small":{"ready":true,"progress":1.0,"n":19254}}},"2":{"n_docs":19217,"healthy":true,"mode":"async","pending":0,"oldest_ms":0.0,"lag_p50":null,"lag_p95":null,"lag_max":null,"accepted":0,"applied":0,"batches":0,"bp_waits":0,"noop":0,"replayed":0,"models":{"minilm":{"ready":true,"progress":1.0,"n":19217},"bge-small":{"ready":true,"progress":1.0,"n":19217}}}}},{"type":"op_start","id":7,"t":1.1002,"lane":"main","op":"search","line":30,"req":{"query":"should I pay off my mortgage early?","k":10,"strategy":"hybrid"},"actor":"Fox"},{"type":"op_end","id":7,"t":1.143,"lane":"main","op":"search","ok":true,"latency_ms":42.72,"resp":{"n":10,"partial":false,"missing_shards":[],"server_ms":39.83,"model":"bge-small","timings":{"stats":10.41,"embed":24.91,"embed_wait":15.43,"scatter":13.01,"merge":0.62,"fuse":0.27,"fetch":0.0,"rerank":0.0,"shard_compute":5.33,"network":7.68,"per_shard":{"0":3.41,"1":5.33,"2":4.08},"other":0.09},"results":[{"doc_id":"498881","score":0.9416},{"doc_id":"188672","score":0.8416},{"doc_id":"386994","score":0.6606},{"doc_id":"243065","score":0.6452},{"doc_id":"589256","score":0.6093},{"doc_id":"439959","score":0.5445},{"doc_id":"477907","score":0.531},{"doc_id":"336998","score":0.508},{"doc_id":"559539","score":0.4918},{"doc_id":"487503","score":0.4908}]},"checks":[],"error":null}]}</script>
+<script>
+"use strict";
+// =====================================================================================
+// 0. Data and small helpers. scripts/scenario.py recorded the events; replay_html.py embedded them.
+// =====================================================================================
+const DATA = JSON.parse(document.getElementById("scenario-data").textContent);
+const META = DATA.meta || {};
+const SUMMARY = DATA.summary || {};
+const $ = (id) => document.getElementById(id);
+// Escape user-controlled text (doc ids, queries, lane names) before putting it into innerHTML.
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmtMs = (ms) => ms == null ? "n/a" : (ms >= 1000 ? (ms / 1000).toFixed(2) + " s" : ms.toFixed(1) + " ms");
+const short = (s, n = 34) => { s = String(s ?? ""); return s.length > n ? s.slice(0, n - 1) + "\u2026" : s; };
+const pct = (xs, p) => {           // nearest-rank percentile, same rule as src/util.percentile
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.max(1, Math.ceil(p / 100 * s.length)) - 1];
+};
+// URL options: #t=5.2 or ?t=5.2 (jump there, paused), ?autoplay=1, ?howto=0.
+const PARAMS = new URLSearchParams(location.search + "&" + location.hash.replace(/^#/, ""));
+
+// Which column an op belongs to. Everything else is decided per lane (see laneSide below).
+const CLIENT_OPS = new Set(["search", "upsert", "delete", "wait_visible"]);
+const ADMIN_OPS = new Set(["migrate", "wait_ready", "cutover", "rollback", "finalize", "kill_shard", "restart_shard",
+                           "flush", "status", "golden_check"]);
+const CHAOS_OPS = new Set(["kill_shard", "restart_shard"]);
+const BIG_ADMIN = new Set(["migrate", "cutover", "rollback", "finalize", "kill_shard", "restart_shard"]);
+
+// =====================================================================================
+// 1. Index the events.
+// =====================================================================================
+const starts = new Map();  // op id -> op_start event
+const ends = new Map();    // op id -> op_end event
+const samples = [];        // status events (cluster snapshots), in time order
+for (const ev of DATA.events) {
+  if (ev.type === "op_start") starts.set(ev.id, ev);
+  else if (ev.type === "op_end") ends.set(ev.id, ev);
+  else if (ev.type === "status") samples.push(ev);
+}
+samples.sort((a, b) => a.t - b.t);
+// The timeline: everything that changes the page, sorted by time. WHY the tie-breaker: lanes run in
+// parallel threads, so events are logged in lock order; for equal times a start precedes its end.
+const ORDER = { status: 0, op_start: 1, op_end: 2 };
+const timeline = DATA.events.slice().sort((a, b) => a.t - b.t || ORDER[a.type] - ORDER[b.type] || (a.id || 0) - (b.id || 0));
+const DURATION = Math.max(0.5, ...timeline.map((e) => e.t)) + 0.25;
+const stepTimes = [...new Set(timeline.filter((e) => e.type !== "status").map((e) => e.t))].sort((a, b) => a - b);
+
+// Shard count: the run's meta, but never fewer than the status samples or write events show.
+let N_SHARDS = META.n_shards || 1;
+for (const s of samples) for (const k of Object.keys(s.shards || {})) N_SHARDS = Math.max(N_SHARDS, Number(k) + 1);
+for (const s of starts.values()) if (Number.isInteger(s.shard)) N_SHARDS = Math.max(N_SHARDS, s.shard + 1);
+
+// Lanes = threads of the runner. From the meta lane table if present, else from fork events.
+const laneInfo = new Map();
+for (const l of META.lanes || []) laneInfo.set(l.name, { ...l });
+for (const s of [...starts.values()].sort((a, b) => a.t - b.t)) {
+  if (!laneInfo.has(s.lane)) laneInfo.set(s.lane, { name: s.lane });
+  if (s.op === "parallel") for (const n of s.req.lanes || []) {
+    const li = laneInfo.get(n) || { name: n };
+    li.parent = li.parent ?? s.lane; li.line = li.line ?? s.line;
+    laneInfo.set(n, li);
+  }
+}
+const laneNames = [...laneInfo.keys()];
+
+// ACTORS = who performs each op. Every actor has a ROLE: user / bot (clients, LEFT column) or
+// admin / ops (privileged operators, RIGHT column). scripts/scenario.py resolves them (meta.actors,
+// op_start.actor); for older recordings without actors we infer them the same way from the events.
+const ROLE_EMOJI = { user: "\u{1F642}", bot: "\u{1F916}", admin: "\u{1F6E0}\uFE0F", ops: "\u{1F9D1}\u200D\u{1F527}" };
+const ROLE_SIDE = { user: "client", bot: "client", admin: "admin", ops: "admin" };
+const ADMIN_TYPE = new Set(["migrate", "wait_ready", "cutover", "rollback", "finalize", "flush"]);
+const OPS_TYPE = new Set(["kill_shard", "restart_shard", "status"]);
+const actors = new Map();   // name -> {name, display, role, emoji, how, description, counts: {op: n}}
+for (const a of META.actors || []) actors.set(a.name, { ...a, counts: {} });
+// Actor of one op (null = nobody: labels, forks, a top-level pause).
+function actorOf(st) {
+  if ("actor" in st) return st.actor;
+  if (["label", "parallel", "golden_check"].includes(st.op)) return null;
+  if (st.lane === "main") return CLIENT_OPS.has(st.op) ? "user" : ADMIN_TYPE.has(st.op) ? "admin" : OPS_TYPE.has(st.op) ? "ops" : null;
+  return st.lane;
+}
+for (const s of [...starts.values()].sort((a, b) => a.t - b.t)) {
+  const name = actorOf(s);
+  if (name == null) continue;
+  if (!actors.has(name)) actors.set(name, { name, display: name, role: null, emoji: null, how: "inferred by the replay", counts: {} });
+  const a = actors.get(name);
+  a.counts[s.op] = (a.counts[s.op] || 0) + 1;
+}
+for (const a of actors.values()) if (!a.role) {   // old recordings: infer from what the actor did
+  const ops = Object.keys(a.counts);
+  a.role = ops.some((o) => ADMIN_TYPE.has(o)) ? "admin" : ops.some((o) => OPS_TYPE.has(o)) ? "ops"
+         : /bot|load|burst|writer|reader|checker|probe|canary|watchdog|monitor/i.test(a.name) ? "bot" : "user";
+  a.emoji = ROLE_EMOJI[a.role];
+}
+const actorNames = [...actors.keys()];
+const roleOf = (name) => (actors.get(name) || {}).role;
+const actorLabel = (name) => { const a = actors.get(name) || { display: name, emoji: "" }; return `${a.emoji || ""} ${a.display || name}`.trim(); };
+// The column of ONE op. Strict, like the runner's validation: client ops (search, upsert, delete,
+// wait_visible) are ALWAYS on the left, admin/ops ops ALWAYS on the right. Neutral ops (sleep,
+// signal, wait_signal, unknown ops) follow their actor's role; ops without an actor go in the middle.
+function sideOf(st) {
+  if (st.op === "label") return "label";
+  if (st.op === "parallel") return "flow";
+  const a = actorOf(st);
+  if (a == null) return "flow";
+  if (CLIENT_OPS.has(st.op)) return "client";
+  if (ADMIN_OPS.has(st.op)) return "admin";
+  return ROLE_SIDE[roleOf(a)] || "client";
+}
+// "admin" (role admin) needs no role tag; "fox" (role user) does.
+const roleTag = (name) => { const a = actors.get(name) || {}; return a.role && (a.display || name).toLowerCase() !== a.role ? a.role : ""; };
+// A card names its lane only when the lane is not simply the actor's own lane ("main" = the file's top level).
+const laneTag = (lane, who) => lane === "main" || lane.split(".").pop() === who ? "" : lane;
+// One stable color per actor (and a neutral grey for lanes/rows without one).
+const PALETTE = ["#39c5cf", "#f0883e", "#d2a8ff", "#7ee787", "#ffa657", "#79c0ff", "#ff7b72", "#e3b341", "#56d4dd", "#a5d6ff"];
+const actorColor = (name) => name == null ? "#8b949e" : PALETTE[Math.max(0, actorNames.indexOf(name)) % PALETTE.length];
+const laneColor = (lane) => "#8b949e";
+// TWO different times, easy to confuse:
+//   * a search check's since_ack_ms = when that search RAN after the doc's ack (a scheduling fact:
+//     "fox searched 2 s later"), NOT how long the doc took to become visible;
+//   * wait_visible's lag_ms = ack -> first search that saw the doc = the real freshness number.
+const SINCE_ACK_TIP = "time between the doc's ack and this search being sent, NOT the visibility lag. The visibility lag is measured by wait_visible.";
+function lagText(r, q, ok) {
+  if (!ok) return `<span class="bad-t">&#10007; NOT ${q.absent ? "GONE" : "VISIBLE"} within ${q.timeout} s</span>`;
+  const polls = r.first_poll || r.polls === 1 ? "first poll" : `${r.polls} polls`;
+  if (r.lag_ms == null) return `<span class="ok-t">&#10003; ${q.absent ? "GONE" : "VISIBLE"}</span> <span class="muted">(${polls}; no ack in this run to measure from)</span>`;
+  const budget = r.lag_ms < 1000 ? `<span class="ok-t">freshness budget 1 s &#10003;</span>` : `<span class="bad-t">OVER the 1 s freshness budget</span>`;
+  return `<span class="ok-t">&#10003; ${q.absent ? "GONE" : "VISIBLE"} after <b>${fmtMs(r.lag_ms)}</b></span> <span class="muted">(${polls})</span> &middot; ${budget}`;
+}
+// Where one search's time went (router-measured timings_ms, see Router.search). The segments are
+// SEQUENTIAL and add up to the client-measured latency:
+//   client<->router HTTP = client time - router time; then, inside the router:
+//   stats (DFS round-trip) -> embed wait (encoder still running after the stats phase; it overlaps
+//   phase 1) -> shards compute (slowest shard) + network/queueing (rest of the scatter round-trip)
+//   -> merge + fuse -> fetch/rerank -> other.
+const SPLIT = [
+  ["http", "client\u2194router", "#6e7681", "HTTP hop from the client to the router and back (client time - router time)"],
+  ["stats", "stats (DFS)", "#58a6ff", "phase 1: ask every shard for term counts -> global BM25 statistics (skipped for dense-only / 1 shard)"],
+  ["embed_wait", "embed wait", "#bc8cff", "waiting for the query embedding after the stats phase (the encoder runs IN PARALLEL with phase 1)"],
+  ["shard_compute", "shards compute", "#3fb950", "phase 2: the slowest shard's own BM25 + faiss time (shards run in parallel)"],
+  ["network", "network/queue", "#d29922", "phase 2 round-trip minus the slowest shard's compute: HTTP, JSON, thread hand-offs (and the timeout wait for a dead shard)"],
+  ["mergefuse", "merge + fuse", "#39c5cf", "phases 3-4 at the router: merge the shard lists, then fuse BM25 + dense"],
+  ["fetchrr", "fetch/rerank", "#f778ba", "phase 5: fetch passage texts / cross-encoder rerank (0 unless asked)"],
+  ["other", "other", "#30363d", "router bookkeeping: tokenising, building the JSON response"],
+];
+function timeSplit(r, clientMs) {
+  const t = r.timings;
+  if (!t) return "";
+  const v = { http: Math.max(0, (clientMs ?? 0) - (r.server_ms ?? 0)), stats: t.stats, embed_wait: t.embed_wait,
+              shard_compute: t.shard_compute, network: t.network, mergefuse: (t.merge || 0) + (t.fuse || 0),
+              fetchrr: (t.fetch || 0) + (t.rerank || 0), other: t.other };
+  const total = SPLIT.reduce((s, [k]) => s + (v[k] || 0), 0) || 1;
+  const bar = SPLIT.filter(([k]) => v[k] > 0).map(([k, , c, tip]) =>
+    `<i style="width:${(100 * v[k] / total).toFixed(2)}%;background:${c}" title="${esc(tip)}"></i>`).join("");
+  const leg = SPLIT.filter(([k]) => v[k] >= 0.05).map(([k, name, c, tip]) =>
+    `<span title="${esc(tip)}"><span class="dot" style="background:${c}"></span>${name} <b>${fmtMs(v[k])}</b></span>`).join("");
+  const per = t.per_shard ? Object.entries(t.per_shard).map(([s, m]) => `s${s} ${fmtMs(m)}`).join(", ") : "";
+  const emb = t.embed ? ` &middot; encoder ${fmtMs(t.embed)} (overlaps stats)` : "";
+  return `<div class="split"><div class="sbar">${bar}</div><div class="sleg">${leg}</div>`
+    + `<div class="muted">per shard compute: ${per || "-"}${emb}${(r.missing_shards || []).length ? " &middot; network includes waiting for the missing shard" : ""}</div></div>`;
+}
+// "What this actor does in this scenario", from its op counts.
+function actorSummary(a) {
+  const c = a.counts, out = [];
+  const say = (op, one, many) => { if (c[op]) out.push(c[op] === 1 ? one : many.replace("N", c[op])); };
+  say("upsert", "writes 1 doc", "writes N docs"); say("delete", "deletes 1 doc", "deletes N docs");
+  say("search", "runs 1 search", "runs N searches"); say("wait_visible", "waits for a doc to become visible", "waits N times for docs to become visible");
+  say("migrate", "starts a model migration", "starts N migrations"); say("wait_ready", "waits for the new index to be ready", "waits N times for indexes");
+  say("cutover", "cuts over to the new model", "cuts over N times"); say("rollback", "rolls back", "rolls back N times");
+  say("finalize", "drops an old index", "drops N old indexes"); say("flush", "flushes the async queues", "flushes N times");
+  say("kill_shard", "kills a shard", "kills shards N times"); say("restart_shard", "restarts a shard", "restarts shards N times");
+  say("status", "checks the cluster status", "checks the status N times"); say("sleep", "pauses once", "pauses N times");
+  say("signal", "signals another lane once", "signals other lanes N times"); say("wait_signal", "waits for a signal", "waits N times for signals");
+  const known = new Set(["upsert", "delete", "search", "wait_visible", "migrate", "wait_ready", "cutover", "rollback", "finalize", "flush",
+                         "kill_shard", "restart_shard", "status", "sleep", "signal", "wait_signal"]);
+  for (const [op, n] of Object.entries(c)) if (!known.has(op)) out.push(`${op} x${n}`);
+  return out.join(", ") || "(declared, does nothing in this run)";
+}
+
+// =====================================================================================
+// 2. Static page: header, "how to read", stage boxes, timeline rows, markers.
+// =====================================================================================
+$("scnName").textContent = META.scenario || "scenario";
+(function header() {
+  const mode = String(META.mode || "?");
+  const b = [];
+  b.push(`<span class="badge mode-${esc(mode)}" title="${mode === "async"
+    ? "async: ack after WAL fsync, applied in the background, searchable within ~1 s"
+    : "sync: ack only after the write is applied, searchable by the very next search"}">${esc(mode.toUpperCase())} mode</span>`);
+  if (SUMMARY.passed !== undefined)
+    b.push(`<span class="badge ${SUMMARY.passed ? "pass" : "fail"}">${SUMMARY.passed ? "PASS" : "FAIL"} &middot;
+      ${(SUMMARY.checks_passed ?? 0) + (SUMMARY.soft_found ?? 0)} ok / ${SUMMARY.checks_failed ?? 0} failed</span>`);
+  b.push(`<span class="badge">${esc(META.started_at || "")}</span>`);
+  b.push(`<span class="badge">${N_SHARDS} shard${N_SHARDS === 1 ? "" : "s"} &middot; ${esc(META.cluster || "")}</span>`);
+  b.push(`<span class="badge mono">${esc(META.url || "")}</span>`);
+  if (META.active_model) b.push(`<span class="badge">model ${esc(META.active_model)}</span>`);
+  if (META.description) b.push(`<span class="badge" title="${esc(META.description)}">${esc(short(META.description, 110))}</span>`);
+  b.push(`<span class="badge">base docs ${META.base_docs ?? "?"}</span>`);
+  b.push(`<span class="badge" title="actors in this recording">${[...actors.values()].map((a) => esc(`${a.emoji || ""} ${a.display || a.name}`)).join(" &middot; ")}</span>`);
+  b.push(`<span class="badge">run id ${esc(META.run_id || "")}</span>`);
+  b.push(`<span class="badge">${(SUMMARY.duration_s ?? DURATION).toFixed(2)} s recorded</span>`);
+  $("badges").innerHTML = b.join("");
+  $("routerInfo").textContent = `${META.mode || ""} mode \u00b7 scatter / gather`;
+})();
+
+// ---- tiny SVG toolkit for the diagrams (boxes, arrows with heads, labels)
+const svgBox = (x, y, w, h, label, cls = "", sub = "") =>
+  `<rect class="bx ${cls}" x="${x}" y="${y}" width="${w}" height="${h}" rx="8"/>` +
+  `<text class="tx" x="${x + w / 2}" y="${y + (sub ? h / 2 - 2 : h / 2 + 4)}">${esc(label)}</text>` +
+  (sub ? `<text class="tx sm" x="${x + w / 2}" y="${y + h / 2 + 12}">${esc(sub)}</text>` : "");
+const svgArrow = (x1, y1, x2, y2, cls = "", label = "", lx = null, ly = null) =>
+  `<path class="ar ${cls}" d="M${x1},${y1} L${x2},${y2}"/>` +
+  (label ? `<text class="al" x="${lx ?? (x1 + x2) / 2 + 4}" y="${ly ?? (y1 + y2) / 2 - 3}">${esc(label)}</text>` : "");
+const svgWrap = (w, h, body) => `<svg class="diagram" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
+  <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+  <path d="M0,0 L10,5 L0,10 z" fill="#8b949e"/></marker></defs>${body}</svg>`;
+// Shard boxes spread under a center point (used by every diagram).
+function shardRow(n, cx, y, w, h, gap, ownerIdx = -1) {
+  const total = n * w + (n - 1) * gap, out = [];
+  for (let i = 0; i < n; i++) out.push({ x: cx - total / 2 + i * (w + gap), y, w, h, cls: i === ownerIdx ? "owner" : "" });
+  return out;
+}
+
+(function howTo() {
+  const n = Math.min(N_SHARDS, 6), mode = META.mode || "sync";
+  // (a) architecture
+  let a = "";
+  const W = 980, rx = W / 2 - 95;
+  a += svgBox(20, 40, 190, 70, "CLIENTS: users, bots", "client", "search / upsert / delete");
+  a += svgBox(W - 210, 40, 190, 70, "ADMIN + OPS", "admin", "migrate / cutover / kill ...");
+  a += svgBox(rx, 40, 190, 70, "router", "router", (META.url || "").replace(/^https?:\/\//, "") + "  (one URL)");
+  a += svgArrow(210, 66, rx - 4, 66, "c", "POST /search /upsert /delete", 222, 58);
+  a += svgArrow(W - 210, 84, rx + 194, 84, "a", "POST /admin/*", W - 330, 102);
+  const sh = shardRow(n, W / 2, 170, 120, 48, 18);
+  sh.forEach((s, i) => {
+    a += svgBox(s.x, s.y, s.w, s.h, `shard ${i}`, "", "its slice of the docs");
+    a += svgArrow(W / 2, 110, s.x + s.w / 2, s.y - 3, "");
+  });
+  if (N_SHARDS > n) a += `<text class="tx sm" x="${W / 2}" y="236">(+${N_SHARDS - n} more shards)</text>`;
+  a += `<text class="tx sm" x="${W / 2}" y="140">doc d lives on shard crc32(d) % ${N_SHARDS}</text>`;
+  const arch = svgWrap(W, 245, a);
+
+  // (b) the three flows as mini-diagrams
+  const flowSvg = (kind) => {
+    let s = "";
+    const cw = 330, cx = cw / 2;
+    s += svgBox(cx - 60, 8, 120, 34, "router", "router");
+    if (kind === "admin") { s += svgBox(cw - 92, 8, 84, 34, "admin", "admin"); s += svgArrow(cw - 92, 25, cx + 64, 25, "a"); }
+    else { s += svgBox(8, 8, 84, 34, "client", "client"); s += svgArrow(92, 25, cx - 64, 25, "c"); }
+    const owner = kind === "write" ? Math.min(1, n - 1) : -1;
+    const row = shardRow(Math.min(n, 4), cx, 100, 64, 30, 10, owner);
+    row.forEach((b, i) => {
+      s += svgBox(b.x, b.y, b.w, b.h, `shard ${i}`, b.cls);
+      if (kind !== "write" || i === owner) s += svgArrow(cx, 42, b.x + b.w / 2, b.y - 3, kind === "write" ? "g" : kind === "admin" ? "p" : "c");
+    });
+    if (kind === "search") s += `<text class="al" x="${cx + 6}" y="70">\u2460 stats (DFS) \u2461 search \u2192 every shard</text>`;
+    if (kind === "write") s += `<text class="al" x="${cx + 6}" y="70">only the owner: crc32(doc_id) % ${N_SHARDS}</text>`;
+    if (kind === "admin") s += `<text class="al" x="${cx + 6}" y="70">build / drop index on every shard</text>`;
+    return svgWrap(cw, 140, s);
+  };
+  const flows = `<div class="flows">
+    <div class="flow"><h4 style="color:var(--cyan)">SEARCH: fan-out to ALL shards</h4>${flowSvg("search")}
+      <ol><li>router tokenises + embeds the query once (active model)</li>
+      <li><b>stats phase</b>: every shard returns term counts &rarr; global BM25 statistics</li>
+      <li><b>search phase</b>: every shard returns its top BM25 + dense lists</li>
+      <li><b>merge + fuse</b> at the router &rarr; top-k back to the client. A dead shard &rarr; <i>partial</i> answer, flagged</li></ol>
+      <p class="muted" style="font-size:12px;margin:4px 0 0">Each search card shows a coloured bar: where that query's time went
+      (client&harr;router HTTP, stats phase, embedding wait, slowest shard's compute, network/queueing, merge + fuse). Hover a colour for its meaning.
+      <b>"all ${N_SHARDS} shards answered"</b> = the answer is complete (not partial); it does not mean "finished": every card is a finished request.</p></div>
+    <div class="flow"><h4 style="color:var(--green)">WRITE: only the ONE owner shard</h4>${flowSvg("write")}
+      <ol><li>router picks the owner: <code>crc32(doc_id) % ${N_SHARDS}</code></li>
+      <li>owner checks the version (older or same = no-op), appends to its <b>WAL</b> + fsync</li>
+      <li>${mode === "async" ? "<b>async (this run)</b>: ack right away; a background thread embeds + applies in batches &rarr; searchable within ~1 s" : "<b>sync (this run)</b>: embed + apply, THEN ack &rarr; searchable by the very next search"}</li>
+      <li>${mode === "async" ? "sync mode would apply before the ack" : "async mode would ack after the WAL and apply within ~1 s"}</li></ol></div>
+    <div class="flow"><h4 style="color:var(--orange)">ADMIN: model migration and chaos</h4>${flowSvg("admin")}
+      <ol><li><b>migrate</b>: every shard builds the new model's index in the background; new writes go to both (dual-write)</li>
+      <li><b>wait_ready</b>: poll until every shard says ready (progress bars)</li>
+      <li><b>cutover</b>: the router flips its active model (queries switch); <b>rollback</b> flips back; <b>finalize</b> drops the old index</li>
+      <li><b>kill_shard / restart_shard</b>: crash a shard process; on restart it replays its WAL</li></ol></div>
+  </div>`;
+
+  // (c) legend: every ACTOR and every lane (thread) of THIS recording, generated from the events.
+  const ROLE_TEXT = { user: "user (client)", bot: "bot (automated client)", admin: "admin (privileged)", ops: "ops manager (privileged)" };
+  const actorRows = actorNames.map((n) => {
+    const a = actors.get(n);
+    return `<tr><td style="font-size:18px">${a.emoji || ""}</td><td><b style="color:${actorColor(n)}">${esc(a.display || n)}</b>
+      ${a.display && a.display !== n ? `<span class="muted">(${esc(n)})</span>` : ""}</td>
+      <td>${esc(ROLE_TEXT[a.role] || a.role)}<br><span class="muted">${esc(a.how || "")}</span></td>
+      <td>${esc(a.description || "")}${a.description ? "<br>" : ""}<span class="muted">${esc(actorSummary(a))}</span></td>
+      <td>${ROLE_SIDE[a.role] === "admin" ? "right" : "left"}</td></tr>`;
+  });
+  if (META.sample_ms) actorRows.push(`<tr><td style="font-size:18px">&#128225;</td><td><b>status sampler</b></td><td>ops tooling<br>
+    <span class="muted">runner background thread, not in the file</span></td><td>polls GET /admin/status every ${META.sample_ms} ms
+    (${samples.length} samples); feeds the shard boxes (docs, queue, model progress) and the charts. Not shown as rows.</td><td>right (stage only)</td></tr>`);
+  const laneRows = laneNames.map((n) => {
+    const li = laneInfo.get(n) || {};
+    const who = [...new Set([...starts.values()].filter((s) => s.lane === n).map(actorOf).filter((x) => x != null))];
+    const what = li.description || (n === "main" ? "the top-level ops of the file, run one after another"
+      : li.parent != null ? `started by lane '${li.parent}'` + (li.line ? ` (file line ${li.line})` : "") : "seen in the events");
+    return `<tr><td><b>${esc(n)}</b>${n.includes(".") ? ` <span class="muted">(lane '${esc(n.split(".").pop())}' inside '${esc(n.split(".").slice(0, -1).join("."))}')</span>` : ""}</td>
+      <td>${who.map((w) => esc(actorLabel(w))).join(", ") || "-"}</td><td>${esc(what)}</td><td class="muted">${esc(li.plan || "")}</td></tr>`;
+  });
+  const legend = `<table class="legend"><tr><th></th><th>actor</th><th>role</th><th>what this actor does in this scenario</th><th>column</th></tr>
+    ${actorRows.join("")}</table>
+    <p class="muted" style="margin-top:8px">Lanes are the runner's threads (ops in one lane run in order; lanes of a <code>parallel</code>
+      block run at the same time). An actor may act in several lanes, and a lane may carry ops of several actors (op field <code>"actor"</code>).</p>
+    <table class="legend"><tr><th>lane (thread)</th><th>actors acting in it</th><th>what it is</th><th>its plan (from the file)</th></tr>${laneRows.join("")}</table>`;
+
+  $("howtoBody").innerHTML = `
+    <h3>Architecture</h3>${arch}
+    <p>Every operation is performed by an <b>actor</b>. <b>Clients</b> (left column): human <b>users</b> shown as animal
+      personas (&#129418; fox, &#128024; elephant, ...) and automated <b>bots</b> (&#129302;); they can only write
+      (upsert/delete), search, wait and pause. <b>Privileged operators</b> (right column): the <b>admin</b> (&#128736;&#65039;
+      migrate, wait_ready, cutover, rollback, finalize, flush) and the <b>ops manager</b> (&#129489;&#8205;&#128295; kill/restart
+      shards, status checks); they never search or write (a health probe is a bot). The split is strict both ways: the
+      runner rejects a scenario in which a client runs an admin/ops op, or an admin/ops actor runs a client op.
+      The middle column shows what the cluster did, at the time it happened. The <b>stage</b> under the controls is the
+      live picture: packets fly from an actor to the router and on to the shards.</p>
+    <h3>The three request flows</h3>${flows}
+    <p><b>Freshness.</b> A search card that expected a doc shows four times on the run's clock: when the doc was
+      <b>acked</b>, when the search was <b>sent</b>, when its answer <b>came back</b>, and the <b>difference</b> (how long
+      the search took). A search sent 3 s after the ack only says the script searched late. How fast a write becomes
+      searchable is what <b>wait_visible</b> measures: &ldquo;<i>VISIBLE after 34 ms (first poll)</i>&rdquo;.</p>
+    <p><b>Filters</b> (above the timeline): click a persona to hide or show its operations, or type a doc id or query
+      text to keep only the operations about it (including searches that returned or expected that doc). They change
+      what is listed, not what happened.</p>
+    <h3>Who is who in this recording</h3>${legend}
+    <p class="muted">Card colors: green = success / expectation met, red = a hard expectation failed or an error, amber = a
+      no-op write or a <i>soft</i> expectation that missed (allowed, recorded for learning). Timeline markers: purple = label,
+      orange = admin/chaos, red = failure, amber = soft miss. Keys: Space play/pause, &larr;/&rarr; previous/next event, Home restart.
+      Click any row to jump there. URL options: <code>#t=5.2</code> (jump), <code>?autoplay=1</code>, <code>?howto=0</code>.</p>`;
+  if (PARAMS.get("howto") === "0") $("howto").open = false;
+})();
+
+// ---- the stage: lane chips in the client/admin boxes, router, shard boxes
+const MID = Math.max(420, Math.min(1000, N_SHARDS * 150 + 40));
+document.documentElement.style.setProperty("--mid", MID + "px");
+const chipEls = new Map();   // actor name -> chip element in the client or admin box
+function addChip(side, name, label, color, extraCls = "", act = "", role = "") {
+  const el = document.createElement("div");
+  el.className = "chip " + extraCls;
+  el.style.setProperty("--lc", color);
+  el.innerHTML = `<span class="nm" style="color:${color}">${esc(label)}</span> <span class="muted" style="font-size:10.5px">${esc(role)}</span><span class="act">${esc(act)}</span>`;
+  $(side === "client" ? "clientChips" : "adminChips").appendChild(el);
+  chipEls.set(name, el);
+}
+for (const n of actorNames) {
+  const a = actors.get(n);
+  addChip(ROLE_SIDE[a.role] || "client", n, actorLabel(n), actorColor(n), "", "", roleTag(n));
+}
+if (META.sample_ms) addChip("admin", "\u0000sampler", "\u{1F4E1} status sampler", "#8b949e", "sampler", `GET /admin/status every ${META.sample_ms} ms`, "ops tooling");
+// The chip an op's packet starts from (falls back to the box of its side).
+const originEl = (st) => chipEls.get(actorOf(st)) || $(sideOf(st) === "admin" ? "adminBox" : "clientBox");
+
+const shardsEl = $("shards");
+shardsEl.style.setProperty("--n", N_SHARDS);
+for (let i = 0; i < N_SHARDS; i++) {
+  const el = document.createElement("div");
+  el.className = "shard";
+  el.id = "shard-" + i;
+  // .sh-body is re-rendered from the status samples; .docchips holds the transient per-write chips.
+  el.innerHTML = `<div class="sh-body"></div><div class="docchips"></div>`;
+  shardsEl.appendChild(el);
+}
+
+// ---- Freshness, shown as plain facts. For a search that expected a doc: when the doc was acked,
+// when the search was SENT, when its answer CAME BACK, and the difference (how long the search took).
+// fmtT: a run time in seconds ("1.234 s"); ackT = sent - since_ack_ms.
+const fmtT = (s) => `${s.toFixed(3)} s`;
+function searchTimes(c, st, en) {
+  if (!st || c.since_ack_ms == null) return "";
+  const ack = st.t - c.since_ack_ms / 1e3, back = en ? en.t : null;
+  return `doc acked at <b>${fmtT(ack)}</b> &middot; search sent at <b>${fmtT(st.t)}</b>` +
+    (back != null ? ` &middot; answer back at <b>${fmtT(back)}</b> &middot; difference <b>${fmtMs((back - st.t) * 1e3)}</b>` : "");
+}
+
+// ---- timeline rows: one per op (at its start time), plus "join" rows for parallel blocks
+const rowById = new Map(), joinById = new Map();
+const rowList = [];   // {t, el}, sorted by t (for "current row" and click-to-jump)
+const rowMeta = [];   // {el, kind: "op" | "label" | "flow", who, hay}: what the filters look at
+// Text a doc/query filter matches: the op's doc id, query and written text, plus every doc id the
+// search returned or was checked against ("broad": a search that returned bot1-1 matches "bot1-1").
+function hayOf(st, en) {
+  const r = st.req || {}, parts = [r.doc_id, r.query, r.text];
+  for (const h of ((en || {}).resp || {}).results || []) parts.push(h.doc_id);
+  for (const c of (en || {}).checks || []) parts.push(c.doc_id);
+  return parts.filter((x) => x != null).join("\n").toLowerCase();
+}
+(function buildRows() {
+  const items = [];
+  for (const st of starts.values()) {
+    items.push({ t: st.t, st, kind: "op" });
+    if (st.op === "parallel" && ends.has(st.id)) items.push({ t: ends.get(st.id).t, st, kind: "join" });
+  }
+  items.sort((a, b) => a.t - b.t || (a.kind === "join") - (b.kind === "join") || a.st.id - b.st.id);
+  const frag = document.createDocumentFragment();
+  for (const it of items) {
+    const el = document.createElement("div");
+    const st = it.st, en = ends.get(st.id), side = sideOf(st);
+    const who = actorOf(st);
+    el.style.setProperty("--lc", actorColor(who));
+    if (st.op === "label") {
+      el.className = "row label-row future";
+      el.innerHTML = `<div class="banner">&#128226; ${esc(st.req.text)} <span class="muted">(t=${st.t.toFixed(3)} s, ${esc(st.lane)})</span></div>`;
+    } else if (it.kind === "join" || st.op === "parallel") {
+      el.className = "row flow-row future";
+      const lanes = (st.req.lanes || []).map(esc).join(", ");
+      el.innerHTML = `<div></div><div class="c-mid"><span class="tick">${it.t.toFixed(3)} s</span><br><span class="react">${it.kind === "join"
+        ? `&#10560; join: lanes ${lanes} all done after ${fmtMs(en ? en.latency_ms : null)}`
+        : `&#11122; fork (lane ${esc(st.lane)}, line ${st.line}): lanes ${lanes} start in parallel`}</span></div><div></div>`;
+    } else if (side === "flow") {
+      // An op nobody performs (a top-level pause, the runner's golden check): a middle row.
+      el.className = "row flow-row future";
+      const r = reaction(st, en);
+      el.innerHTML = `<div></div><div class="c-mid"><span class="tick">${st.t.toFixed(3)} s</span><br><span class="react">
+        <span class="spin"></span>${st.op === "sleep" ? `&#9208;&#65039; the story pauses ${Number(st.req.seconds).toFixed(2)} s<div class="bar"><div></div></div>`
+        : startTitle(st)}<span class="r-end">${r[1] ? " &rArr; " + r[1] : ""}</span></span></div><div></div>`;
+    } else {
+      el.className = "row future";
+      const a = actors.get(who) || {};
+      const tags = [roleTag(who), laneTag(st.lane, who) && "lane " + laneTag(st.lane, who)].filter(Boolean).join(" \u00b7 ");
+      const card = `<div class="card" style="--lc:${actorColor(who)}"><div class="top"><span class="lane">${esc(actorLabel(who))}
+        <span class="muted" style="font-weight:400">${esc(tags)}</span></span>
+        <span>line ${st.line}<span class="lat"></span></span></div>
+        <div class="title"><span class="spin"></span>${startTitle(st)}</div><div class="res">${en ? endHtml(st, en) : ""}</div></div>`;
+      const r = reaction(st, en);
+      const mid = `<div class="c-mid"><span class="tick">${st.t.toFixed(3)} s</span><br><span class="react"><span class="r-start">${r[0]}</span>` +
+        `<span class="r-end">${r[1] ? " &rArr; " + r[1] : ""}</span></span></div>`;
+      el.innerHTML = side === "admin" ? `<div class="c-left"></div>${mid}<div class="c-right">${card}</div>`
+                                      : `<div class="c-left">${card}</div>${mid}<div class="c-right"></div>`;
+      if (en) el.querySelector(".lat").textContent = " \u00b7 " + fmtMs(en.latency_ms);
+    }
+    el.addEventListener("click", () => { pause(); seek(it.t + 1e-6); });
+    const kind = st.op === "label" ? "label" : it.kind === "join" || st.op === "parallel" || side === "flow" ? "flow" : "op";
+    rowMeta.push({ el, kind, who: kind === "op" ? who : null, hay: kind === "op" ? hayOf(st, en) : "" });
+    (it.kind === "join" ? joinById : rowById).set(st.id, el);
+    rowList.push({ t: it.t, el });
+    frag.appendChild(el);
+  }
+  $("rows").appendChild(frag);
+})();
+
+// Timeline markers: labels (purple), admin/chaos (orange), failures (red), soft misses (amber).
+(function markers() {
+  const add = (t, cls, title) => {
+    const m = document.createElement("div");
+    m.className = "marker " + cls;
+    m.style.left = (100 * t / DURATION) + "%";
+    m.title = title;
+    m.addEventListener("click", () => { pause(); seek(t + 1e-6); });
+    $("timeline").appendChild(m);
+  };
+  for (const s of starts.values()) {
+    if (s.op === "label") add(s.t, "label", s.req.text);
+    else if (BIG_ADMIN.has(s.op)) add(s.t, "admin", adminText(s));
+  }
+  for (const e of ends.values()) {
+    if ((e.checks || []).some((c) => c.hard && !c.pass) || e.error) add(e.t, "fail", `${e.op} failed at ${e.t.toFixed(3)} s`);
+    else if ((e.checks || []).some((c) => !c.hard && !c.pass)) add(e.t, "soft", `soft miss at ${e.t.toFixed(3)} s`);
+  }
+})();
+
+// =====================================================================================
+// Filters above the timeline: show only some personas and/or the ops about one doc or query.
+// Display only: the events, the playback, the stage and the scoreboard are unchanged; a hidden
+// row is just display:none. Works on any recording, old or new (no re-run needed).
+// =====================================================================================
+const FILTER = { off: new Set(), text: "" };   // off = actors whose ops are hidden; text = lower-case
+const docShown = (doc) => !FILTER.text || String(doc ?? "").toLowerCase().includes(FILTER.text);
+const opRows = () => rowMeta.filter((m) => m.kind === "op").length;
+function applyFilters() {
+  const active = FILTER.off.size > 0 || !!FILTER.text;
+  let shown = 0;
+  for (const m of rowMeta) {
+    let vis = true;
+    if (m.kind === "op") {
+      vis = !FILTER.off.has(m.who) && (!FILTER.text || m.hay.includes(FILTER.text));
+      if (vis) shown++;
+    } else if (m.kind === "flow") vis = !active;   // fork/join/pause rows only make sense unfiltered
+    m.el.style.display = vis ? "" : "none";          // label banners always stay, as section headings
+  }
+  for (const c of document.querySelectorAll(".fchip")) c.classList.toggle("off", FILTER.off.has(c.dataset.actor));
+  $("fCount").textContent = active ? `showing ${shown} of ${opRows()} operations` : `${opRows()} operations`;
+  $("fCount").classList.toggle("active", active);
+  renderScore();   // the freshness lists follow the doc filter
+}
+(function buildFilterBar() {
+  for (const name of actorNames) {
+    const role = roleOf(name);
+    const chip = document.createElement("span");
+    chip.className = "fchip";
+    chip.style.setProperty("--lc", actorColor(name));
+    chip.textContent = actorLabel(name);
+    chip.title = `${role || "actor"} ${name}: click to hide / show its operations`;
+    chip.dataset.actor = name;
+    chip.addEventListener("click", () => { FILTER.off.has(name) ? FILTER.off.delete(name) : FILTER.off.add(name); applyFilters(); });
+    $(role === "admin" || role === "ops" ? "fAdmins" : "fClients").appendChild(chip);
+  }
+  for (const g of ["fClients", "fAdmins"]) if (!$(g).querySelector(".fchip")) $(g).style.display = "none";
+  $("fAll").addEventListener("click", () => { FILTER.off.clear(); applyFilters(); });
+  $("fNone").addEventListener("click", () => { actorNames.forEach((n) => FILTER.off.add(n)); applyFilters(); });
+  $("fText").addEventListener("input", (e) => { FILTER.text = e.target.value.trim().toLowerCase(); applyFilters(); });
+  $("fClear").addEventListener("click", () => { FILTER.off.clear(); FILTER.text = ""; $("fText").value = ""; applyFilters(); });
+  $("fCount").textContent = `${opRows()} operations`;   // applyFilters() needs the scoreboard, set up later
+})();
+
+// =====================================================================================
+// Text for cards and reactions (pure functions of the events: no per-scenario code).
+// =====================================================================================
+function adminText(st) {
+  const r = st.req || {};
+  switch (st.op) {
+    case "migrate": return `ADMIN migrate ${st.from_model || "?"} \u2192 ${r.model}`;
+    case "cutover": return `ADMIN cutover ${st.from_model || "?"} \u2192 ${r.model}`;
+    case "rollback": return "ADMIN rollback";
+    case "finalize": return `ADMIN finalize: drop ${r.model}`;
+    case "kill_shard": return `CHAOS kill shard ${r.shard}`;
+    case "restart_shard": return `CHAOS restart shard ${r.shard}`;
+    default: return st.op;
+  }
+}
+
+// The "what is happening" title of a card.
+function startTitle(st) {
+  const r = st.req || {};
+  switch (st.op) {
+    case "upsert": return `&#9999;&#65039; Update <b>${esc(r.doc_id)}</b> v${r.version} &rarr; shard ${st.shard}
+      <div class="muted mono">&ldquo;${esc(short(r.text, 70))}&rdquo;</div>`;
+    case "delete": return `&#128465;&#65039; Delete <b>${esc(r.doc_id)}</b> v${r.version} &rarr; shard ${st.shard}`;
+    case "search": return `&#128270; Search &ldquo;${esc(r.query)}&rdquo; <span class="tag">${esc(r.strategy)} k=${r.k}</span>`;
+    case "sleep": return `&#128164; Sleep ${Number(r.seconds).toFixed(2)} s<div class="bar"><div></div></div>`;
+    case "wait_visible": return `&#9203; Wait until <b>${esc(r.doc_id)}</b> is ${r.absent ? "gone from" : "visible in"} search
+      <span class="muted">(timeout ${r.timeout} s)</span><div class="bar"><div></div></div>`;
+    case "flush": return `&#128703; Flush: wait until every acked write is applied`;
+    case "status": return `&#128202; Status snapshot`;
+    case "migrate": return `&#128679; <b>MIGRATE</b> ${esc(st.from_model || "")} &rarr; <b>${esc(r.model)}</b>`;
+    case "wait_ready": return `&#9203; Wait until <b>${esc(r.model)}</b> is ready on every shard<div class="bar"><div></div></div>`;
+    case "cutover": return `&#128256; <b>CUTOVER</b> &rarr; ${esc(r.model)}`;
+    case "rollback": return `&#8617;&#65039; <b>ROLLBACK</b> to the previous model`;
+    case "finalize": return `&#128465;&#65039; <b>FINALIZE</b>: drop the ${esc(r.model)} index`;
+    case "kill_shard": return `&#128165; <b>KILL</b> shard ${r.shard}`;
+    case "restart_shard": return `&#9851;&#65039; <b>RESTART</b> shard ${r.shard}`;
+    case "golden_check": return `&#129351; Compare saved answers with the golden file`;
+    case "signal": return `&#128681; Signal <b>${esc(r.name)}</b> <span class="muted">(lanes waiting for it continue)</span>`;
+    case "wait_signal": return `&#9203; Wait for signal <b>${esc(r.name)}</b>`;
+    default: return `&#9881;&#65039; ${esc(st.op)} <span class="muted mono">${esc(short(JSON.stringify(r), 80))}</span>`;
+  }
+}
+
+// The middle column: [what the cluster does when the op starts, what came back].
+function reaction(st, en) {
+  const r = st.req || {}, p = (en && en.resp) || {}, err = en && en.error;
+  const expectedErr = en && (en.checks || []).find((c) => c.kind === "expect_error" && c.pass);
+  const fail = err ? `<span class="bad-t">&#10007; ${esc(short(err, 60))}</span>`
+    : expectedErr ? `<span class="ok-t">refused as expected (HTTP ${expectedErr.status ?? "error"})</span>` : null;
+  switch (st.op) {
+    case "search": case "wait_visible": {
+      const start = st.op === "search" ? `router &rarr; all ${N_SHARDS} shards (stats + search), merge + fuse`
+                                       : `polling search for ${esc(r.doc_id)}`;
+      if (fail) return [start, fail];
+      if (st.op === "wait_visible") return [start, en ? (en.ok ? `${r.absent ? "gone" : "visible"} after <b>${p.lag_ms != null ? fmtMs(p.lag_ms) : "?"}</b> (${p.first_poll || p.polls === 1 ? "first poll" : p.polls + " polls"}) &middot; visibility lag` : `<span class="bad-t">timeout</span>`) : ""];
+      const miss = (p.missing_shards || []).length ? ` <span class="soft-t">&#9888; partial: shard ${p.missing_shards.join(",")} missing</span>` : "";
+      const t = p.timings, split = t ? ` <span class="muted">(router ${fmtMs(p.server_ms)}: shards ${fmtMs(t.shard_compute)} + net ${fmtMs(t.network)} + stats ${fmtMs(t.stats)} + merge/fuse ${fmtMs((t.merge || 0) + (t.fuse || 0))})</span>` : "";
+      return [start, en ? `${p.n} hits &middot; ${fmtMs(en.latency_ms)}${split}${miss}` : ""];
+    }
+    case "upsert": case "delete": {
+      const start = `router &rarr; shard ${st.shard} only (owner)`;
+      if (fail) return [start, fail];
+      if (!en) return [start, ""];
+      if (!p.applied) return [start, `<span class="soft-t">no-op: ${esc(p.reason || "")}</span>`];
+      return [start, p.mode === "async" ? `WAL &rarr; ack; <span class="soft-t">applied in the background</span>` : `applied, then ack (searchable now)`];
+    }
+    case "migrate": return [`router &rarr; every shard: build ${esc(r.model)} index (background) + dual-write`, fail || (en ? "build started" : "")];
+    case "wait_ready": return [`polling /admin/status`, fail || (en ? (en.ok ? `ready on all shards after ${fmtMs(p.waited_ms)}` : `<span class="bad-t">not ready</span>`) : "")];
+    case "cutover": return [`router: active model ${esc(st.from_model || "?")} &rarr; ${esc(r.model)}`, fail || (en ? `queries now use ${esc(p.active_model)}` : "")];
+    case "rollback": return [`router: back to the previous model`, fail || (en ? `queries now use ${esc(p.active_model)}` : "")];
+    case "finalize": return [`every shard drops the ${esc(r.model)} index`, fail || (en ? "dropped" : "")];
+    case "kill_shard": return [`<span class="bad-t">shard ${r.shard} process killed</span>`, fail || (en ? "searches will be partial, its writes fail" : "")];
+    case "restart_shard": return [`shard ${r.shard}: load corpus + replay WAL`, fail || (en ? `back: ${p.n_docs} docs, ${p.replayed} WAL records replayed` : "")];
+    case "flush": return [`every shard: wait until its queue is empty`, fail || (en ? (p.drained ? "drained" : "not drained") : "")];
+    case "status": return [`router asks every shard for /health`, fail || (en ? "snapshot" : "")];
+    case "sleep": return [`(${esc(actorLabel(actorOf(st)) || st.lane)} pauses)`, ""];
+    case "signal": return [`&#128681; ${esc(actorLabel(actorOf(st)) || st.lane)} signals &lsquo;${esc(r.name)}&rsquo;`, ""];
+    case "wait_signal": return [`(${esc(actorLabel(actorOf(st)) || st.lane)} waits for &lsquo;${esc(r.name)}&rsquo;)`, fail || (en ? (en.ok ? `got it after ${fmtMs(p.waited_ms)}` : `<span class="bad-t">never came</span>`) : "")];
+    case "golden_check": return [`compare with golden answers`, fail || (en ? (en.ok ? "identical" : "<span class='bad-t'>different</span>") : "")];
+    default: return [`op ${esc(st.op)}`, fail || (en ? (en.ok ? "ok" : "<span class='bad-t'>failed</span>") : "")];
+  }
+}
+
+// The result part of a card (what the response said + every expectation check).
+function endHtml(st, ev) {
+  if (ev.error) return `<span class="bad-t">&#10007; ERROR ${esc(ev.error)}</span>`;
+  const r = ev.resp || {}, q = st.req || {};
+  const expectedErr = (ev.checks || []).find((c) => c.kind === "expect_error" && c.pass);
+  if (expectedErr) return `<span class="ok-t">&#10003; failed as expected</span> <div class="muted">${esc(expectedErr.detail)}</div>`;
+  let h = "";
+  switch (st.op) {
+    case "upsert": case "delete":
+      h = r.applied ? `<span class="ok-t">&#10003; ${st.op === "upsert" ? "Updated" : "Deleted"}</span> &middot; ack ${fmtMs(ev.latency_ms)}`
+          + (r.mode === "async" ? ` <span class="soft-t">(async: queued, not searchable yet)</span>` : ` <span class="muted">(sync: searchable now)</span>`)
+        : `<span class="soft-t">&#8634; No-op: ${esc(r.reason || "not applied")}</span>` + (r.current_version != null ? ` <span class="muted">(shard has v${r.current_version})</span>` : "");
+      break;
+    case "search": {
+      const expect = new Map(), absent = new Map();
+      for (const c of ev.checks || []) { if (c.kind === "expect") expect.set(c.doc_id, c); else if (c.kind === "expect_absent") absent.set(c.doc_id, c); }
+      h = `<b>${r.n}</b> hits` + (r.model ? `<span class="tag" title="embedding model that served this query">${esc(r.model)}</span>` : "")
+        + (r.saved_as ? `<span class="tag">saved as ${esc(r.saved_as)}</span>` : "")
+        + (r.partial ? ` <span class="soft-t">PARTIAL: shard ${esc((r.missing_shards || []).join(","))} missing</span>` : "");
+      // Compact: list hits only when an expectation is about specific docs (they are highlighted),
+      // or when the answer is partial; otherwise the one summary line is enough.
+      const showHits = expect.size || absent.size || r.partial;
+      const okCheck = (ev.checks || []).find((c) => c.kind === "ok");
+      if (okCheck && okCheck.pass) h += ` <span class="ok-t" title="expect_ok passed: the answer is NOT partial (every shard answered), had no error and is non-empty. It does not mean 'finished'; every card is a finished request.">all ${N_SHARDS} shards answered &#10003;</span>`;
+      else if (!r.partial && !ev.error) h += ` <span class="muted" title="partial = false: every shard answered">&middot; all ${N_SHARDS} shards answered</span>`;
+      h += timeSplit(r, ev.latency_ms);
+      const rows = !showHits ? [] : (r.results || []).map((x, i) => ({ ...x, rank: i + 1 }))
+        .filter((x) => x.rank <= 3 || expect.has(x.doc_id) || absent.has(x.doc_id));
+      let li = rows.map((x) => {
+        const cls = expect.has(x.doc_id) ? "exp" : absent.has(x.doc_id) ? (absent.get(x.doc_id).hard ? "bad" : "softmiss") : "";
+        return `<li class="${cls}"><span>#${x.rank} ${esc(x.doc_id)}</span><span class="mono">${x.score.toFixed(3)}</span></li>`;
+      }).join("");
+      for (const [doc, c] of expect) if (!c.found)
+        li += `<li class="${c.hard ? "bad" : "softmiss"}"><span>&#10007; ${esc(doc)} not in top ${q.k}</span><span>MISSING</span></li>`;
+      if (li) h += `<ul class="hits">${li}</ul>`;
+      break;
+    }
+    case "wait_visible":
+      return lagText(r, q, ev.ok);
+    case "sleep": return `<span class="muted">slept ${fmtMs(ev.latency_ms)}</span>`;
+    case "signal": return `<span class="ok-t">&#10003; sent</span>`;
+    case "wait_signal": return `<span class="ok-t">&#10003; got it</span> <span class="muted">after ${fmtMs(r.waited_ms)}</span>`;
+    case "flush": return r.drained ? `<span class="ok-t">&#10003; drained</span> in ${fmtMs(ev.latency_ms)}` : `<span class="bad-t">&#10007; not drained</span>`;
+    case "status": {
+      const rows = Object.entries(r.shards || {}).map(([sid, s]) => s.missing
+        ? `<li class="bad"><span>shard ${sid}</span><span>DOWN</span></li>`
+        : `<li><span>shard ${sid}: ${s.n_docs ?? "?"} docs</span><span class="mono">queued ${s.pending ?? 0}</span></li>`).join("");
+      return `<div class="muted">active model <b>${esc(r.active_model || "?")}</b></div><ul class="hits">${rows}</ul>`;
+    }
+    case "migrate": h = `<span class="ok-t">&#10003; build started on ${Object.keys(r.shards || {}).length} shards</span>
+      <div class="muted">queries keep using ${esc(st.from_model || "the active model")} until cutover</div>`; break;
+    case "wait_ready": h = ev.ok ? `<span class="ok-t">&#10003; ready everywhere</span> <span class="muted">after ${fmtMs(r.waited_ms)}</span>` : `<span class="bad-t">&#10007; not ready in time</span>`; break;
+    case "cutover": case "rollback": h = `<span class="ok-t">&#10003; queries now use <b>${esc(r.active_model)}</b></span> <span class="muted">(previous ${esc(r.previous_model || "none")})</span>`; break;
+    case "finalize": h = `<span class="ok-t">&#10003; dropped ${esc(q.model)}</span>`; break;
+    case "kill_shard": h = `<span class="bad-t">&#128128; ${esc(r.killed)} is down</span>`; break;
+    case "restart_shard": h = `<span class="ok-t">&#10003; healthy again</span> <span class="muted">${r.n_docs} docs, ${r.replayed} WAL records replayed</span>`; break;
+    case "golden_check": h = `<span class="muted">golden: ${esc((r.golden_meta || {}).scenario || "?")}, ${(r.golden_meta || {}).n_shards ?? "?"} shards</span>`; break;
+    default: h = ev.ok ? `<span class="ok-t">&#10003; ok</span>` : `<span class="bad-t">&#10007; failed</span>`;
+      if (r && Object.keys(r).length) h += ` <span class="muted mono">${esc(short(JSON.stringify(r), 100))}</span>`;
+  }
+  for (const c of ev.checks || []) h += checkHtml(c, st, ev);
+  return h;
+}
+
+function checkHtml(c, st, en) {
+  const mark = c.pass ? '<span class="ok-t">&#10003;</span>' : c.hard ? '<span class="bad-t">&#10007; FAILED</span>' : '<span class="soft-t">~ soft miss (allowed)</span>';
+  const since = "";
+  const sinceNote = c.since_ack_ms != null ? `<div class="muted" style="font-size:11.5px">${searchTimes(c, st, en)}</div>` : "";
+  switch (c.kind) {
+    case "expect": return `<div class="check">expect <b>${esc(c.doc_id)}</b>: ${c.found ? "FOUND #" + c.rank : "MISSING"}${since} ${mark}${sinceNote}</div>`;
+    case "expect_absent": return `<div class="check">expect absent <b>${esc(c.doc_id)}</b>: ${c.found ? "still there (#" + c.rank + ")" : "absent"}${since} ${mark}</div>`;
+    case "expect_applied": return `<div class="check">expect applied=${c.want}: got ${c.got} ${mark}</div>`;
+    case "ok": return c.pass ? "" : `<div class="check">expect ok (complete, non-empty): ${esc(c.detail)} ${mark}</div>`;
+    case "partial": return `<div class="check">expect partial=${c.want}: got ${c.got} ${mark}</div>`;
+    case "missing_shards": return `<div class="check">expect missing shards [${c.want}]: got [${c.got}] ${mark}</div>`;
+    case "same_as": case "overlap": case "golden": return `<div class="check">${answerText(c)} ${mark}</div>`;
+    case "expect_error": return `<div class="check">expect an error: ${esc(c.detail)} ${mark}</div>`;
+    case "visible": case "ready": case "drained": return "";   // already said by the result line
+    default: return `<div class="check">${esc(c.kind)} ${mark}</div>`;
+  }
+}
+
+// "same as q1" / "overlap 0.70 (min 0.6) with q1" / golden, plus a short diff when it differs.
+function answerText(c) {
+  if (c.detail) return `${esc(c.kind)} ${esc(c.ref)}: ${esc(c.detail)}`;
+  const d = c.diff || {};
+  const models = c.ref_model && c.model && c.ref_model !== c.model ? ` <span class="muted">(${esc(c.ref_model)} &rarr; ${esc(c.model)})</span>` : "";
+  const diff = (d.missing || []).length || (d.extra || []).length
+    ? ` <span class="muted">first diff #${d.first_diff_rank}; lost ${esc((d.missing || []).slice(0, 3).join(", "))}; new ${esc((d.extra || []).slice(0, 3).join(", "))}</span>`
+    : (d.first_diff_rank ? ` <span class="muted">same ids, order differs from #${d.first_diff_rank}</span>` : "");
+  if (c.kind === "overlap") return `overlap with <b>${esc(c.ref)}</b>: ${Number(c.overlap).toFixed(2)} (min ${c.min})${models}${c.pass ? "" : diff}`;
+  return `${c.kind === "golden" ? "golden" : "same as"} <b>${esc(c.ref)}</b>: ${c.pass ? "identical" : "DIFFERENT"}${models}${c.pass ? "" : diff}`;
+}
+
+// =====================================================================================
+// 3. Replay state + applying events.
+// =====================================================================================
+const state = { now: 0, playing: false, speed: 1, cursor: 0 };
+let status, routerModel, killed, routed, score, freshItems, answerItems, lastLabel, dirty, active;
+
+// Forget everything applied so far (used by restart and by scrubbing backwards).
+function reset() {
+  status = samples.length ? samples[0].shards || {} : {};
+  routerModel = samples.length && samples[0].active_model ? samples[0].active_model : META.active_model;
+  killed = new Set();
+  routed = new Array(N_SHARDS).fill(0);
+  score = { pass: 0, fail: 0, softOk: 0, softMiss: 0, writes: 0, applied: 0, noop: 0, searches: 0, partial: 0, errors: 0, ack: [], search: [] };
+  freshItems = []; answerItems = []; lastLabel = null; dirty = true;
+  active = new Map();   // op id -> start event, for ops still in flight (progress bars, busy chips)
+  state.cursor = 0; state.now = 0;
+  for (const { el } of rowList) { el.classList.remove("active", "done", "current"); el.classList.add("future"); }
+  for (const c of chipEls.values()) if (!c.classList.contains("sampler")) { c.classList.remove("busy"); c.querySelector(".act").textContent = ""; }
+  document.querySelectorAll(".docchips").forEach((d) => (d.innerHTML = ""));
+  document.querySelectorAll(".packet, .toast").forEach((p) => p.remove());
+  setNarration(null);
+}
+
+// Apply ONE event. ``animate`` is false while fast-forwarding (scrubbing), so nothing flies then.
+function apply(ev, animate) {
+  if (ev.type === "status") {
+    status = ev.shards || {};
+    if (ev.active_model && ev.active_model !== routerModel) setRouterModel(ev.active_model, animate);
+    dirty = true;
+    if (animate) settleQueuedChips(ev);
+    return;
+  }
+  if (ev.type === "op_start") return onStart(ev, animate);
+  if (ev.type === "op_end") return onEnd(ev, animate);
+}
+
+function onStart(st, animate) {
+  const row = rowById.get(st.id);
+  if (row) { row.classList.remove("future"); row.classList.add(st.op === "label" ? "done" : "active"); }
+  if (st.op === "label") { lastLabel = st; setNarration(st); return; }
+  if (st.op === "parallel") return;
+  active.set(st.id, st);
+  setChip(st, true);
+  if ((st.op === "upsert" || st.op === "delete") && Number.isInteger(st.shard)) { routed[st.shard] = (routed[st.shard] || 0) + 1; dirty = true; }
+  if (animate) animateStart(st);
+}
+
+function onEnd(en, animate) {
+  const st = starts.get(en.id);
+  scoreEnd(st, en);
+  if (!st) return;
+  active.delete(en.id);
+  const row = rowById.get(en.id);
+  if (row && st.op !== "label") {
+    row.classList.remove("future", "active"); row.classList.add("done");
+    const card = row.querySelector(".card");
+    if (card) {
+      const soft = (en.checks || []).some((c) => !c.hard && !c.pass);
+      const noop = (st.op === "upsert" || st.op === "delete") && en.resp && en.resp.applied === false;
+      card.classList.remove("ok", "fail", "soft", "noop");
+      card.classList.add(!en.ok ? "fail" : soft ? "soft" : noop ? "noop" : "ok");
+    }
+  }
+  const join = joinById.get(en.id);
+  if (join) { join.classList.remove("future"); join.classList.add("done"); }
+  setChip(st, false, en);
+  // Cluster-level effects of admin/chaos ops (also while fast-forwarding).
+  if (en.ok && (st.op === "cutover" || st.op === "rollback") && en.resp && en.resp.active_model) setRouterModel(en.resp.active_model, animate);
+  if (st.op === "kill_shard" && !en.error) { killed.add(Number(st.req.shard)); dirty = true; }
+  if (st.op === "restart_shard" && !en.error) { killed.delete(Number(st.req.shard)); dirty = true; }
+  if (animate) animateEnd(st, en);
+}
+
+// A lane chip glows and says what it is doing while one of its ops is in flight.
+function setChip(st, busy, en) {
+  const c = chipEls.get(actorOf(st));
+  if (!c) return;
+  c.classList.toggle("busy", busy);
+  c.querySelector(".act").innerHTML = busy ? chipText(st) : (en ? `last: ${esc(st.op)} ${en.ok ? "&#10003;" : "&#10007;"}` : "");
+}
+function chipText(st) {
+  const r = st.req || {};
+  switch (st.op) {
+    case "search": return `searching &ldquo;${esc(short(r.query, 24))}&rdquo;`;
+    case "upsert": case "delete": return `${st.op} ${esc(short(r.doc_id, 20))} &rarr; shard ${st.shard}`;
+    case "sleep": return `sleeping ${r.seconds} s`;
+    case "wait_visible": return `waiting for ${esc(short(r.doc_id, 20))}`;
+    case "wait_signal": return `waiting for &lsquo;${esc(short(r.name, 20))}&rsquo;`;
+    case "signal": return `signals &lsquo;${esc(short(r.name, 20))}&rsquo;`;
+    default: return esc(st.op) + (r.model ? " " + esc(r.model) : r.shard != null ? " shard " + r.shard : "");
+  }
+}
+
+function scoreEnd(st, ev) {
+  dirty = true;
+  if (ev.error) score.errors++;
+  for (const c of ev.checks || []) {
+    if (c.hard) c.pass ? score.pass++ : score.fail++;
+    else c.pass ? score.softOk++ : score.softMiss++;
+    if (c.kind === "same_as" || c.kind === "overlap" || c.kind === "golden")
+      answerItems.unshift({ t: ev.t, html: answerText(c), cls: c.pass ? "ok-t" : c.hard ? "bad-t" : "soft-t", tag: c.model || "" });
+  }
+  if (!st) return;
+  if ((st.op === "upsert" || st.op === "delete") && !ev.error && ev.resp && "applied" in ev.resp) {
+    score.writes++; score.ack.push(ev.latency_ms); ev.resp.applied ? score.applied++ : score.noop++;
+  }
+  if (st.op === "search" && !ev.error && ev.resp && "n" in ev.resp) {
+    score.searches++; score.search.push(ev.latency_ms); if (ev.resp.partial) score.partial++;
+    for (const c of ev.checks || []) if (c.kind === "expect" && c.since_ack_ms != null)
+      freshItems.unshift({ t: ev.t, doc: c.doc_id, html: `&#128270; <b>${esc(c.doc_id)}</b> ${c.found ? "found" : "MISSING"}: ${searchTimes(c, st, ev)}`,
+                           cls: c.found ? "ok-t" : c.hard ? "bad-t" : "soft-t", tag: "" });
+  }
+  if (st.op === "wait_visible" && !ev.error) {
+    const r = ev.resp || {};
+    freshItems.unshift({ t: ev.t, doc: st.req.doc_id, html: `&#9203; <b>${esc(st.req.doc_id)}</b> ${st.req.absent ? "gone" : "visible"} ` +
+      (ev.ok ? (r.lag_ms != null ? `after <b>${fmtMs(r.lag_ms)}</b> (visibility lag)` : "") : "TIMEOUT"), cls: ev.ok ? "ok-t" : "bad-t", tag: r.first_poll || r.polls === 1 ? "first poll" : `${r.polls} polls` });
+  }
+}
+
+// =====================================================================================
+// 4. The stage: animations (packets, toasts, doc chips) and the shard boxes.
+// =====================================================================================
+// Center of an element in stage coordinates (packets are absolutely positioned inside #stage).
+function pos(el) {
+  const r = el.getBoundingClientRect(), s = $("stage").getBoundingClientRect();
+  return { x: r.left - s.left + r.width / 2, y: r.top - s.top + r.height / 2, top: r.top - s.top, bottom: r.bottom - s.top };
+}
+const ROUTER = () => $("routerBox"), SHARD = (i) => $("shard-" + i);
+let inFlight = 0;
+const legMs = () => 380 / Math.sqrt(state.speed);
+// One packet = a glowing dot (+ optional label) moving through a list of elements, leg by leg.
+function packet(path, color, label = "", delay = 0) {
+  if (inFlight > 40 || $("stage").classList.contains("hidden")) return;
+  const pts = path.map((el) => pos(el));
+  const p = document.createElement("div");
+  p.className = "packet";
+  p.style.color = color;
+  p.innerHTML = `<i></i>${label ? `<span>${label}</span>` : ""}`;
+  p.style.opacity = "0";
+  $("stage").appendChild(p);
+  inFlight++;
+  const frames = pts.map((q, i) => ({ transform: `translate(${q.x - 5}px, ${q.y - 5}px)`, opacity: 1, offset: pts.length > 1 ? i / (pts.length - 1) : 0 }));
+  const anim = p.animate(frames, { duration: legMs() * Math.max(1, pts.length - 1), delay, easing: "ease-in-out", fill: "both" });
+  anim.onfinish = () => { p.remove(); inFlight--; };
+}
+// A short message that pops up next to an element and fades away.
+function toast(el, html, cls = "", below = true) {
+  if ($("stage").classList.contains("hidden")) return;
+  const q = pos(el);
+  const t = document.createElement("div");
+  t.className = "toast " + cls;
+  t.innerHTML = html;
+  t.style.left = q.x + "px";
+  t.style.top = (below ? q.bottom + 2 : q.top - 24) + "px";
+  $("stage").appendChild(t);
+  const anim = t.animate([{ opacity: 0, transform: "translate(-50%, 6px)" }, { opacity: 1, transform: "translate(-50%, 0)", offset: .15 },
+                          { opacity: 1, offset: .8 }, { opacity: 0 }], { duration: 1900 / Math.sqrt(state.speed) });
+  anim.onfinish = () => t.remove();
+}
+function flash(el, cls) { el.classList.add(cls); setTimeout(() => el.classList.remove(cls), 650 / Math.sqrt(state.speed)); }
+const liveShards = () => [...Array(N_SHARDS).keys()].filter((i) => !killed.has(i));
+
+// Event type -> animation. This is the whole mapping; any scenario gets it for free.
+function animateStart(st) {
+  const from = originEl(st), r = st.req || {}, L = legMs();
+  switch (st.op) {
+    case "search": case "wait_visible": {
+      const label = st.op === "search" ? `SEARCH ${esc(r.strategy)} &ldquo;${esc(short(r.query, 26))}&rdquo;` : `POLL for ${esc(short(r.doc_id, 20))}`;
+      packet([from, ROUTER()], "var(--cyan)", label);
+      for (const i of liveShards()) packet([ROUTER(), SHARD(i)], "var(--cyan)", "", L);   // fan-out to every shard
+      break;
+    }
+    case "upsert": case "delete": {
+      const label = `${st.op.toUpperCase()} ${esc(short(r.doc_id, 18))} v${r.version} &rarr; shard ${st.shard}`;
+      const target = SHARD(st.shard);
+      packet(target ? [from, ROUTER(), target] : [from, ROUTER()], st.op === "upsert" ? "var(--orange)" : "var(--red)", label);
+      if (target) setTimeout(() => flash(target, "owner"), 2 * L);
+      break;
+    }
+    case "migrate": case "finalize": case "flush": case "status": {
+      const label = st.op === "migrate" ? `MIGRATE &rarr; ${esc(r.model)}` : st.op === "finalize" ? `FINALIZE drop ${esc(r.model)}` : st.op.toUpperCase();
+      packet([from, ROUTER()], "var(--purple)", label);
+      for (const i of liveShards()) packet([ROUTER(), SHARD(i)], "var(--purple)", "", L);
+      break;
+    }
+    case "wait_ready": packet([from, ROUTER()], "var(--purple)", `poll: ${esc(r.model)} ready?`); break;
+    case "cutover": case "rollback": packet([from, ROUTER()], "var(--orange)", st.op === "cutover" ? `CUTOVER &rarr; ${esc(r.model)}` : "ROLLBACK"); break;
+    case "kill_shard": if (SHARD(r.shard)) packet([from, SHARD(r.shard)], "var(--red)", `KILL shard ${r.shard}`); break;
+    case "restart_shard": if (SHARD(r.shard)) packet([from, SHARD(r.shard)], "var(--green)", `RESTART shard ${r.shard}`); break;
+    case "sleep": case "label": case "parallel": case "signal": case "wait_signal": break;   // no network traffic
+    default: packet([from, ROUTER()], "var(--blue)", esc(st.op));
+  }
+}
+function animateEnd(st, en) {
+  const to = originEl(st), r = st.req || {}, p = en.resp || {}, L = legMs();
+  const okCls = en.ok ? "ok-t" : "bad-t";
+  switch (st.op) {
+    case "search": {
+      for (const i of liveShards()) { packet([SHARD(i), ROUTER()], "var(--green)"); flash(SHARD(i), "hit"); }
+      packet([ROUTER(), to], en.ok ? "var(--green)" : "var(--red)", "", L);
+      const exp = (en.checks || []).filter((c) => c.kind === "expect" || c.kind === "expect_absent")
+        .map((c) => `${esc(short(c.doc_id, 16))} ${c.found ? "FOUND" : "MISSING"} ${c.pass ? "&#10003;" : c.hard ? "&#10007;" : "~"}`).join(", ");
+      const same = (en.checks || []).filter((c) => c.kind === "same_as" || c.kind === "overlap")
+        .map((c) => `${c.kind === "same_as" ? "same as" : "overlap"} ${esc(c.ref)} ${c.pass ? "&#10003;" : "&#10007;"}`).join(", ");
+      toast(ROUTER(), en.error ? `<span class="bad-t">search failed</span>` : `<span class="${okCls}">${p.n} hits</span> &middot; ${fmtMs(en.latency_ms)}` +
+        (p.partial ? ` <span class="soft-t">partial: shard ${(p.missing_shards || []).join(",")} missing</span>` : "") +
+        (exp ? ` &middot; ${exp}` : "") + (same ? ` &middot; ${same}` : ""));
+      break;
+    }
+    case "wait_visible": toast(ROUTER(), `<span class="${okCls}">${esc(short(r.doc_id, 20))} ${en.ok ? (r.absent ? "gone" : "visible") : "TIMEOUT"}</span>` +
+      (p.lag_ms != null ? ` after ${fmtMs(p.lag_ms)} (lag)` : "")); break;
+    case "upsert": case "delete": {
+      const sh = SHARD(st.shard);
+      if (sh && !en.error) packet([sh, ROUTER(), to], "var(--green)");
+      if (en.error) { toast(ROUTER(), `<span class="bad-t">${st.op} ${esc(short(r.doc_id, 18))} failed: ${esc(short(en.error, 40))}</span>`); break; }
+      if (!en.resp || !("applied" in en.resp)) { toast(ROUTER(), `<span class="ok-t">refused as expected</span>`); break; }
+      toast(ROUTER(), p.applied ? `<span class="ok-t">ack</span> ${esc(short(r.doc_id, 18))} &middot; ${fmtMs(en.latency_ms)}` +
+        (p.mode === "async" ? ` &middot; <span class="soft-t">queued on shard ${st.shard}</span>` : " &middot; applied") : `<span class="soft-t">no-op (stale version)</span>`);
+      if (p.applied && sh) docChip(st, p.mode === "async", en.t);
+      break;
+    }
+    case "cutover": case "rollback": case "migrate": case "finalize": case "wait_ready": case "flush":
+      toast(ROUTER(), `<span class="${okCls}">${esc(st.op)} ${en.ok ? "&#10003;" : "&#10007;"}</span>` + (p.active_model ? ` &middot; queries &rarr; ${esc(p.active_model)}` : ""), "", false);
+      break;
+    case "kill_shard": if (SHARD(r.shard)) toast(SHARD(r.shard), `<span class="bad-t">shard ${r.shard} DOWN</span>`); break;
+    case "restart_shard": if (SHARD(r.shard)) toast(SHARD(r.shard), `<span class="ok-t">back: ${p.replayed ?? "?"} WAL records replayed</span>`); break;
+  }
+}
+// A doc chip on the owner shard. Async: "queued" until a later status sample shows the shard's queue
+// empty ("applied", as seen by the sampler, so up to one sample interval late). Sync: applied at once.
+function docChip(st, queued, tAck) {
+  const box = SHARD(st.shard).querySelector(".docchips");
+  const c = document.createElement("div");
+  c.className = "docchip " + (queued ? "queued" : "applied");
+  c.dataset.tack = tAck;
+  c.innerHTML = queued ? `&#9203; ${esc(short(st.req.doc_id, 16))} queued` : `&#10003; ${esc(short(st.req.doc_id, 16))} ${st.op === "delete" ? "deleted" : "applied"}`;
+  box.prepend(c);
+  while (box.children.length > 4) box.lastChild.remove();
+  if (!queued) fade(c);
+}
+function fade(c) { setTimeout(() => c.classList.add("gone"), 900 / Math.sqrt(state.speed)); setTimeout(() => c.remove(), 1600 / Math.sqrt(state.speed)); }
+function settleQueuedChips(ev) {
+  for (const [sid, s] of Object.entries(ev.shards || {})) {
+    if ((s.pending || 0) > 0) continue;
+    const box = SHARD(Number(sid));
+    if (!box) continue;
+    for (const c of box.querySelectorAll(".docchip.queued")) {
+      if (Number(c.dataset.tack) > ev.t) continue;
+      c.className = "docchip applied";
+      c.innerHTML = c.innerHTML.replace("&#9203;", "&#10003;").replace("\u23f3", "\u2713").replace("queued", "applied");
+      fade(c);
+    }
+  }
+}
+function setRouterModel(model, animate) {
+  routerModel = model;
+  const el = $("routerModel");
+  el.textContent = "queries \u2192 " + (model || "?");
+  if (animate) { el.classList.remove("flip"); void el.offsetWidth; el.classList.add("flip"); }
+}
+
+function renderShards() {
+  $("routerModel").textContent = "queries \u2192 " + (routerModel || "?");
+  for (let i = 0; i < N_SHARDS; i++) {
+    const s = status[String(i)] || {};
+    const el = SHARD(i);
+    const down = killed.has(i) || s.missing || s.healthy === false;
+    const pending = s.pending || 0;
+    const isAsync = (s.mode || META.mode) === "async";
+    el.classList.toggle("down", !!down);
+    const sq = "<i></i>".repeat(Math.min(pending, 24)) + (pending > 24 ? `<span class="muted">+${pending - 24}</span>` : "");
+    // One progress bar per embedding model the shard maintains (2 during a migration).
+    const models = Object.entries(s.models || {}).map(([m, v]) => {
+      const p = Math.round(100 * (v.progress ?? (v.ready ? 1 : 0)));
+      return `<div class="mbar"><div class="lbl"><b class="${m === routerModel ? "active" : ""}">${m === routerModel ? "&#9733; " : ""}${esc(m)}</b>
+        <span>${v.ready ? "ready" : "build " + p + "%"}</span></div><div class="track"><div class="${v.ready ? "ready" : ""}" style="width:${v.ready ? 100 : p}%"></div></div></div>`;
+    }).join("");
+    el.querySelector(".sh-body").innerHTML = `<div class="name"><span>shard ${i}</span><span class="${down ? "bad-t" : "ok-t"}">${down ? "DOWN" : "&#9679; up"}</span></div>
+      <div class="kv"><span>docs</span><b>${down && s.n_docs == null ? "-" : (s.n_docs ?? "?")}</b></div>
+      <div class="kv" title="writes the router sent to this shard (its owner)"><span>writes</span><b>${routed[i] || 0}</b></div>
+      <div class="kv" title="acked but not yet searchable (async mode)"><span>queue</span><b>${isAsync ? pending : "sync"}</b></div>
+      <div class="queue">${sq}</div>
+      ${isAsync ? `<div class="kv"><span>lag p95</span><b>${s.lag_p95 != null ? fmtMs(s.lag_p95) : "-"}</b></div>` : ""}
+      ${models}`;
+  }
+  drawWires();
+}
+function drawWires() {
+  const c = $("cluster").getBoundingClientRect(), rb = $("routerBox").getBoundingClientRect();
+  let svg = "";
+  for (let i = 0; i < N_SHARDS; i++) {
+    const s = SHARD(i).getBoundingClientRect();
+    svg += `<line x1="${rb.left - c.left + rb.width / 2}" y1="${rb.bottom - c.top}" x2="${s.left - c.left + s.width / 2}" y2="${s.top - c.top}"
+      stroke="${killed.has(i) ? "#f85149" : "#30363d"}" stroke-width="2" stroke-dasharray="4 4"/>`;
+  }
+  $("wires").innerHTML = svg;
+}
+
+// =====================================================================================
+// 5. Per-frame rendering: progress bars, current row + auto-scroll, scoreboard, chart.
+// =====================================================================================
+function setNarration(st) {
+  $("narration").innerHTML = st ? `&#128226; ${esc(st.req.text)} <span class="muted">(t=${st.t.toFixed(2)} s)</span>`
+    : `<span class="muted">${state.playing ? "" : "Press \u25b6 play (or Space). Each row below is one operation; the stage above animates it."}</span>`;
+}
+
+function renderActive() {
+  for (const [id, st] of active) {
+    const row = rowById.get(id);
+    const bar = row && row.querySelector(".bar > div");
+    if (!bar) continue;
+    if (st.op === "wait_ready") {
+      const ps = Object.values(status || {}).map((s) => ((s.models || {})[st.req.model] || {}).progress ?? 0);
+      bar.style.width = (ps.length ? 100 * Math.min(...ps) : 0) + "%";
+      continue;
+    }
+    const planned = st.op === "sleep" ? Number(st.req.seconds) : Number(st.req.timeout || 1);
+    bar.style.width = Math.min(100, 100 * (state.now - st.t) / Math.max(planned, 1e-3)) + "%";
+  }
+  for (const { el } of rowList) { const b = el.classList.contains("done") && el.querySelector(".bar > div"); if (b) b.style.width = "100%"; }
+}
+
+// The current row = the last row that started at or before "now" (binary search on start times).
+let currentRow = null, lastScroll = 0;
+function updateCurrentRow(force) {
+  let lo = 0, hi = rowList.length - 1, idx = -1;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (rowList[m].t <= state.now + 1e-9) { idx = m; lo = m + 1; } else hi = m - 1; }
+  const el = idx >= 0 ? rowList[idx].el : null;
+  if (el !== currentRow) {
+    if (currentRow) currentRow.classList.remove("current");
+    if (el) el.classList.add("current");
+    currentRow = el;
+  }
+  // Auto-scroll: keep the current row visible below the sticky dock (smooth, at most every 250 ms).
+  if (!el || !$("follow").checked || (!state.playing && !force)) return;
+  const now = performance.now();
+  if (!force && now - lastScroll < 250) return;
+  const dockH = $("dock").getBoundingClientRect().bottom;
+  const r = el.getBoundingClientRect();
+  if (force || r.top < dockH + 10 || r.bottom > window.innerHeight - 20) {
+    lastScroll = now;
+    const target = window.scrollY + r.top - dockH - (window.innerHeight - dockH) * 0.35;
+    window.scrollTo({ top: Math.max(0, target), behavior: force ? "auto" : "smooth" });
+  }
+}
+
+function renderScore() {
+  const tile = (v, k, cls = "") => `<div class="tile"><div class="v ${cls}">${v}</div><div class="k">${k}</div></div>`;
+  const a50 = pct(score.ack, 50), a95 = pct(score.ack, 95), s50 = pct(score.search, 50), s95 = pct(score.search, 95);
+  // "passed" counts every check that held, hard or soft; "failed" only hard checks (they fail the run);
+  // a soft check that did not hold is a soft miss, allowed and shown in its own tile.
+  $("score").innerHTML = tile(score.pass + score.softOk, `expectations passed (${score.pass} hard, ${score.softOk} soft)`, "ok-t") +
+    tile(score.fail, "expectations failed", score.fail ? "bad-t" : "") +
+    tile(score.softMiss + " / " + (score.softOk + score.softMiss), "soft misses (allowed)", score.softMiss ? "soft-t" : "") +
+    tile(score.writes, `writes (${score.applied} applied, ${score.noop} no-op)`) +
+    tile(a50 == null ? "-" : fmtMs(a50), "write ack p50" + (a95 == null ? "" : ` &middot; p95 ${fmtMs(a95)}`)) +
+    tile(score.searches, "searches") +
+    tile(s50 == null ? "-" : fmtMs(s50), "search p50" + (s95 == null ? "" : ` &middot; p95 ${fmtMs(s95)}`)) +
+    tile(score.errors, "errors", score.errors ? "bad-t" : "") +
+    tile(score.partial, "partial searches", score.partial ? "soft-t" : "");
+  $("miniScore").innerHTML = `<b class="ok-t">&#10003; ${score.pass + score.softOk}</b> &middot; <b class="${score.fail ? "bad-t" : ""}">&#10007; ${score.fail}</b>` +
+    ` &middot; ~ ${score.softMiss} soft &middot; writes <b>${score.writes}</b> &middot; searches <b>${score.searches}</b>`;
+  const list = (items, empty) => items.length ? items.slice(0, 80).map((f) =>
+    `<li><span class="${f.cls}">${f.html}</span><span class="muted">${f.tag ? f.tag + " &middot; " : ""}t=${f.t.toFixed(2)}</span></li>`).join("") : `<li class="muted">${empty}</li>`;
+  $("fresh").innerHTML = list(freshItems.filter((f) => docShown(f.doc)), "nothing yet (searches with expect and wait_visible ops show up here)");
+  $("answers").innerHTML = list(answerItems, "nothing yet (expect_same_as / expect_overlap_with / golden checks)");
+}
+
+// Charts from the status samples: docs, queued writes, oldest queued age, with a playhead.
+const series = samples.map((s) => {
+  const v = Object.values(s.shards || {});
+  return { t: s.t, docs: v.reduce((a, x) => a + (x.n_docs || 0), 0), pending: v.reduce((a, x) => a + (x.pending || 0), 0),
+           oldest: Math.max(0, ...v.map((x) => x.oldest_ms || 0)) };
+});
+function drawChart() {
+  const cv = $("chart"), dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  if (!W) return;
+  if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, W, H);
+  const rows = [{ key: "docs", label: "docs in the index (all shards)", color: "#58a6ff", min: null },
+                { key: "pending", label: "queued writes (acked, not yet searchable)", color: "#f0883e", min: 0 },
+                { key: "oldest", label: "oldest queued write, ms (budget 1000)", color: "#d29922", min: 0, budget: 1000 }];
+  const rowH = H / rows.length, x = (t) => 4 + (W - 8) * t / DURATION;
+  g.font = "11px Segoe UI, sans-serif";
+  rows.forEach((row, k) => {
+    const y0 = k * rowH + 14, h = rowH - 20, vals = series.map((p) => p[row.key]);
+    let lo = row.min ?? Math.min(...vals, Infinity), hi = Math.max(...vals, row.budget ? 50 : 1, -Infinity);
+    if (!isFinite(lo)) lo = 0;
+    if (hi <= lo) hi = lo + 1;
+    const y = (v) => y0 + h - h * (v - lo) / (hi - lo);
+    let cur = "-";
+    for (const p of series) { if (p.t > state.now) break; cur = row.key === "oldest" ? fmtMs(p[row.key]) : p[row.key]; }
+    g.fillStyle = "#8b949e"; g.fillText(`${row.label}: ${cur}`, 4, y0 - 3);
+    g.strokeStyle = "#21262d"; g.beginPath(); g.moveTo(4, y0 + h + .5); g.lineTo(W - 4, y0 + h + .5); g.stroke();
+    if (row.budget && hi >= row.budget * .5) { g.setLineDash([4, 4]); g.strokeStyle = "#f85149"; g.beginPath(); g.moveTo(4, y(row.budget)); g.lineTo(W - 4, y(row.budget)); g.stroke(); g.setLineDash([]); }
+    if (!series.length) return;
+    g.strokeStyle = row.color; g.lineWidth = 1.6; g.beginPath();
+    series.forEach((p, i) => (i ? g.lineTo(x(p.t), y(p[row.key])) : g.moveTo(x(p.t), y(p[row.key]))));
+    g.stroke(); g.lineWidth = 1;
+  });
+  g.strokeStyle = "#e6edf3"; g.globalAlpha = .7; g.beginPath(); g.moveTo(x(state.now), 0); g.lineTo(x(state.now), H); g.stroke(); g.globalAlpha = 1;
+}
+
+let scrubbing = false;
+function renderFrame(forceScroll) {
+  $("clock").textContent = `${state.now.toFixed(3)} s / ${DURATION.toFixed(3)} s`;
+  if (!scrubbing) $("scrub").value = Math.round(1000 * state.now / DURATION);
+  renderActive();
+  if (dirty) { renderShards(); renderScore(); dirty = false; }
+  updateCurrentRow(forceScroll);
+  drawChart();
+}
+
+// =====================================================================================
+// 6. The clock: play / pause / seek / step, controls, URL options.
+// =====================================================================================
+function advanceTo(t, animate) {
+  while (state.cursor < timeline.length && timeline[state.cursor].t <= t) apply(timeline[state.cursor++], animate);
+  state.now = t;
+}
+// Jump anywhere. Backwards = reset + fast-forward without animations: simple and always correct.
+function seek(t, forceScroll = true) {
+  t = Math.max(0, Math.min(DURATION, t));
+  if (t < state.now) reset();
+  advanceTo(t, false);
+  dirty = true;
+  renderFrame(forceScroll);
+}
+function play() {
+  if (state.now >= DURATION - 1e-6) seek(0);
+  state.playing = true;
+  startLoop();
+  $("btnPlay").innerHTML = "&#10074;&#10074; pause";
+  if (!lastLabel) setNarration(null);
+}
+function pause() { state.playing = false; $("btnPlay").innerHTML = "&#9654; play"; }
+function step(dir) {
+  pause();
+  const eps = 1e-6;
+  const t = dir > 0 ? stepTimes.find((x) => x > state.now + eps) : [...stepTimes].reverse().find((x) => x < state.now - eps);
+  if (dir > 0 && t != null) { advanceTo(t, true); dirty = true; renderFrame(true); }   // stepping forward animates
+  else seek(t ?? (dir > 0 ? DURATION : 0));
+}
+let lastTs = null, rafId = null;
+// The animation loop runs ONLY while playing. PITFALL (found with headless Edge --screenshot): a
+// page that schedules requestAnimationFrame forever never goes idle, so screenshot tools hang.
+function tick(ts) {
+  rafId = null;
+  if (!state.playing) { lastTs = null; return; }
+  if (lastTs !== null) {
+    advanceTo(Math.min(DURATION, state.now + (ts - lastTs) / 1000 * state.speed), true);   // real time x speed
+    if (state.now >= DURATION) pause();
+  }
+  lastTs = ts;
+  renderFrame(false);
+  if (state.playing) rafId = requestAnimationFrame(tick);
+}
+const startLoop = () => { if (rafId == null) { lastTs = null; rafId = requestAnimationFrame(tick); } };
+
+$("btnPlay").onclick = () => (state.playing ? pause() : play());
+$("btnStep").onclick = () => step(1);
+$("btnBack").onclick = () => step(-1);
+$("btnRestart").onclick = () => { seek(0); play(); };
+$("speed").onchange = (e) => { state.speed = Number(e.target.value); };
+$("showStage").onchange = (e) => { $("stage").classList.toggle("hidden", !e.target.checked); dirty = true; renderFrame(false); };
+$("scrub").addEventListener("input", (e) => { scrubbing = true; seek(DURATION * e.target.value / 1000); });
+$("scrub").addEventListener("change", () => { scrubbing = false; });
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT" && e.target.type !== "range") return;
+  if (e.code === "Space") { e.preventDefault(); state.playing ? pause() : play(); }
+  else if (e.code === "ArrowRight") { e.preventDefault(); step(1); }
+  else if (e.code === "ArrowLeft") { e.preventDefault(); step(-1); }
+  else if (e.code === "Home") { e.preventDefault(); seek(0); }
+});
+window.addEventListener("resize", () => { dirty = true; renderFrame(false); });
+
+reset();
+renderFrame(false);
+const T0 = parseFloat(PARAMS.get("t"));
+if (isFinite(T0)) {                          // #t=5.2: show the state at 5.2 s (paused)
+  seek(T0, true);
+  // PITFALL: the browser may restore/adjust the scroll position after load; scroll again once settled.
+  window.addEventListener("load", () => setTimeout(() => { dirty = true; renderFrame(true); }, 60));
+}
+if (PARAMS.get("autoplay") === "1") play();
+</script>
+</body>
+</html>

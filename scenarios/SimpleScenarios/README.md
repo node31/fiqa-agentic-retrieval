@@ -36,10 +36,10 @@ processes on ports 19000/19101+, stopped after the run), so no run sees another 
 | `SimpleSyncFullCluster` | the real FiQA corpus, 57,638 docs, MiniLM and bge-small (cluster start ~45 s) | sync |
 | `SimpleAsyncFullCluster` | the same | async |
 
-Each run leaves `results/<cluster>/<scenario>/console.txt` (checked in) and `events.jsonl`, `replay.html` and
-`cluster_logs/` (gitignored, they change on every run). `results/SUMMARY.md` is the grid of all 32 runs. To see a
-replay, run the scenario again, or `run_simple_scenarios.py --configs <cluster> --scenarios <n>`, and open its
-`replay.html`.
+Each run leaves `results/<cluster>/<scenario>/` with `console.txt`, `events.jsonl` and `replay.html`, all checked in
+(the cluster logs stay local). `results/SUMMARY.md` is the grid of all 32 runs. GitHub shows HTML as source, so to
+watch a replay, download its `replay.html` (or clone the repo) and open it in a browser. It is one self-contained
+file that works offline.
 
 ## Reading the scoreboard: hard and soft checks
 

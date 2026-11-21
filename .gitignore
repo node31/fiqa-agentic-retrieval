@@ -35,8 +35,7 @@ toy_runs/
 # personal practice files (not part of the repo)
 exercises/
 
-# simple scenario runs: console.txt and SUMMARY.md are checked in; events, replays, logs are regenerated
-scenarios/SimpleScenarios/results/**/events.jsonl
-scenarios/SimpleScenarios/results/**/replay.html
+# simple scenario runs: console.txt, events.jsonl, replay.html and SUMMARY.md are checked in;
+# the cluster logs (local paths) and run.json (wall time for SUMMARY.md) are not
 scenarios/SimpleScenarios/results/**/cluster_logs/
 scenarios/SimpleScenarios/results/**/run.json

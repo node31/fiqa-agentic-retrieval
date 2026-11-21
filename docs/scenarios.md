@@ -393,7 +393,7 @@ Elephant, Fox and Owl and the admin ADMIN, and every write uses a doc id with `{
 `scripts/run_simple_scenarios.py` runs all eight on four clusters, each run on its own fresh 3-shard cluster
 (`--start-cluster`): SimpleSyncTinyCluster and SimpleAsyncTinyCluster (`--tiny`), SimpleSyncFullCluster and
 SimpleAsyncFullCluster (the real corpus). It writes `scenarios/SimpleScenarios/results/<cluster>/<scenario>/` with the
-console output (`console.txt`, checked in), the events and the replay (gitignored), plus `results/SUMMARY.md`, a grid of
+console output (`console.txt`), the events and the replay, all checked in, plus `results/SUMMARY.md`, a grid of
 all 32 runs. [scenarios/SimpleScenarios/README.md](../scenarios/SimpleScenarios/README.md) reads my results.
 
 ## The scenario catalog

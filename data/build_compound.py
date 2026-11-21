@@ -11,8 +11,8 @@ STEPS
        instead tends to always pick the same few odd queries, so we use
        "random below a threshold".
     3. Join each pair into one natural question. Rewrites live in
-       data/compound_rewrites.json (written in-session by GitHub Copilot, then 10 were
-       hand-checked: see data/compound_review_sheet.md). A pair with no rewrite falls
+       data/compound_rewrites.json (written in-session by GitHub Copilot; 10 are listed
+       for a manual check in data/compound_review_sheet.md). A pair with no rewrite falls
        back to a template: "<q_a>? Also, <q_b>".
     4. Gold = union of both halves' qrels, with each gold doc tagged "a" or "b".
        That tag is what Coverage@10 needs.

@@ -41,6 +41,6 @@ step(4, "PITFALL: Python's hash() is salted per process")
 print(f"     hash('12345') in this process = {hash('12345')}. Run again and it differs (PYTHONHASHSEED).")
 note("If the router used hash() and the shards used hash(), they'd disagree on ownership, and writes would land "
      "on one shard while reads looked on another. crc32 is stable everywhere.")
-try_this("Implement drill 1 in docs/DRILLS.md: add a 4th shard. Which component must re-index?",
+try_this("Add a 4th shard. Which component must re-index?",
          "Reduce vnodes to 3. How unbalanced does the ring get?",
          "Why does our router's fetch phase (texts by id) depend on shard_of matching the indexer?")

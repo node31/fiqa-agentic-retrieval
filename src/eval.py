@@ -46,7 +46,7 @@ ARGUMENTS (each one picks WHICH system to test, or HOW to run the test)
     --out         write the results JSON here instead of RESULTS_DIR/runs/<name>.json.
   Environment (not arguments): FIQA_DATA_DIR = which dataset, ARTIFACTS_DIR = index/cache folder,
     RESULTS_DIR = where results go. Point all three at a scratch folder to run on the tiny toy dataset
-    without touching the real results (docs/from_zero/06_part_a_end_to_end.md §6.3).
+    without touching the real results (docs/eval.md).
 
   Examples
     python -m src.eval --name hybrid-linear-minilm --strategy hybrid --model minilm --fusion linear --alpha 0.7

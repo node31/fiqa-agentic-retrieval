@@ -27,7 +27,7 @@ DATA STRUCTURES
     delta segment: a Python dict term -> [(doc_idx, tf)] for docs added later.
     alive mask   : deletes just flip a bit; dead docs are masked at query time.
     This is a two-segment version of Lucene's LSM-style segments. Merging the
-    delta into the base ("compaction") is left as a drill in docs/DRILLS.md.
+    delta into the base ("compaction") is not implemented; the delta stays small at this scale.
 
 HOW IT FITS
     Each shard owns one BM25Index over its slice of the corpus. The router asks

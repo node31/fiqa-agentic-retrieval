@@ -31,3 +31,6 @@ Thumbs.db
 
 # toy runs of the eval/bench pipeline on the tiny dataset (docs/from_zero/06)
 toy_runs/
+
+# personal practice files (not part of the repo)
+exercises/

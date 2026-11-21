@@ -30,6 +30,6 @@ print(f"     alive[d1] = {ix.alive[0]}, df('short') went from 4 to {ix.df['short
 print(f"     search 'short' -> {[d for d, _ in ix.search(['short'], 10)]}  (d1 gone)")
 note("Erasing from a CSC matrix means shifting arrays: O(nnz). Tombstones are O(1). Real engines (Lucene) "
      "do the same, then merge segments in the background to reclaim space ('compaction').")
-try_this("Implement compact(): rebuild the base matrix from live rows + delta (docs/DRILLS.md drill 5).",
+try_this("Implement compact(): rebuild the base matrix from live rows + delta.",
          "How many deletes before tombstones waste 50% of the postings? What would trigger compaction?",
          "Upsert d2 with new text. Check that BOTH the old row is dead and df is updated.")

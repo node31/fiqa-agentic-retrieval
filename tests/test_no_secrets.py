@@ -55,3 +55,24 @@ def test_no_secrets_in_tracked_files():
                 offenders.append(str(p.relative_to(ROOT)))
                 break
     assert not offenders, f"secret-looking strings in: {offenders}"
+
+
+# Employer / machine details that must not ship: internal package mirrors and hosts, an absolute
+# home or work folder, cloud resource names. Kept as fragments so this file does not match itself.
+PRIVATE = re.compile("|".join([
+    "package" + "feedproxy", "micro" + "soft\\.io", "visual" + "studio\\.com", "dev\\.azure" + "\\.com",
+    "share" + "point\\.com", "agency_" + "copilot", "prag" + "upta", r"[A-Za-z]:\\{1,2}Users\\",
+    "/Users/[a-z]", "/home/[a-z]", "Dev" + "Box", "Win" + "UI", "foun" + "dary-", "rg-" + "pranav",
+]), re.IGNORECASE)
+TEXT_SUFFIXES = ALLOWED_SUFFIXES | {".json", ".jsonl", ".csv", ".html", ".ps1", ".sh"}
+
+
+def test_no_private_details_in_tracked_files():
+    offenders = []
+    for p in tracked_files():
+        if p.suffix not in TEXT_SUFFIXES or not p.is_file() or p.stat().st_size > 5_000_000:
+            continue
+        m = PRIVATE.search(p.read_text(encoding="utf-8", errors="ignore"))
+        if m:
+            offenders.append(f"{p.relative_to(ROOT)}: {m.group(0)!r}")
+    assert not offenders, f"private details in: {offenders}"

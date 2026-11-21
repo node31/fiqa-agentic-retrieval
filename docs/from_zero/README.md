@@ -35,7 +35,7 @@ flowchart TB
 Every command assumes your terminal is in the repo root (the folder with `src/` and `docs/`) and uses the repo's venv:
 
 ```powershell
-cd C:\path\to\fiqa-agentic-retrieval      # your path
+cd fiqa-agentic-retrieval      # the folder you cloned into
 .\.venv\Scripts\Activate.ps1
 $env:PYTHONIOENCODING = "utf-8"                            # lets Windows print symbols like α
 python -c "import src, numpy, faiss; print('ready')"

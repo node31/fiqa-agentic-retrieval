@@ -12,7 +12,7 @@ WHY EXACT (FLAT) SEARCH
     57K x 384 floats = 88 MB, and a brute-force dot product over 19K vectors
     per shard takes about 1 ms. Approximate indexes (HNSW, IVF) only pay off
     with millions of vectors, and they cost recall plus tuning work. The
-    assignment explicitly allows flat search. See docs/topics/03_vector_indexes.md
+    task spec explicitly allows flat search. See docs/topics/03_vector_indexes.md
     and examples/06_faiss_flat_vs_hnsw.py.
 
 WHY INNER PRODUCT

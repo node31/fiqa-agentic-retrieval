@@ -27,7 +27,7 @@ IVF:   q -> nearest nprobe of nlist centroids -> scan only those lists
 I use `faiss.IndexIDMap2(faiss.IndexFlatIP(384))`:
 
 - Flat, because 19K vectors per shard × 384 dims takes 1.4 ms per query (`results/microbench.json`). That is small
-  next to the 8 ms query encoder, and the assignment allows exact search at this size. The vectors are normalised, so
+  next to the 8 ms query encoder, and the spec allows exact search at this size. The vectors are normalised, so
   inner product is cosine.
 - `IDMap2` lets me use my own int64 ids (mapped from string doc ids) and supports `remove_ids`, which live deletes
   and upserts need.

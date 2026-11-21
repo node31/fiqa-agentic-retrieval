@@ -171,7 +171,7 @@ The results file `runs/<name>.json`, with values from the shipped run:
 ### Stratified recall
 
 `overall` averages over all questions, which can hide a weak group: 13 short questions disappear among 487 others. So I
-also split the questions into groups and average Recall@10 inside each one (the assignment asks for this in A2). Every
+also split the questions into groups and average Recall@10 inside each one (task A2 asks for this). Every
 question lands in one `qlen:` group and one `doclen:` group, so the `n`s add up to 500 twice. A group with no
 questions is missing from the file, not zero.
 

@@ -96,7 +96,7 @@ beat it, so it can't be in the global top 100. The router merges the shard lists
 would be wrong, because min-max normalisation sets each shard's best doc to 1.0, so a mediocre winner on one shard would
 tie an excellent winner on another.
 
-Result: sharded quality equals single node to 4 decimals for BM25, dense and hybrid (0.4190 = 0.4190). The assignment
+Result: sharded quality equals single node to 4 decimals for BM25, dense and hybrid (0.4190 = 0.4190). The spec
 allowed a 1% difference.
 
 ### Timeouts and partial results

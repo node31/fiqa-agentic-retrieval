@@ -167,7 +167,7 @@ flowchart LR
 
 | I chose | because | alternative | why I didn't use it |
 |---|---|---|---|
-| my own BM25 on scipy sparse matrices (CSC for search, CSR for deletes, a delta segment for new docs, a tombstone mask) | I needed add/delete for live writes and per-term statistics for global IDF across shards | `rank_bm25`, Pyserini/Lucene | `rank_bm25` has no updates or stats API; Lucene would hide the sharding and update logic the assignment asks me to build |
+| my own BM25 on scipy sparse matrices (CSC for search, CSR for deletes, a delta segment for new docs, a tombstone mask) | I needed add/delete for live writes and per-term statistics for global IDF across shards | `rank_bm25`, Pyserini/Lucene | `rank_bm25` has no updates or stats API; Lucene would hide the sharding and update logic the spec asks for |
 | all-MiniLM-L6-v2 as the primary dense model | 0.388 nDCG at 18.8 ms p50; leaves room under 50 ms after HTTP | bge-small-en-v1.5 | +0.010 nDCG dense but +12 ms per query, and the gain disappears in hybrid (0.4155 vs 0.4190) |
 | bge-small-en-v1.5 as the second model (migration target) | same 384 dimensions, a real "newer model" story; its query prefix lives in the model registry | all-mpnet-base-v2, bge-base | 768 dimensions and roughly 3x the encode cost on CPU |
 | faiss `IndexIDMap2(IndexFlatIP)` | exact search is allowed at this size; inner product on unit vectors is cosine; `remove_ids` supports deletes | HNSW, IVF | approximate search would cost recall for no needed speed (search is ~1 to 3 ms per shard) |
@@ -444,7 +444,7 @@ everything it searched. Budget: 3 calls and 12K tokens. Results are passed as 20
 | I chose | because | alternative | why I didn't use it |
 |---|---|---|---|
 | a free step 0 | the first decision is grounded in real results | let the LLM write the first query | one more call for little gain |
-| my own loop with a JSON action protocol (native function tools on Azure) | the assignment forbids agent frameworks; one loop works for every backend | LangGraph and similar | not allowed |
+| my own loop with a JSON action protocol (native function tools on Azure) | the task spec rules out agent frameworks; one loop works for every backend | LangGraph and similar | not allowed |
 | 200-character snippets | keeps prompts small; tokens grow with every step | full passages | input tokens would explode |
 
 ### 6.10 Multi-agent system (C3)
@@ -678,7 +678,7 @@ sharding buys capacity and failure isolation, not speed.
 | bge-small as the dense model | the better benchmark model wins | +0.010 dense, -0.0035 in hybrid, +12 ms per query | BM25 already supplies what bge-small adds |
 | first async write mode | faster than sync | 47 writes/s vs 58, lag up to 1.3 s | one applier thread embedded serially, and batching doesn't save time on CPU (25.6 ms per doc alone vs 31.5 ms in batches of 8); fixed with 8 parallel single-doc workers |
 
-## 12. Answers to the assignment's questions
+## 12. Questions and answers
 
 | question | answer |
 |---|---|
@@ -732,4 +732,4 @@ exactly. Agent results depend on the LLM; every response is cached on disk, so a
 
 AI and LLM use: the agent results use Azure AI Foundry `gpt-6-sol` (spend above), development runs used
 claude-haiku-4.5 through the GitHub Copilot CLI and a scripted fake LLM, the compound questions were rewritten by an LLM
-from the two question texts, and I used an AI coding assistant while building the project, as the assignment allows.
+from the two question texts, and I used an AI coding assistant while building the project.

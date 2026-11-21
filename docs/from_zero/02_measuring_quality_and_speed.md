@@ -118,7 +118,7 @@ p50  = value at position ceil(0.50 × 10) = 5   → 21 ms   typical query
 p95  = value at position ceil(0.95 × 10) = 10  → 95 ms   the slow ones
 ```
 
-Users notice the slow queries, so the assignment's limit is p95 ≤ 50 ms. I use nearest-rank percentiles (`percentile` in
+Users notice the slow queries, so the project's limit is p95 ≤ 50 ms. I use nearest-rank percentiles (`percentile` in
 `src/util.py`).
 
 Cold means the first queries after the process starts, before models and caches are warm. I time the first 20 dev queries

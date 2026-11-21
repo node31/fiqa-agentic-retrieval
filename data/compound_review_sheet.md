@@ -1,6 +1,6 @@
 # Compound query hand-check sheet (Part C1)
 
-The assignment asks for 10 rewrites to be hand-checked and fixed where they read badly.
+The task spec asks for 10 rewrites to be hand-checked and fixed where they read badly.
 These 10 were picked with `random.Random(7).sample(range(100), 10)`.
 For each one: tick **OK**, or write the fix in **Fixed text**. Then copy any fix into
 `data/compound_rewrites.json` and re-run `python data/build_compound.py`.

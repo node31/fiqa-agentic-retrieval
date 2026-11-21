@@ -2,7 +2,7 @@
 
 General questions on the topics this project covers. For each one I give the general answer first, then what I did
 and measured here. Numbers come from `results/` and DESIGN.md (dev split, 500 queries, unless I say test). Questions
-about this specific repo are in [project_faq.md](project_faq.md).
+about this specific repo are in the [project FAQ](project_faq.md).
 
 ## Information retrieval
 

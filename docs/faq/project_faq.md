@@ -1,9 +1,9 @@
 # Project FAQ
 
-These are the questions I expect about this repo in the 60-minute debrief, with the answers I'd give. Every number
-comes from `results/` or DESIGN.md, measured on the AMD EPYC 7763 box described there (4 torch threads per process).
-If I re-run something during the debrief, I quote the new number. General interview questions on the same topics are
-in [concepts_faq.md](concepts_faq.md).
+Questions about this repo's design and numbers, with my answers. Every number comes from `results/` or DESIGN.md,
+measured on the AMD EPYC 7763 box described there (4 torch threads per process). Quality numbers reproduce on any
+machine; latency depends on the hardware. General questions on the same topics are in the
+[concepts FAQ](concepts_faq.md).
 
 ## Walkthrough script
 
@@ -94,7 +94,7 @@ match single node to 4 decimals, and `tests/test_store.py::test_sharded_router_e
 
 ### Was the DFS phase worth it?
 For quality, no: shard-local IDF gives BM25 0.2653 vs 0.2642 and saves about 4 ms (6.8 vs 10.7 ms p50). Hash sharding
-over 19K docs per shard gives every shard nearly the same df ratios. I kept DFS because the assignment asks for
+over 19K docs per shard gives every shard nearly the same df ratios. I kept DFS because the spec asks for
 single-node equivalence and because local IDF drifts on skewed shards (by topic or by time). A df cache at the router
 would give both; I haven't built it.
 

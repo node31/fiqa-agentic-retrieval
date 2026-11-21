@@ -75,7 +75,7 @@ On its own it can't answer a query, take a new document safely, delete one, or s
 | network API | FastAPI `/search`, `/upsert`, `/delete` |
 | metadata filters | not built (FiQA has no metadata worth filtering on) |
 
-So the router plus 3 shards is a small vector DB with a BM25 index beside the vectors. The assignment asks me to build
+So the router plus 3 shards is a small vector DB with a BM25 index beside the vectors. I wanted to build
 and explain sharding and live updates, and bugs like local IDF or fusing before merging ([08](08_sharding_scatter_gather.md))
 stay invisible inside a product. I also wanted full control of hybrid search (global BM25 stats, merge then fuse). In
 production I would use a real one for replication, backups, ANN indexes ([03](03_vector_indexes.md),

@@ -95,7 +95,7 @@ def length_bucket(query: str) -> str:
     """Which query-length group a question falls in, counted in whitespace-separated words.
 
     e.g. "what is short selling?" = 4 words -> "short(<5)"; 5..15 words -> "medium";
-    16+ -> "long". WHY: the assignment asks whether quality depends on query length
+    16+ -> "long". WHY: task A2 asks whether quality depends on query length
     (a long, chatty question and a 3-word one can behave very differently).
     """
     n = len(query.split())

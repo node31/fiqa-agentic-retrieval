@@ -1,4 +1,4 @@
-"""Count code lines the way the assignment's "~2,000 lines" rule means it.
+"""Count code lines the way the spec's "~2,000 lines" budget means it.
 
     python scripts/count_loc.py
 

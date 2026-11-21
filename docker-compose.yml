@@ -35,7 +35,7 @@ x-shard: &shard
     timeout: 3s
     retries: 60
   restart: unless-stopped
-  mem_limit: 2g          # the assignment's per-shard memory constraint, enforced
+  mem_limit: 2g          # the per-shard memory constraint, enforced
 
 services:
   shard0:

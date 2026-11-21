@@ -18,7 +18,7 @@ WORKDIR /app
 # Exact versions (see constraints.txt): a fresh clone months from now must build the SAME environment.
 COPY constraints.txt .
 # WHY a separate torch step: the default PyPI torch wheel for Linux pulls ~2.5 GB of CUDA libraries.
-# The CPU wheel is ~200 MB, and the assignment is CPU-only. The CPU index has both x86_64 (Intel/AMD)
+# The CPU wheel is ~200 MB, and the project is CPU-only. The CPU index has both x86_64 (Intel/AMD)
 # and aarch64 (Apple Silicon, ARM servers) wheels, so the same Dockerfile builds on both.
 # WHY --no-deps + explicit deps: the CPU index links torch's dependencies to files.pythonhosted.org,
 # which some corporate networks block; this way only the torch wheel comes from download.pytorch.org

@@ -25,7 +25,7 @@ flowchart TD
   F --> T["top-10"]
 ```
 
-The budget is 3 LLM calls (the assignment's cap) and 12K tokens. The model sees 200-character snippets of 10 hits per
+The budget is 3 LLM calls (the spec's cap) and 12K tokens. The model sees 200-character snippets of 10 hits per
 search (~550 tokens). Step n re-sends all n result blocks, so tokens grow roughly quadratically, and the prompt says to
 search again only if part of the question is missing.
 

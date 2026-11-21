@@ -30,7 +30,7 @@ note(f"The multi-agent system is {'CHEAPER' if multi_usd < single_usd else 'MORE
      f"single agent here (${multi_usd:.5f} vs ${single_usd:.5f}, {single_usd / multi_usd:.1f}x): 2 LLM calls vs 3, and "
      "the verifier sees only top-5 snippets once, while the single agent re-reads its growing transcript. "
      "Structure beats verbosity.")
-step(4, "Scale: 200 eval queries x 2 agentic systems x 2 runs (dev + debrief)")
+step(4, "Scale: 200 eval queries x 2 agentic systems x 2 runs (dev + a rerun)")
 print(f"     ~${200 * 2 * (single_usd + multi_usd):.2f} at worst case (both runs uncached)")
 print(f"     ~${200 * (single_usd + multi_usd):.2f} if the 2nd run repeats the 1st: the cache makes an identical re-run free")
 note("Hidden costs: reasoning models bill 'reasoning tokens' as output, often 2-5x the visible answer. Always run "

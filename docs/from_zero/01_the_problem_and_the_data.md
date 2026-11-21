@@ -143,7 +143,7 @@ If you try 50 ideas and keep whichever scores best on test, you have tuned on th
 optimistic. My tuned system scored 0.419 on dev and 0.397 on test. Some drop is normal, and peeking would have hidden it.
 To stop myself from doing it by accident, `src/eval.py` refuses `--split test` unless I pass `--final-test-run`.
 
-## What the assignment asks
+## What the project has to do
 
 ```mermaid
 flowchart TB

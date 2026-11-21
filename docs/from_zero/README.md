@@ -4,7 +4,7 @@ I'm Pranav, and I designed this system. This guide is me explaining it to you fr
 nothing about search: no BM25, no embeddings, no nDCG, no agents. I build it up one idea at a time, with hand-worked
 examples on the real FiQA data.
 
-`README.md` at the repo root tells you how to run the code, and `DESIGN.md` is written for a reviewer who already knows the
+`README.md` at the repo root tells you how to run the code, and `DESIGN.md` is written for a reader who already knows the
 field. This guide is the slow version.
 
 ## The whole project on one page
@@ -20,7 +20,7 @@ flowchart LR
     S --> R["Top-10 answers"]
 ```
 
-The assignment has three parts, each built on the previous one:
+The project has three parts, each built on the previous one:
 
 ```mermaid
 flowchart TB

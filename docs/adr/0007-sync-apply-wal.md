@@ -1,17 +1,15 @@
-# ADR 0007: Synchronous apply behind a fsynced WAL
+# ADR 0007: Synchronous apply behind an fsynced WAL
 
-**Status:** accepted
+Status: accepted
 
 ## Context
-B2 needs idempotent writes, lexical/dense consistency, a freshness guarantee and recovery.
+B2 needs idempotent writes, consistency between the lexical and dense indexes, a freshness guarantee and crash recovery.
 
 ## Decision
-Version check -> embed outside lock -> write lock -> re-check -> WAL append+fsync -> apply to all indexes -> ack. Crash-only recovery: restart = base corpus + WAL replay.
+The write path is: version check, embed outside the lock, take the write lock, re-check the version, append to the WAL and fsync, apply to all indexes, ack. Recovery is crash-only: a restart loads the base corpus and replays the WAL.
 
 ## Alternatives considered
-Async apply with a refresh interval (higher write throughput); apply-then-log.
-Async apply was later implemented as a second, switchable mode for comparison: see
-[ADR 0013](0013-async-apply-mode.md). This ADR's sync mode remains the default.
+Async apply with a refresh interval gives higher write throughput. I later built it as a second, switchable mode for comparison ([ADR 0013](0013-async-apply-mode.md)); sync stays the default. I rejected apply-then-log because a crash between the ack and the log write loses an acked write.
 
 ## Consequences
-Guarantee: searchable by the first query after the ack. Cost: write latency = one embedding per maintained model (~15-30 ms) + fsync. Apply-then-log can lose acked writes (toy 17 exercise).
+A write is searchable by the first query after its ack. The cost is write latency: one embedding per maintained model (about 15 to 30 ms) plus the fsync.

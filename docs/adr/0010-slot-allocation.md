@@ -1,15 +1,15 @@
 # ADR 0010: Round-robin interleave of sub-query lists for the 10 slots
 
-**Status:** accepted
+Status: accepted
 
 ## Context
-Several sub-queries compete for one top-10; scores across sub-queries are not comparable.
+Several sub-queries compete for one top 10, and scores from different sub-queries are not comparable.
 
 ## Decision
-Interleave A1,B1,A2,B2...; dedupe; fill leftovers from the full-question search.
+I interleave the lists (A1, B1, A2, B2, ...), dedupe, and fill leftover slots from the search on the full question.
 
 ## Alternatives considered
-Score merge; RRF across sub-lists; planner-weighted quotas.
+A score merge, RRF across sub-lists, and planner-weighted quotas. I rejected the score merge because scores from different sub-queries are not comparable, so the easy half takes all 10 slots and Coverage@10 drops. The interleave is simpler than RRF or quotas and guarantees every half a share of the slots.
 
 ## Consequences
-Guarantees Coverage@10 whenever every worker found something (toy 25); costs each half its ranks 6-10. Planner capped at 3 sub-queries so each keeps >= 3 slots.
+Coverage@10 is guaranteed whenever every worker found something. Each half loses its ranks 6 to 10. I cap the planner at 3 sub-queries so each keeps at least 3 slots.

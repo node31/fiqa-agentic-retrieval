@@ -1,15 +1,15 @@
-# ADR 0003: Fuse at the router after the global merge
+# ADR 0003: The router fuses after the global merge
 
-**Status:** accepted
+Status: accepted
 
 ## Context
-Hybrid needs BM25 and dense lists combined; shards each see a slice.
+Hybrid search combines a BM25 list and a dense list, and each shard sees only a slice of the corpus.
 
 ## Decision
-Shards return top-100 BM25 and top-100 dense separately; the router merges each globally, then fuses.
+Each shard returns its top-100 BM25 and top-100 dense lists separately. The router merges each list globally, then fuses.
 
 ## Alternatives considered
-Fuse on each shard and merge fused scores (cheaper on the network).
+Fusing on each shard and merging the fused scores is cheaper on the network. I rejected it because per-shard min-max normalisation inflates each shard's local winners, so fused scores from different shards are not comparable.
 
 ## Consequences
-+ exactly equals single-node (verified: 0.0% delta). − 2x the candidate payload per shard (~2 x 100 x [id, score] ~ 6 KB). Per-shard min-max normalisation would inflate each shard's local winners (toy 13).
+Results equal single-node exactly (verified: 0.0% difference). The cost is 2x the candidate payload per shard (about 2 × 100 × [id, score], roughly 6 KB).

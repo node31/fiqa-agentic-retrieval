@@ -1,60 +1,41 @@
 # 15 · Scaling to 100M passages: the arithmetic
 
-**Related:** [03 vector indexes](03_vector_indexes.md), [08 sharding](08_sharding_scatter_gather.md), DESIGN.md §10
+Related: [03 vector indexes](03_vector_indexes.md), [08 sharding](08_sharding_scatter_gather.md), DESIGN.md §9
 
-## 1. Intuition
+At 57K passages everything fits in one process. At 100M (1,735× more) my assumptions break in order: memory, then
+flat-search latency, then the embedding job, then router fan-out. None of the 100M setup is built; this is the arithmetic.
 
-At 57K passages everything fits in one laptop process with room to spare. At 100M (1,735× more),
-the assumptions break one by one: memory first, then flat-search latency, then the embedding job,
-then the router fan-out. Back-of-envelope arithmetic tells you which wall you hit first.
+## The arithmetic
 
-## 2. The arithmetic
+| item | calculation | result |
+|---|---|---|
+| flat vectors (384-d float32, 1,536 B) | 100M × 1,536 B | 153.6 GB, 77+ shards at my 2 GB per shard |
+| IVF-PQ (m = 48 × 8 bits) | 100M × 48 B | 4.8 GB (+ ~0.4 GB ids, + centroids), 32× smaller |
+| HNSW over float32 | 153.6 GB + graph (M = 32, ~256 B/vector ≈ 25.6 GB) | ≈ 180 GB, big-memory nodes |
+| BM25 postings | 3.77M postings / 57K docs ≈ 65 per doc → 6.5B × 8 B | ≈ 52 GB raw, ~10 to 17 GB with delta + varint |
+| text | measured 768 B/passage × 100M | ≈ 77 GB, on disk or object storage |
 
-**Dense vectors (384-d float32 = 1,536 bytes each)**
-- 100M × 1,536 B = **153.6 GB** of raw vectors. Doesn't fit our 2 GB/shard budget: that would be 77+ shards for vectors alone.
-- IVF-PQ with 48-byte codes (m = 48 sub-quantisers × 8 bits): 100M × 48 B = **4.8 GB** (+ ~0.4 GB ids, + centroids). That is 32× smaller.
-- HNSW over float32: 153.6 GB + graph (M = 32 → ~256 B/vector ≈ 25.6 GB) ≈ **180 GB**: needs big-memory nodes.
+Flat search: I measured 1.4 ms for a 19.2K shard and 5.3 ms for 57.6K vectors (4 threads, `results/microbench.json`),
+about 11K vectors per ms, bound by memory bandwidth. 100M flat is about 9 s per query, still ~140 ms per shard over 64
+shards. IVF with nlist = 65,536 and nprobe = 32 scans about 0.05% of the codes (~50K), about 1 to 3 ms.
 
-**Flat search latency**: measured 1.4 ms for a 19.2K shard and 5.3 ms for 57.6K vectors (4 threads,
-`results/microbench.json`), i.e. ~11K vectors/ms once the data is out of cache, bound by memory bandwidth.
-100M vectors flat ≈ **9 s** of compute per query. Even split over 64 shards, that's ~140 ms per
-shard. **Flat is out.** IVF (nlist = 65,536, nprobe = 32) scans ~0.05% of the codes, ~50K codes per query: ~1–3 ms.
+Embedding: 57,638 passages took 567 s with MiniLM on 32 cores (≈ 102 docs/s; bge-small took 1,063 s). 100M would take
+about 11.3 days on this box, ~3 to 6 hours on an A100 (≈ 5 to 10K docs/s for MiniLM), under 1 hour on 8 GPUs. A model
+migration re-embeds everything, so the dual-write of [10](10_model_migration.md) would last days on CPU.
 
-**BM25 postings**: we have 3.77M postings for 57K docs (≈ 65 per doc). At 100M docs that's ≈ 6.5B postings
-× (4 B doc id + 4 B tf) ≈ **52 GB** uncompressed. Lucene-style delta + varint compression gets ~3–5×, so ~10–17 GB.
+Cost, as orders of magnitude: 4.8 GB PQ + ~15 GB BM25 with 2× replicas is ~8 to 16 memory-optimised nodes (≈ 64 GB
+each), about $3 to 6K per month. A re-embed on 8 GPUs for ~1 h is about $30 to 100.
 
-**Text store**: FiQA averages 768 bytes/passage (measured), so 100M ≈ **77 GB**. It belongs on disk/object storage, not in RAM. Fetch only the top-k.
+## What breaks first in my design
 
-**Offline embedding**: we measured 57,638 passages in 567 s (MiniLM) on 32 cores ≈ 102 docs/s.
-100M / 102 ≈ **11.3 days** on this box. On a GPU (A100 ≈ 5–10K docs/s for MiniLM) it's ~3–6 hours; 8 GPUs, under 1 hour.
-**A model migration = re-embed everything**, so the B3 design must assume days of dual-write.
+| what breaks | why | what I would do |
+|---|---|---|
+| flat float32 vectors per shard | the 2 GB budget runs out at ~1M vectors per shard | IVF-PQ, then rerank the top-100 with full vectors from disk or a cross-encoder |
+| Python BM25 scoring | the `np.zeros(N)` score array is O(N): 8 MB per query at 2M docs per shard | score only the postings (WAND, block-max) |
+| router fan-out | 64+ shards amplify tail latency ([07](07_benchmarking_latency_memory.md)) | replicas and hedged requests, or a two-level router |
+| the DFS round trip | one extra fan-out per query | cache global df and refresh it periodically |
+| WAL without snapshots | replay time grows without bound | snapshots and log truncation |
+| modulo sharding | adding shards moves almost every doc | consistent hashing or a shard map |
 
-**Cost sketch** (cloud list prices change, so treat these as orders of magnitude):
-- Serving: 4.8 GB PQ + ~15 GB BM25 + replicas ×2 → ~8–16 memory-optimised nodes (≈ 64 GB each) ≈ **$3–6K/month**.
-- Re-embedding 100M with 8 GPUs for ~1 h ≈ $30–100 per run. Cheap compared with engineering time.
-
-## 3. What breaks first in *our* design
-
-1. **Memory (flat float32 vectors in each shard process)**: hits the 2 GB budget at ~1M vectors per shard.
-   Fix: IVF-PQ (+ rerank the top-100 with full vectors from disk, or with a cross-encoder).
-2. **Python BM25 scoring**: the dense `np.zeros(N)` score array per query is O(N). At 2M docs/shard
-   that's 8 MB zeroed and scanned per query. Fix: score only the postings (sparse accumulators / WAND / block-max).
-3. **Router fan-out**: 64+ shards → tail amplification ([07](07_benchmarking_latency_memory.md)). Fix: replicas + hedged requests,
-   or a two-level router tree.
-4. **The DFS round trip**: one extra fan-out per query. At scale, cache global df (it changes slowly) and refresh periodically.
-5. **WAL without snapshots**: replay time grows without bound. Fix: periodic snapshots + log truncation.
-6. **Modulo sharding**: adding shards moves ~all docs. Fix: consistent hashing or a shard map (toy 15).
-
-## 4. Exercises
-
-1. Redo the vector-memory arithmetic for 768-d models (bge-base). How many 2 GB shards are needed for PQ-48 vs flat?
-2. At what corpus size does flat search per shard (~11K vectors/ms) exceed half the 50 ms budget?
-3. Estimate re-embedding time for 100M docs with bge-small on our CPU (we measured 1,063 s for 57,638).
-
-Solutions: [solutions/15_scaling.md](solutions/15_scaling.md)
-
-## 5. Further reading
-
-- Jégou et al., *Product Quantization for Nearest Neighbor Search* (2011)
-- faiss wiki: "Indexing 1G vectors"
-- Ding & Suel, *Faster top-k retrieval using block-max indexes* (2011)
+References: Jégou et al., *Product Quantization for Nearest Neighbor Search* (2011); Ding and Suel, *Faster top-k
+document retrieval using block-max indexes* (2011).

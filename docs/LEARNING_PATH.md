@@ -1,72 +1,53 @@
-# Learning path
+# Reading order
 
-> **Starting from zero?** Read [from_zero/](from_zero/README.md) first: it explains every concept from scratch
-> and ends with a rebuild-it-yourself plan. Its exercises (stubs + checkers, toy and `--full`, with an answer key) are in
-> [`exercises/`](../exercises/README.md). This page is the deeper second pass.
+If you want to understand the system, read in this order. Each step assumes the ones before it.
 
-A suggested route through the repo. For every module use the same loop:
+## 1. From zero
+[from_zero/](from_zero/README.md) is me explaining the whole system to someone who knows Python and nothing about search. Read the chapters in order:
 
-> **read** the LEARN doc → **run** its toy → **read** the real code (start at the module docstring) →
-> **observe** it on FiQA → **do** the exercises → **check** `docs/solutions/` → tick the box.
+1. [The problem and the data](from_zero/01_the_problem_and_the_data.md)
+2. [Measuring quality and speed](from_zero/02_measuring_quality_and_speed.md)
+3. [Keyword search with BM25](from_zero/03_keyword_search_bm25.md)
+4. [Meaning search with embeddings](from_zero/04_meaning_search_embeddings.md)
+5. [Hybrid fusion and reranking](from_zero/05_hybrid_and_reranking.md)
+6. [Part A end to end](from_zero/06_part_a_end_to_end.md)
+7. [Part B: the distributed service](from_zero/07_part_b_distributed.md)
+8. [Part C: agents](from_zero/08_part_c_agents.md)
 
-Time estimates assume you are new to IR and agents but comfortable with Python.
+Keep the [GLOSSARY](GLOSSARY.md) open while you read.
 
-## Stage 0: orientation (½ day)
-- [ ] [00 RAG primer](00_rag_primer.md) + [GLOSSARY](GLOSSARY.md)
-- [ ] Set up: `python -m venv .venv`, `pip install -r requirements.txt`, `python scripts/download_data.py`
-- [ ] `pytest -q` (all green?) and `python -m src.beir_data`
+## 2. Topic docs
+Each one goes deeper on one part of the system and says why I built it that way.
 
-## Stage 1: retrieval fundamentals (Part A, 2 days)
-- [ ] [01 BM25](01_lexical_retrieval_bm25.md): toys 00, 01, 02, 03 · code `src/retrieval/bm25.py`
-- [ ] [04 Metrics](04_ir_metrics.md): toy 07 · code `src/metrics.py` · tests `tests/test_metrics.py`
-- [ ] [02 Dense](02_dense_retrieval.md): toys 04, 05 · code `src/retrieval/dense.py`, `src/index/build_index.py`
-- [ ] [03 Vector indexes](03_vector_indexes.md): toy 06
-- [ ] [05 Hybrid fusion](05_hybrid_fusion.md): toy 08 · `python scripts/ablations.py`
-- [ ] [06 Reranking](06_reranking.md): toy 09
-- [ ] [07 Benchmarking](07_benchmarking_latency_memory.md): toys 10, 11 · `src/eval.py`, `results/bench.json`
-- [ ] Read `results/failures.md` and [walkthroughs/part_a_results.md](walkthroughs/part_a_results.md)
+| Part | Docs | Code |
+|---|---|---|
+| Basics | [00 RAG primer](00_rag_primer.md) | `src/beir_data.py` |
+| A: retrieval | [01 BM25](01_lexical_retrieval_bm25.md), [02 Dense](02_dense_retrieval.md), [03 Vector indexes](03_vector_indexes.md), [04 Metrics](04_ir_metrics.md), [05 Hybrid fusion](05_hybrid_fusion.md), [06 Reranking](06_reranking.md), [07 Benchmarking](07_benchmarking_latency_memory.md) | `src/retrieval/`, `src/metrics.py`, `src/eval.py` |
+| B: service | [08 Sharding](08_sharding_scatter_gather.md), [09 Live updates](09_live_updates_consistency.md), [10 Migration](10_model_migration.md), [scenarios](scenarios.md) | `src/service/` |
+| C: agents | [11 Tool calling](11_llm_tool_calling.md), [12 Single agent](12_single_agent.md), [13 Multi-agent](13_multi_agent_orchestration.md), [14 Agent evaluation and cost](14_agent_evaluation_cost.md) | `src/agent/` |
+| Scale and evidence | [15 Scaling to 100M](15_scaling_to_100M.md), [16 Ablations](16_ablations.md), [eval](eval.md) | `scripts/ablations.py` |
 
-## Stage 2: distributed service (Part B, 2 days)
-- [ ] [08 Sharding](08_sharding_scatter_gather.md): toys 12, 13, 14, 15 · `src/service/router.py`
-- [ ] Run it: `python -m src.service.cluster` then `python src/search.py --query "what is short selling?"`
-- [ ] [09 Live updates](09_live_updates_consistency.md): toys 16, 17, 18 · `src/service/store.py`, `wal.py`, `async_apply.py`
-- [ ] `pytest -q tests/test_store.py tests/test_integration_service.py tests/test_integration_async.py`, then read every test
-- [ ] Sync vs async under load: `python -m scripts.write_load --mode both --duration 30` ([ADR 0013](adr/0013-async-apply-mode.md))
-- [ ] [10 Migration](10_model_migration.md): toy 19 · `python scripts/migration_demo.py`
-- [ ] [Scenarios](scenarios.md): script writes/searches/migrations, then watch the HTML replay (with each query's time split)
-- [ ] Docker: `python -m scripts.docker_check` (functional checks; tears the stack down afterwards unless `--keep`) and
-  `python -m scripts.docker_trace` (proof the containers really talk; add `--failover` to stop a shard)
-- [ ] Read [walkthroughs/part_b_results.md](walkthroughs/part_b_results.md)
+The results write-ups are [part_a_results](walkthroughs/part_a_results.md), [part_b_results](walkthroughs/part_b_results.md) and `results/failures.md`.
 
-## Stage 3: agents (Part C, 2 days)
-- [ ] [11 Tool calling](11_llm_tool_calling.md): toy 20 · `src/agent/llm.py`
-- [ ] [12 Single agent](12_single_agent.md): toy 21 · `src/agent/single_agent.py`
-- [ ] [13 Multi-agent](13_multi_agent_orchestration.md): toys 22–25 · `src/agent/orchestrator.py`
-- [ ] [14 Agent evaluation and cost](14_agent_evaluation_cost.md): toy 26 · `python scripts/agent_eval.py --backend fake`
-- [ ] Read DESIGN.md §7: the haiku dev run vs the final Azure gpt-6-sol run, and why the routing decision changed
-- [ ] Hand-check 10 compound queries: [data/compound_review_sheet.md](../data/compound_review_sheet.md)
+## 3. Design and decisions
+1. [DESIGN.md](../DESIGN.md), end to end. Its "Agent evaluation and routing" section compares the haiku dev run with the final Azure gpt-6-sol run and explains why the routing decision changed.
+2. The [ADRs](adr/README.md): one page per major choice, with what I rejected and what it cost.
 
-## Stage 4: system thinking + Project FAQ (1 day)
-- [ ] [15 Scaling to 100M](15_scaling_to_100M.md)
-- [ ] All [ADRs](adr/README.md): can you defend each choice in 2 sentences?
-- [ ] [DESIGN.md](../DESIGN.md) end to end
-- [ ] [DRILLS.md](DRILLS.md): do at least drills 1, 2 and 4 *without* looking at the solutions
-- [ ] [project_faq.md](project_faq.md): answer each question out loud, then compare
+## 4. Questions
+[project_faq.md](project_faq.md) and [concepts_faq.md](concepts_faq.md) hold the questions I expect about this system and my answers.
 
-## Map: concept → toy → code → test
+## Commands that run the real system
+From the repo root, with the venv active:
 
-| concept | toy | code | test |
-|---|---|---|---|
-| tokenisation, BM25 | 00–03 | `retrieval/bm25.py` | `test_bm25.py` |
-| embeddings, flat index | 04–06 | `retrieval/dense.py` | `test_store.py` |
-| metrics | 07 | `metrics.py` | `test_metrics.py` |
-| fusion, merge | 08, 13 | `retrieval/hybrid.py` | `test_hybrid.py` |
-| reranking | 09 | `retrieval/rerank.py` | – |
-| latency, memory | 10, 11 | `eval.py`, `util.py` | – |
-| global IDF, scatter-gather, timeouts | 12, 14 | `service/router.py` | `test_store.py`, `test_integration_service.py` |
-| partitioning | 15 | `index/sharding.py` | doctest |
-| versioned writes, WAL, freshness | 16–18 | `service/store.py`, `wal.py` | `test_store.py`, `test_integration_service.py` |
-| migration | 19 | `store.start_build`, `router.cutover` | `test_store.py` |
-| agent loop | 20, 21 | `agent/single_agent.py` | `test_agents.py` |
-| orchestration, budgets, failure, slots | 22–25 | `agent/orchestrator.py` | `test_agents.py` |
-| cost | 26 | `agent/llm.py` | – |
+```powershell
+python -m venv .venv; pip install -r requirements.txt; python scripts/download_data.py   # setup, once
+pytest -q                                                                                # all tests
+python -m src.service.cluster                                                            # router :8000 + 3 shards
+python src/search.py --query "what is short selling?"                                    # one search against it
+pytest -q tests/test_store.py tests/test_integration_service.py tests/test_integration_async.py
+python -m scripts.write_load --mode both --duration 30                                   # sync vs async under load (ADR 0013)
+python scripts/migration_demo.py                                                         # zero-downtime model migration
+python scripts/agent_eval.py --backend fake                                              # agent eval plumbing, no LLM cost
+python -m scripts.docker_check        # Docker functional checks; tears the stack down unless --keep
+python -m scripts.docker_trace        # shows the containers really talk; --failover stops a shard
+```

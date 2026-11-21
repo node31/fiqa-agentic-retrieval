@@ -1,15 +1,15 @@
-# ADR 0008: Plain-JSON action protocol instead of native function calling
+# ADR 0008: A plain-JSON action protocol instead of native function calling
 
-**Status:** accepted
+Status: accepted
 
 ## Context
 Three LLM backends (fake, Copilot CLI, Azure) must run the same agent code.
 
 ## Decision
-Prompts ask for exactly one JSON object; `parse_json` extracts it robustly; all arguments and ids are validated.
+My prompts ask for exactly one JSON object. `parse_json` extracts it from whatever the model returns, and I validate every argument and id.
 
 ## Alternatives considered
-Native `tools=[...]` on Azure only.
+Native `tools=[...]` function calling, which only the Azure backend supports.
 
 ## Consequences
-+ one code path, free dev iteration on the Copilot CLI, every byte visible for learning. − no server-side schema enforcement (mitigated by validation + fallbacks; measured as `queries_with_errors`).
+I have one code path, free development on the Copilot CLI, and every byte of the exchange is visible. I lose server-side schema enforcement; validation and fallbacks cover that, and I count the failures as `queries_with_errors`.

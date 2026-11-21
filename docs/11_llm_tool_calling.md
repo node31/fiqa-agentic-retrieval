@@ -1,14 +1,9 @@
 # 11 · LLM tool calling, from first principles
 
-**Code:** `src/agent/llm.py`, `src/agent/tools.py`, `src/agent/prompts.py` · **Toys:** 20, 26
+Code: `src/agent/llm.py`, `src/agent/tools.py`, `src/agent/prompts.py`
 
-## 1. Intuition
-
-An LLM only produces text. "Tool use" = we tell it, in text, which tools exist and the exact format
-to request one. It replies with a request (e.g. JSON). **Our code** parses it, runs the tool, and pastes
-the result back into the next prompt. Repeat until it says "done". Nothing more is needed.
-
-## 2. The mechanics
+An LLM only produces text. For tool use I tell it in the prompt which tools exist and the exact JSON to request one. My
+code parses the reply, runs the tool and pastes the result into the next prompt, until the model finishes.
 
 ```
 system: "Tools: search(query, strategy). Reply with ONE JSON object: {...}"
@@ -17,73 +12,43 @@ model:  '{"action": "search", "query": "mortgage prepayment return", "strategy":
 code:   parse_json → validate → tool(...) → append observation → call model again
 ```
 
-"Native" function calling (OpenAI `tools=[...]`, Anthropic `tool_use`) is the same loop, with the
-schema enforced server-side and the call returned in a structured field. We use plain JSON text so
-**one code path** works across all three backends (fake, Copilot CLI, Azure) and is fully visible.
-[ADR 0008](adr/0008-json-action-protocol.md).
-
-## 3. Diagram: the LLM layer
+Native function calling (OpenAI `tools=[...]`, Anthropic `tool_use`) is the same loop with the schema enforced
+server-side. I use plain JSON text so one code path works for all three backends and every step is visible
+([ADR 0008](adr/0008-json-action-protocol.md)). The assignment forbids frameworks such as LangChain for the loops.
 
 ```mermaid
 flowchart LR
-  A[Agent code] -->|complete system, user, max_out, budget| L[LLM base class]
-  L -->|reserve: refuse BEFORE spend| B[Budget]
-  L -->|hit?| C[(.llm_cache sha256 key)]
-  L -->|miss| X{backend}
-  X --> F[FakeLLM: scripted, free]
-  X --> P[CopilotLLM: copilot -p, no tools, empty cwd]
-  X --> Z[AzureLLM: Responses API, needs --confirm-spend]
+  A["Agent code"] -->|"complete(system, user, max_out, budget)"| L["LLM base class"]
+  L -->|"reserve, refuse before spend"| B["Budget"]
+  L -->|"hit?"| C[(".llm_cache, sha256 key")]
+  L -->|"miss"| X{"backend"}
+  X --> F["FakeLLM: scripted, free"]
+  X --> P["CopilotLLM: copilot -p, no tools, empty cwd"]
+  X --> Z["AzureLLM: Responses API, needs --confirm-spend"]
 ```
 
-## 4. How this repo implements it
+## How I built it
 
-- `LLM.complete()`: budget reservation (worst case = prompt estimate + max_output_tokens), cache lookup,
-  timing and token accounting. Cache hits still report original tokens, so cost reflects the *system*.
-- `parse_json()`: tolerant extraction (code fences, chatter before/after, escaped quotes) with a
-  proper brace scanner. Doctest + unit test.
-- **Never trust tool arguments**: unknown strategy → "hybrid"; returned doc ids are kept only if the
-  agent actually saw them; garbage output → fall back to the fused ranking.
-- **Backends.** `fake`: deterministic heuristic policies (`fake_policies.py`). `copilot`: the GitHub
-  Copilot CLI in prompt mode (`-p -s --available-tools --no-custom-instructions --disable-builtin-mcps`),
-  run in an empty temp dir, so it's a plain text model that can't touch the repo. `azure`: the Foundry
-  deployment via `client.responses.create(model, instructions, input, max_output_tokens, reasoning)`. The
-  key comes only from `.env` and is never logged.
-- Prompts start with `ROLE: <name>`, show the literal JSON format, and state hard limits.
+`LLM.complete()` reserves budget for the worst case (prompt estimate + `max_output_tokens`), checks the cache
+(`.llm_cache/<backend>/<sha256>.json`), then times the call and counts tokens. Cache hits report the original tokens, so
+cost reflects the system and not my reruns, and reruns are deterministic and free. `parse_json()` pulls JSON out of code
+fences and surrounding chatter with a brace scanner.
 
-## 5. Run the toys
+I never trust tool arguments: an unknown strategy becomes `"hybrid"`, doc ids are kept only if the agent saw them, and
+garbage output falls back to the fused ranking. Every prompt starts with `ROLE: <name>`, shows the literal JSON format
+and states hard limits.
 
-```bash
-python examples/20_tool_calling_loop.py   # the loop with a scripted model, every turn printed
-python examples/26_cost_accounting.py     # token -> $ arithmetic, why transcripts grow
-```
+| backend | what it is |
+|---|---|
+| `fake` | deterministic heuristic policies (`fake_policies.py`), for tests and cost estimates |
+| `copilot` | GitHub Copilot CLI (claude-haiku-4.5) in prompt mode (`-p -s --available-tools --no-custom-instructions --disable-builtin-mcps`) in an empty temp dir, so it can't touch the repo; my free dev backend |
+| `azure` | Foundry gpt-6-sol via `client.responses.create(model, instructions, input, max_output_tokens, reasoning)`, reasoning effort `low`, key only from `.env`; the final numbers |
 
-## 6. Observe it in the real system
+The final results are in `results/agent_eval.json` (gpt-6-sol), with the haiku dev run as a comparison
+([14](14_agent_evaluation_cost.md)). Each query there has a `trace` under `per_query` with the planner decision, the
+actions and the errors.
 
-`python scripts/agent_eval.py --backend fake --limit 5` and open `results/agent_eval_dev_fake.json →
-per_query`: every query has a `trace` with the planner decision, the actions and the errors.
+Reasoning models bill hidden thinking as output tokens, so `max_output_tokens` has to cover it. A retrieved passage can
+carry a prompt injection, but my only tool is read-only search, so tool output can never trigger a side effect.
 
-## 7. Pitfalls and interview questions
-
-- **Prompt injection via tool results**: a retrieved passage saying "ignore previous instructions…" lands
-  in the prompt. Mitigations: delimit observations, never let tool output choose tools with side effects.
-  Our only tool is read-only search, which limits the blast radius.
-- **Non-determinism**: even temperature 0 isn't bit-exact across API versions. The cache makes *our* reruns deterministic.
-- **Reasoning tokens**: reasoning models bill hidden "thinking" as output tokens, so `max_output_tokens` must cover them.
-- *Q: Why not LangChain/LangGraph?* The assignment forbids it for loops, and the loop is 40 lines. A
-  framework would hide exactly the parts the debrief asks about.
-
-## 8. Exercises
-
-1. (Concept) What is the difference between JSON-mode, structured outputs and function calling?
-2. (Predict) What does `parse_json('{"a": "}"}')` return? Why is a naive regex wrong?
-3. (Do) Add an `AzureLLM` option that uses native `tools=[...]`. Keep the JSON path as the fallback.
-4. (Do) Add a second tool, `get_passage(doc_id)`. When would an agent use it? Does it help on FiQA?
-
-Solutions: [solutions/11_tool_calling.md](solutions/11_tool_calling.md)
-
-## 9. Further reading
-
-- Yao et al., *ReAct: Synergizing Reasoning and Acting in Language Models* (2022)
-- Schick et al., *Toolformer* (2023)
-- OpenAI Responses API docs: function calling, structured outputs
-- Simon Willison, *Prompt injection* series
+Reference: Yao et al., *ReAct: Synergizing Reasoning and Acting in Language Models* (2022).

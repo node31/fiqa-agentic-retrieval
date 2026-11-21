@@ -1,108 +1,72 @@
-# 06 · Reranking: a second, slower, smarter opinion
+# 06 · Reranking: a second, slower opinion
 
-> Prerequisites: [02 dense retrieval](02_dense_retrieval.md), [05 hybrid fusion](05_hybrid_fusion.md).
-> Terms: [bi-encoder, cross-encoder, two-stage retrieval](GLOSSARY.md).
+Prerequisites: [02 dense retrieval](02_dense_retrieval.md), [05 hybrid fusion](05_hybrid_fusion.md). Terms:
+[bi-encoder, cross-encoder, two-stage retrieval](GLOSSARY.md).
 
-## 1. Intuition
+## Bi-encoder vs cross-encoder
 
-Hiring analogy: a recruiter skims 57,000 CVs with keyword filters and a quick "vibe" match (first stage:
-BM25 + dense), then an interviewer reads the top 20 **carefully, side by side with the job description**
-(second stage: the reranker). The interviewer is much better per candidate, but far too slow to read everyone.
+My MiniLM and BGE models are bi-encoders: they embed query and passage separately, so passage vectors are computed once
+offline and search is a dot product, `score(q, d) = <E(q), E(d)>`. The query never sees the passage. A cross-encoder
+feeds `[CLS] query [SEP] passage [SEP]` into one transformer, so every query token attends to every passage token and
+it can notice that "not tax deductible" contradicts the question. Nothing can be precomputed:
+`score(q, d) = w · CLS(Transformer([q ; d]))`, an unbounded logit, costs one full forward pass per (query, passage)
+pair.
 
-- **Bi-encoder** (our MiniLM/BGE): embeds query and passage *separately*. Passage vectors can be computed
-  once, offline, so search is just a dot product. However, the query never "sees" the passage.
-- **Cross-encoder**: feeds `[CLS] query [SEP] passage [SEP]` into one transformer. Every query token
-  attends to every passage token, so it can notice that "*not* tax deductible" contradicts the question.
-  Nothing can be precomputed: **one full forward pass per (query, passage) pair**.
+On this machine (4 threads) one pair of about 256 tokens takes about 29 ms on CPU:
 
-## 2. The math / mechanics
+- top-10: 10 × 29 ≈ 290 ms plus the 20 ms first stage, measured p50 339 ms
+- top-20: ≈ 580 + 20, measured 621 ms, linear in k as expected
+- the whole corpus: 57,638 × 29 ms ≈ 28 minutes per query, which is why a cross-encoder is never the first stage
 
-Bi-encoder: `score(q, d) = <E(q), E(d)>`, with E(d) precomputed. Cost per query is 1 encode + an index lookup.
-
-Cross-encoder: `score(q, d) = w · CLS( Transformer([q ; d]) )`, an unbounded logit (not a probability).
-Cost per query = k encodes of length |q| + |d|.
-
-**Worked numbers (measured on this machine, 4 threads):**
-- One pair (≈ 256 tokens) ≈ **29 ms** on CPU.
-- Rerank top-10 → ≈ 10 × 29 ≈ 290 ms, plus the 20 ms first stage → **measured p50 339 ms**.
-- Top-20 → ≈ 580 + 20 → **measured 621 ms**. Linear in k, exactly as the formula predicts.
-- Reranking the whole corpus would be 57,638 × 29 ms ≈ **28 minutes per query**. That is why it is never the first stage.
-
-Self-attention is O(L²) in sequence length L, so a 512-token pair costs ~4× a 256-token pair. Long FiQA answers hurt twice.
-
-## 3. Diagram
+Self-attention is O(L²) in sequence length, so a 512-token pair costs about 4× a 256-token pair. Long FiQA answers
+hurt twice.
 
 ```mermaid
 flowchart LR
-  Q[query] --> S1[Stage 1: BM25 + dense hybrid<br/>57K docs, ~20 ms]
-  S1 -->|top-k candidates| S2[Stage 2: cross-encoder<br/>k pairs x ~29 ms]
-  S2 -->|reordered top-10| OUT[results]
+  Q["query"] --> S1["Stage 1: BM25 + dense hybrid, 57K docs, about 20 ms"]
+  S1 -->|"top-k candidates"| S2["Stage 2: cross-encoder, k pairs x about 29 ms"]
+  S2 -->|"reordered top-10"| OUT["results"]
 ```
 
-Key property: **stage 2 can only reorder what stage 1 found.** Recall@k of stage 1 is the ceiling.
+Stage 2 can only reorder what stage 1 found, so stage 1's Recall@k is the ceiling.
 
-## 4. How this repo implements it
+## How I implemented it
 
-- `src/retrieval/rerank.py`: `get_reranker()` lazily loads `cross-encoder/ms-marco-MiniLM-L-6-v2` once
-  (thread-safe); `rerank(query, candidates, texts)` scores pairs in batches of 32 and sorts by logit.
-  Ties break on doc id so runs are deterministic.
-- `src/service/router.py`: the `rerank_k` search parameter. The router fetches texts for the top-k from the
-  shards (`fetch`) and reranks centrally. Off by default.
+- `src/retrieval/rerank.py`: `get_reranker()` lazily loads `cross-encoder/ms-marco-MiniLM-L-6-v2` once per process
+  behind a lock. `rerank(query, candidates, texts)` scores pairs in batches of 32 and sorts by logit, with ties broken
+  on doc id.
+- `src/service/router.py`: the `rerank_k` search parameter. The router fetches texts for the top-k from the shards
+  (`fetch`) and reranks centrally, in a worker thread. It is off by default (`rerank_k=0`).
 - `scripts/ablations.py --rerank --ks 10,20,50` runs the sweep and writes `results/ablation_rerank_minilm.json`.
-- Rejected options: reranking per shard (each shard would see only its own candidates, which is the same
-  bug class as fusing per shard; see [ADR 0003](adr/0003-merge-then-fuse.md)); mixing CE logits with fused scores (different scales).
 
-## 5. Run the toy
+I rejected reranking per shard, since each shard would see only its own candidates (the same bug class as fusing per
+shard, [ADR 0003](adr/0003-merge-then-fuse.md)). I also rejected adding CE logits to fused scores, because they are on
+different scales. While building the sweep I hit two bugs: a 9 GB memory leak from creating an event loop per call
+(fixed with one persistent loop) and multi-second first queries before I made the model a lazy singleton.
+
+## Results (dev, stage 1 = MiniLM hybrid linear α = 0.7)
+
+| rerank depth k | nDCG@10 | R@10 | MRR@10 | p50 | p95 |
+|---|---|---|---|---|---|
+| none | 0.4190 | 0.4914 | 0.4872 | 20.7 ms | 24.5 ms |
+| 10 | 0.4058 | 0.4914 | 0.4688 | 338.6 ms | 366.8 ms |
+| 20 | 0.3964 | 0.4829 | 0.4634 | 621.0 ms | 634.6 ms |
+| 50 | 0.3771 | 0.4633 | 0.4444 | 1246.3 ms | 1366.6 ms |
+
+I expected the reranker to help. It hurts here:
+
+- At k = 10, R@10 is unchanged by construction (same 10 docs), yet nDCG falls, so the cross-encoder orders them worse.
+- Deeper k lets it promote docs from ranks 11 to k above true answers, so recall falls too.
+- ms-marco-MiniLM was trained on short Bing passages and web queries. FiQA answers are long, opinionated forum posts
+  truncated to 256 tokens, which is a domain shift.
+
+So I don't ship it: it costs over 300 ms for −0.013 nDCG at k = 10. A finance-tuned or larger reranker
+(bge-reranker-base), interpolating `λ·CE + (1−λ)·fused` after normalising both, or chunk-level max scoring for long
+answers might fix it. I haven't built any of these. Fixing stage 1 while comparing rerankers matters, because
+different candidates mean a different ceiling.
 
 ```powershell
-python examples/09_bi_vs_cross_encoder.py
-```
-It ranks the toy docs with both models and prints the time per doc for each. Read it this way: the bi-encoder
-time is dominated by *document* encoding that real systems do offline, while the cross-encoder time is all online.
-
-## 6. Observe it in the real system (dev, MiniLM hybrid linear α=0.7 as stage 1)
-
-| rerank depth k | nDCG@10 | R@10 | p50 | p95 |
-|---|---|---|---|---|
-| none | 0.4190 | 0.4914 | 20.7 ms | 24.5 ms |
-| 10 | 0.4058 | 0.4914 | 338.6 ms | 366.8 ms |
-| 20 | 0.3964 | 0.4829 | 621.0 ms | 634.6 ms |
-| 50 | 0.3771 | 0.4633 | 1246.3 ms | 1366.6 ms |
-
-**A negative result, and an important one.** The reranker *hurts* here:
-- At k = 10, R@10 is unchanged *by construction* (same 10 docs), yet nDCG falls, so the CE orders them worse.
-- Deeper k lets the CE promote docs from ranks 11–k above true answers, so recall falls too.
-- Why: ms-marco-MiniLM was trained on short Bing passages and web queries. FiQA answers are long, opinionated
-  forum posts truncated to 256 tokens, which is a domain shift. "Stronger model" is a prior, not a law: **always measure.**
-- What could fix it: a finance-tuned or larger reranker (bge-reranker-base), score interpolation
-  `λ·CE + (1−λ)·fused` after normalizing both, or chunk-level max scoring for long answers.
-
-```powershell
-python scripts/ablations.py --rerank --ks 10   # 500 dev queries x ~0.34 s = ~3 min (overwrites the results file)
+python scripts/ablations.py --model minilm --rerank --ks 10,20,50   # overwrites results/ablation_rerank_minilm.json
 ```
 
-## 7. Pitfalls and interview questions
-
-- *Pitfall*: comparing reranker quality without keeping stage 1 fixed. Different candidates, different ceiling.
-- *Pitfall*: treating logits as probabilities, or adding them to BM25/cosine scores.
-- *Pitfall*: calling `asyncio.run` or loading the model per query. We hit both: a 9 GB memory leak from per-call
-  event loops (fixed with a persistent loop), and multi-second first queries without the lazy singleton.
-- Q: "Why not use the cross-encoder for everything?" A: there's no precomputable representation; the cost is O(N) model passes per query.
-- Q: "Your reranker made things worse. Ship it?" A: no. It's +300 ms for −0.013 nDCG. Off by default, and the reason is documented.
-- Q: "How would you make reranking affordable?" A: smaller k, ONNX/int8, GPU batching, distillation into the bi-encoder, or caching per hot query.
-
-## 8. Exercises (solutions: [solutions/06_reranking.md](solutions/06_reranking.md))
-
-1. *(concept)* Why does rerank depth trade recall against cost, and when does extra depth stop helping?
-2. *(concept)* Why can't a cross-encoder be used to index the corpus?
-3. *(predict)* In toy 09, does batching pairs make per-pair time go up or down? Why?
-4. *(predict)* At k = 10, explain without running anything why R@10 is identical to "no rerank" but MRR can change.
-5. *(modify)* Add `--interp λ` to the ablation: min-max normalize CE scores and fused scores over the top-k, rank by
-   `λ·CE + (1−λ)·fused`. Predict the result at λ = 0 and λ = 1 before running.
-
-## 9. Further reading
-
-- Nogueira & Cho, *Passage Re-ranking with BERT* (2019): the original monoBERT reranker.
-- Reimers & Gurevych, *Sentence-BERT* (2019): the bi-encoder side.
-- Thakur et al., *BEIR* (2021): BM25 + CE is strong zero-shot on many sets, but not uniformly. Check the FiQA row.
-- sentence-transformers docs: "Retrieve & Re-Rank".
+Reference: Nogueira & Cho, *Passage Re-ranking with BERT* (2019).

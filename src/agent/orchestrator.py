@@ -1,6 +1,6 @@
 r"""Multi-agent orchestrator (Part C3): planner -> parallel retrieval workers -> verifier.
 
-ROLES (docs/13_multi_agent_orchestration.md, ADR 0009)
+ROLES (docs/13_multi_agent_orchestration.md)
     Orchestrator  plain code, NOT an LLM. Owns the budget, the timeouts and the
                   final 10 slots. Control flow you can unit-test is cheaper and
                   more reliable than asking a model to orchestrate.
@@ -14,7 +14,7 @@ ROLES (docs/13_multi_agent_orchestration.md, ADR 0009)
                   snippets per sub-query and may request ONE re-search with a better
                   query. That fixes the main failure mode: a sub-query that drifted.
 
-SHARING THE 10 SLOTS (ADR 0010, examples/25_slot_allocation.py)
+SHARING THE 10 SLOTS (docs/13_multi_agent_orchestration.md, examples/25_slot_allocation.py)
     Round-robin interleave across sub-query lists (A1, B1, A2, B2, ...), dedupe,
     then fill from the original-question search. With 2 sub-queries each half gets
     ~5 slots. That guarantees Coverage@10 whenever each worker found anything,

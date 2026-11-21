@@ -12,7 +12,7 @@ CONFIG (env vars, set by docker-compose or scripts/run_cluster.py)
     SHARD_MODELS         comma list of embedding models to index at start
     APPLY_MODE           "sync" (default: apply before ack) or "async" (ack after WAL, apply in
                          the background; ASYNC_MAX_LAG_S, ASYNC_BATCH_MAX, ASYNC_EMBED_WORKERS
-                         tune it). ADR 0013.
+                         tune it).
     TORCH_THREADS        intra-op threads for this process (avoid oversubscription:
                          4 processes x 32 threads on 32 cores = thrashing)
 
@@ -68,7 +68,7 @@ def build_store():
     # load(): index the base slice, then replay this shard's WAL from STATE_DIR so writes
     # acked before a restart are back before we serve traffic.
     # APPLY_MODE=sync (default) applies before the ack; APPLY_MODE=async acks after the WAL and
-    # applies in the background (ADR 0013). ASYNC_MAX_LAG_S / ASYNC_BATCH_MAX tune async mode.
+    # applies in the background. ASYNC_MAX_LAG_S / ASYNC_BATCH_MAX tune async mode.
     store = ShardStore(sid, n, state_dir=state, apply_mode=os.environ.get("APPLY_MODE", "sync"),
                        max_lag_s=float(os.environ.get("ASYNC_MAX_LAG_S", "0.5")),
                        batch_max=int(os.environ.get("ASYNC_BATCH_MAX", "32")),

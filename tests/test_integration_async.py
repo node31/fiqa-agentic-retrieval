@@ -1,4 +1,4 @@
-"""Integration tests for APPLY_MODE=async (ADR 0013) over REAL processes: 3 shards + 1 router.
+"""Integration tests for APPLY_MODE=async over REAL processes: 3 shards + 1 router.
 
 The sync-mode guarantees live in test_integration_service.py ("searchable by the first search after
 the ack"). Async mode promises something weaker and different, and this file proves exactly that:

@@ -108,7 +108,7 @@ scenarios/      runnable JSONL scenarios for scripts/scenario.py (freshness, mig
 tests/          unit, in-process and multi-process integration tests
 results/        bench.json · runs/ (incl. the one TEST run) · ablation_*.json · migration_demo.json · write_load.json · agent_eval*.json · failures.md
 examples/       small standalone scripts
-docs/           topic docs 00-15 · 16_ablations · from_zero/ (the whole system from scratch) · adr/ · walkthroughs/ · eval · scenarios · GLOSSARY · LEARNING_PATH · project_faq · concepts_faq
+docs/           topic docs 00-15 · 16_ablations · from_zero/ (the whole system from scratch) · walkthroughs/ · eval · scenarios · GLOSSARY · LEARNING_PATH · project_faq · concepts_faq
 agent_context/  machine-readable handoff for AI agents (see AGENTS.md)
 ```
 

@@ -1,7 +1,6 @@
 # 09 · Live updates: idempotency, consistency, freshness, recovery
 
 Code: `src/service/store.py` (`_write`, `_apply`, `load`), `src/service/wal.py`, `src/service/async_apply.py`.
-ADRs: [0007](adr/0007-sync-apply-wal.md) (sync), [0013](adr/0013-async-apply-mode.md) (async).
 Tests: `tests/test_store.py`, `tests/test_integration_service.py`, `tests/test_integration_async.py`.
 
 Documents change while people search. Each shard has to handle retried writes, out-of-order versions, readers during a
@@ -23,7 +22,7 @@ and re-check the version inside.
 
 Each shard picks one with `APPLY_MODE=sync|async` (default `sync`):
 
-| | sync (ADR 0007) | async (ADR 0013) |
+| | sync | async |
 |---|---|---|
 | order of steps | embed, WAL, apply, ack | validate, WAL, ack, then embed and apply in the background |
 | ack means | durable and searchable | durable, not yet searchable (`"visible": false`) |

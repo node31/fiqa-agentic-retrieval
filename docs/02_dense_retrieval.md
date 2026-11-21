@@ -30,7 +30,7 @@ flowchart LR
 
 I made MiniLM primary although bge-small is +0.010 nDCG: its 12 layers make query encoding 30.6 vs 18.8 ms, which eats
 most of the 50 ms budget once the router's fan-out is added, and in hybrid the gap disappears (0.419 vs 0.416). See
-[ADR 0002](adr/0002-dense-models.md) and [16](16_ablations.md).
+[16](16_ablations.md).
 
 ## How I implemented it
 

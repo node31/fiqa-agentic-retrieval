@@ -10,10 +10,10 @@ REQUEST PATH FOR A QUERY (docs/08_sharding_scatter_gather.md has the diagram)
        returns its top-``depth`` BM25 list and top-``depth`` dense list.
     3. Merge: global BM25 top-depth and global dense top-depth (scores are
        comparable because of step 1 and because of the shared model).
-    4. Fuse (RRF/linear) on the GLOBAL lists. Merge, THEN fuse (ADR 0003).
+    4. Fuse (RRF/linear) on the GLOBAL lists. Merge, THEN fuse (docs/08_sharding_scatter_gather.md).
     5. Optional fetch phase: get passage text for the final ids (and rerank).
 
-FAILURE POLICY (docs/adr/0006-partial-results.md)
+FAILURE POLICY (docs/08_sharding_scatter_gather.md)
     Every shard call has a timeout. A slow or dead shard is reported, not hidden:
     the response carries ``partial: true`` and ``missing_shards: [...]``.
     ``failure_policy="partial"`` (default) returns what we have, because for a
@@ -45,7 +45,7 @@ LIFECYCLE OF ONE WRITE
     the text, appends the record to its WAL (write-ahead log: an append-only
     file written BEFORE the in-memory change, replayed on restart), applies it
     to BM25 + dense indexes, and only then replies. So "acked" means "durable
-    AND already searchable" (docs/adr/0007-sync-apply-wal.md).
+    AND already searchable" (docs/09_live_updates_consistency.md).
 
 HOW TO READ THIS FILE (top to bottom)
     1. ``ShardClient``, ``dispatch``, ``LocalShardClient``, ``HttpShardClient``:
@@ -372,7 +372,7 @@ class Router:
         tm["merge"] = ms(t, time.perf_counter())
         # Phase 4: fuse the two GLOBAL lists. WHY not fuse on each shard: RRF uses ranks
         # and linear fusion normalises scores per list, so both depend on the whole list;
-        # per-shard fusion would see different lists and give a different answer (ADR 0003).
+        # per-shard fusion would see different lists and give a different answer.
         t = time.perf_counter()
         ranked = bm if strategy == "bm25" else dn if strategy == "dense" else fuse(bm, dn, fusion, alpha)
         tm["fuse"] = ms(t, time.perf_counter())
@@ -457,7 +457,7 @@ class Router:
     async def flush(self, timeout: float = 10.0) -> dict:
         """Wait until every shard has applied every acked write (instant in sync mode).
 
-        Only meaningful for APPLY_MODE=async (ADR 0013): returns once each shard's background
+        Only meaningful for APPLY_MODE=async: returns once each shard's background
         applier has drained its queue, so tests and load scripts can measure "everything visible".
         """
         ok, missing = await self._fan("flush", self._all({"timeout": timeout}), timeout=timeout + 2.0)
@@ -646,7 +646,7 @@ def create_app():
     async def status():
         return await router.status()
 
-    # Wait until every shard has applied every acked write (async apply mode, ADR 0013).
+    # Wait until every shard has applied every acked write (async apply mode).
     @app.post("/admin/flush")
     async def flush(timeout: float = 10.0):
         return await router.flush(timeout)

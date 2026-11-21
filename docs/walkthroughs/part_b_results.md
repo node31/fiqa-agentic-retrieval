@@ -44,7 +44,7 @@ written during the run). Both models find all 116 written docs.
 
 ## Two write modes under heavy load (`results/write_load.json`)
 
-`scripts/write_load.py`: real corpus, 3 shards, 8 writers + 2 readers, 30 s, once per mode (ADR 0013).
+`scripts/write_load.py`: real corpus, 3 shards, 8 writers + 2 readers, 30 s, once per mode.
 
 | | sync (apply, then ack) | async (ack, then apply) |
 |---|---|---|

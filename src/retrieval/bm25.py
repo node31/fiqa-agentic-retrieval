@@ -4,7 +4,7 @@ WHAT
     An inverted index plus the Okapi BM25 scoring function. Given a query, it
     returns the top-k passages ranked by how well their *words* match.
 
-WHY FROM SCRATCH (see docs/adr/0001-own-bm25.md)
+WHY FROM SCRATCH (see docs/01_lexical_retrieval_bm25.md)
     * rank_bm25 has no deletes and scores every document for every query
       (O(N) per query term), which is too slow for a 50 ms budget.
     * Pyserini needs Java.

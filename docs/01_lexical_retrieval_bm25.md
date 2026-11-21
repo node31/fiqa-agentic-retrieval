@@ -59,7 +59,7 @@ for deletes.
   single node ([08](08_sharding_scatter_gather.md)).
 
 I wrote my own index instead of using `rank_bm25` (no deletes, and it scores every document for every query term,
-O(N·|q|)) or Pyserini (needs a JVM). See [ADR 0001](adr/0001-own-bm25.md).
+O(N·|q|)) or Pyserini (needs a JVM).
 
 ## Results
 

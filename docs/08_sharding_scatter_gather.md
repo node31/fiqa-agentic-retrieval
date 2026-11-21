@@ -13,7 +13,7 @@ write throughput; every query still touches every shard.
 2. Scores must be comparable. Dense cosine scores already are. BM25 scores are not, because IDF and avgdl depend on
    corpus statistics, so I added a DFS phase: the router gathers N, total length and df of the query terms from every
    shard and sends the summed global stats with the query.
-3. Fusion happens after the global merge ([ADR 0003](adr/0003-merge-then-fuse.md)).
+3. Fusion happens after the global merge.
 
 ```mermaid
 sequenceDiagram
@@ -42,7 +42,7 @@ Docs go to shard `crc32(doc_id) % N` (`shard_of`). Python's `hash()` is salted p
 wrong shard. The 3 shards hold 19,167 / 19,254 / 19,217 docs. The router embeds the query once and ships the vector
 instead of having 3 shards re-encode it. Every shard call has a timeout (`SHARD_TIMEOUT_S = 0.5`); with failure policy
 `partial` (default) the router returns what arrived with `partial: true, missing_shards: [i]`, and with `fail` it returns
-HTTP 503 ([ADR 0006](adr/0006-partial-results.md)). Single node and sharded run the same `Router` code with a
+HTTP 503. Single node and sharded run the same `Router` code with a
 `LocalShardClient` or an `HttpShardClient`, and shards differ only by env vars (`SHARD_ID`, `N_SHARDS`, `PORT`,
 `STATE_DIR`). Writes are idempotent, so the router can retry them ([09](09_live_updates_consistency.md)).
 

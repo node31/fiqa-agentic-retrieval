@@ -14,7 +14,7 @@ code:   parse_json → validate → tool(...) → append observation → call mo
 
 Native function calling (OpenAI `tools=[...]`, Anthropic `tool_use`) is the same loop with the schema enforced
 server-side. I use plain JSON text so one code path works for all three backends and every step is visible
-([ADR 0008](adr/0008-json-action-protocol.md)). The assignment forbids frameworks such as LangChain for the loops.
+. The assignment forbids frameworks such as LangChain for the loops.
 
 ```mermaid
 flowchart LR

@@ -1,7 +1,7 @@
 """Toy 25: sharing 10 result slots between sub-queries. Interleave vs score-merge vs RRF.
 
 Concept: slot allocation decides Coverage@10 for compound questions.
-Real code: src/agent/orchestrator.py::interleave   Doc: docs/adr/0010-slot-allocation.md
+Real code: src/agent/orchestrator.py::interleave   Doc: docs/13_multi_agent_orchestration.md
 """
 from _common import banner, note, step, try_this
 

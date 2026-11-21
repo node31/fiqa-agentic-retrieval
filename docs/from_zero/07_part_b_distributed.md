@@ -228,8 +228,7 @@ too, so replay doesn't run the model.
 Sync makes every client wait for the embedding. The common alternative (Kafka-fed indexers, Elasticsearch's translog
 plus refresh) is log, ack, apply later: faster acks, but a write isn't visible the moment it's acked. I built both to
 measure the trade, with the promise that async writes are searchable within 1 s. Switch per shard with
-`APPLY_MODE=sync|async` (Docker: `./scripts/bootstrap.sh --mode async`). Code: `src/service/async_apply.py`. Decision
-record: [ADR 0013](../adr/0013-async-apply-mode.md).
+`APPLY_MODE=sync|async` (Docker: `./scripts/bootstrap.sh --mode async`). Code: `src/service/async_apply.py`.
 
 ```mermaid
 sequenceDiagram

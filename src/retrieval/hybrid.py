@@ -15,7 +15,7 @@ WHY BOTH
     sweep α on dev in the ablation. See docs/05_hybrid_fusion.md and
     examples/08_fusion_rrf_vs_linear.py.
 
-DISTRIBUTED CORRECTNESS (docs/adr/0003-merge-then-fuse.md)
+DISTRIBUTED CORRECTNESS (docs/08_sharding_scatter_gather.md)
     Fusion must run on the GLOBALLY merged BM25 list and the globally merged
     dense list, i.e. at the router, AFTER merging shards. Fusing on each shard
     and then merging is wrong for linear fusion, because min-max uses each

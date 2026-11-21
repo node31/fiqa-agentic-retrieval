@@ -5,7 +5,7 @@
 #
 # Scatter-gather (router -> 3 shards -> merge -> fuse) gives EXACTLY the single-node answer: the
 # router first collects GLOBAL BM25 statistics (DFS phase), merges the per-shard lists globally and
-# only then fuses (ADR 0003). --golden-check compares every save_as answer with 01's golden file and
+# only then fuses. --golden-check compares every save_as answer with 01's golden file and
 # fails on any difference in ids or order. Compare the search latency with 01: fan-out costs a little.
 # Same result in sync and async mode: nobody writes here.
 {"op": "config", "shards": 3, "description": "3 shards; elephant's answers must equal the single-node golden answers of 01", "actors": {

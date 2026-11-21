@@ -41,7 +41,7 @@ The order I'd demo things in. On Windows without `make`, I copy the command afte
 ### Why hybrid linear α = 0.7 and not RRF?
 On dev, standard RRF (k = 60, equal weights) scored 0.3733 nDCG@10, below dense alone at 0.3881, because it gives
 BM25 (0.2642) an equal vote. Linear min-max fusion with α = 0.7 on the dense side reached 0.4190, 8% relative over
-dense. I tuned α on dev only and ran the test split once at the end. ADR 0012.
+dense. I tuned α on dev only and ran the test split once at the end.
 
 ### You tuned α on dev. How do you know it generalises?
 The single test run is the honest number: 0.3968 nDCG@10 on 648 test queries vs 0.4190 on dev
@@ -52,7 +52,7 @@ the top: α 0.6 gives 0.4179, 0.7 gives 0.4190 and 0.8 gives 0.4064 (`results/ab
 bge-small is +0.010 nDCG dense-only (0.3981 vs 0.3881), but its single-node p50 is 30.6 ms vs 18.8 ms. My hybrid p95
 through the router is 40.5 ms, so roughly 12 ms more of query encoding would put it over the 50 ms budget (an
 estimate: I didn't benchmark bge-small hybrid through the 3-shard router). In hybrid the gap disappears anyway
-(0.4155 vs 0.4190), because BM25 already supplies what bge-small adds. ADR 0002.
+(0.4155 vs 0.4190), because BM25 already supplies what bge-small adds.
 
 ### Why didn't reranking help?
 The ms-marco MiniLM cross-encoder lowered nDCG@10 to 0.4058 at k = 10, 0.3964 at k = 20 and 0.3771 at k = 50, vs
@@ -89,14 +89,14 @@ For case 1, a query-adaptive α (0.5 when a query term has IDF > 9) gave 0.4206 
 ### How do you guarantee sharded equals single node?
 Three rules, built in from the start. Each shard returns its top-100 per component, so the global top-100 is in the
 union. A DFS phase (`/stats`) sends every shard the global N, total length and df for BM25, and dense cosine is
-already comparable. The router merges each list globally and only then fuses (ADR 0003). BM25, dense and hybrid all
+already comparable. The router merges each list globally and only then fuses. BM25, dense and hybrid all
 match single node to 4 decimals, and `tests/test_store.py::test_sharded_router_equals_single_node` guards it.
 
 ### Was the DFS phase worth it?
 For quality, no: shard-local IDF gives BM25 0.2653 vs 0.2642 and saves about 4 ms (6.8 vs 10.7 ms p50). Hash sharding
 over 19K docs per shard gives every shard nearly the same df ratios. I kept DFS because the assignment asks for
 single-node equivalence and because local IDF drifts on skewed shards (by topic or by time). A df cache at the router
-would give both; I haven't built it. ADR 0004.
+would give both; I haven't built it.
 
 ### Why is 3-shard latency worse than 1 shard?
 One shard: 23.4 / 26.3 ms p50 / p95. Three shards: 28.6 / 40.5 ms. Search compute is tiny at 19K docs per shard: in
@@ -108,7 +108,7 @@ of three, which shows up in p95. At this size sharding buys memory headroom, wri
 Every search-path shard call has a 0.5 s timeout (`SHARD_TIMEOUT_S`). The default policy, `partial`, answers from the
 shards that replied and sets `partial: true, missing_shards: [i]`, so the caller can tell. `FAILURE_POLICY=fail`
 returns 503 with the missing shards instead. `test_crash_recovery_and_partial_results` hard-kills a shard and checks
-both the flag and the recovery. ADR 0006.
+both the flag and the recovery.
 
 ### What exactly is your freshness guarantee?
 It depends on `APPLY_MODE`, set per shard process. In sync mode (the default) the shard applies the write under its
@@ -121,7 +121,7 @@ back-pressure and proven by `tests/test_integration_async.py`. `POST /admin/flus
 To measure the trade-off. With 8 writers and 2 readers on the real corpus (`results/write_load.json`), async acked 94.2
 writes/s vs 57.8 for sync, ack p50 78 vs 128 ms, with visible lag p95 466 ms and max 583 ms. Searches under that load
 got slower (p50 184 vs 131 ms) because the shards were embedding 63% more writes. Sync stays the default because it's
-the simpler promise. ADR 0013.
+the simpler promise.
 
 ### Your first async version was slower than sync. Why?
 v1 acked 47.1 writes/s and lag reached 1.3 s. I'd assumed batching makes embedding cheaper, but on this CPU eight
@@ -171,11 +171,11 @@ reproduced nDCG@10 0.4190 at 30.4 / 34.1 ms p50 / p95.
 The orchestrator is plain code because budgets, timeouts and slot allocation have to be deterministic and testable.
 The planner is an LLM because decomposition needs language understanding. Workers have no LLM: the planner already
 wrote standalone queries, so each worker is a parallel search with a 10 s timeout. The verifier is one batched LLM
-call that catches a drifted sub-query and may rewrite it once. ADR 0009.
+call that catches a drifted sub-query and may rewrite it once.
 
 ### How do sub-agents share the 10 slots?
 Round-robin across the sub-query lists (A1, B1, A2, B2, ...) with dedupe, then fill from the full-question list
-(`interleave()` in `src/agent/orchestrator.py`, ADR 0010). Scores from different queries aren't comparable, so a score
+(`interleave()` in `src/agent/orchestrator.py`). Scores from different queries aren't comparable, so a score
 merge would let the easy half take all 10 slots and Coverage@10 would drop. A known weakness: when a worker fails, the
 surviving list fills every slot. Reserving about 3 slots for the full-question list would protect the failed half.
 
@@ -229,7 +229,7 @@ selected 10 rewrites for the hand-check in `data/compound_review_sheet.md`; that
 ### Why your own JSON action protocol instead of native tool calling?
 One code path works for all three backends (fake, Copilot CLI, Azure Responses API), and every step is visible in the
 trace. `parse_json` tolerates code fences and chatter, an unknown strategy falls back to hybrid, and returned doc ids
-are kept only if the agent actually saw them. ADR 0008.
+are kept only if the agent actually saw them.
 
 ### What will happen on the held-out compound test set?
 `python data/build_compound.py --split test` writes `data/compound_test.jsonl` with template joins ("<a>? Also, <b>"),
@@ -261,8 +261,8 @@ comments), then `ShardStore._write` / `_apply` in `src/service/store.py`, then `
 
 ### How did you use AI assistants?
 GitHub Copilot wrote the compound rewrites (from the query texts only), and I used assistants while coding, as I would
-at work. What I kept has a measured reason in DESIGN.md or an ADR. Where an idea didn't survive measurement, such as
-plain RRF or batched async embedding, the numbers are in DESIGN.md §11 and ADR 0013.
+at work. What I kept has a measured reason in DESIGN.md. Where an idea didn't survive measurement, such as
+plain RRF or batched async embedding, the numbers are in DESIGN.md §11 and [09](09_live_updates_consistency.md).
 
 ### Scaling to 100M passages?
 Flat vectors would be 100M × 384 × 4 B = 153.6 GB, so I'd move to IVF-PQ with 48-byte codes (4.8 GB) and rerank the

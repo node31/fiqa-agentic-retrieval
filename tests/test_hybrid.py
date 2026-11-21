@@ -46,7 +46,7 @@ def test_merge_shard_lists_global_top_k():
 
 
 def test_merge_then_fuse_differs_from_fuse_then_merge_for_linear():
-    """Why fusion must happen AFTER the global merge (ADR 0003)."""
+    """Why fusion must happen AFTER the global merge."""
     shard0_bm25, shard0_dense = [("a", 10.0), ("b", 9.0)], [("a", 0.50), ("b", 0.49)]
     shard1_bm25, shard1_dense = [("c", 2.0), ("d", 1.0)], [("c", 0.90), ("d", 0.10)]
     g_bm25 = merge_shard_lists([shard0_bm25, shard1_bm25], 10)

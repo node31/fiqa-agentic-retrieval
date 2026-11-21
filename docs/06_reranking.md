@@ -40,7 +40,7 @@ Stage 2 can only reorder what stage 1 found, so stage 1's Recall@k is the ceilin
 - `scripts/ablations.py --rerank --ks 10,20,50` runs the sweep and writes `results/ablation_rerank_minilm.json`.
 
 I rejected reranking per shard, since each shard would see only its own candidates (the same bug class as fusing per
-shard, [ADR 0003](adr/0003-merge-then-fuse.md)). I also rejected adding CE logits to fused scores, because they are on
+shard, [08](08_sharding_scatter_gather.md)). I also rejected adding CE logits to fused scores, because they are on
 different scales. While building the sweep I hit two bugs: a 9 GB memory leak from creating an event loop per call
 (fixed with one persistent loop) and multi-second first queries before I made the model a lazy singleton.
 

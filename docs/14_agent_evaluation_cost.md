@@ -18,7 +18,7 @@ Systems: hybrid linear α = 0.7 (one search), the single agent ([12](12_single_a
 ([13](13_multi_agent_orchestration.md)). Metrics: Recall@10, MRR@10, Coverage@10 (compound: at least one gold doc from
 each half in the top 10), cost per query, latency p50/p95, LLM calls, tokens and planner decisions.
 
-| backend ([ADR 0011](adr/0011-llm-backends-and-cost.md)) | cost | used for |
+| backend | cost | used for |
 |---|---|---|
 | fake | $0 | tests, plumbing, the `--dry-run` estimate |
 | copilot (claude-haiku-4.5) | $0 to me | dev evaluation; latency is CLI start-up (~30 to 40 s), so I ignore it |

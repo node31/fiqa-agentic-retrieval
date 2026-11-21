@@ -25,7 +25,7 @@ flowchart LR
   W1 & W2b & WQ --> A["interleave slots"] --> OUT["top-10"]
 ```
 
-## Why these roles ([ADR 0009](adr/0009-agent-roles.md))
+## Why these roles
 
 | role | LLM? | why it exists | why I didn't merge it |
 |---|---|---|---|
@@ -36,7 +36,7 @@ flowchart LR
 
 `looks_simple()` (≤ 12 words, no conjunction, comma or second "?") skips the planner for free, and the planner can
 still answer "simple". The planner prompt demands standalone sub-queries, since "how is it taxed?" retrieves garbage.
-For the slots ([ADR 0010](adr/0010-slot-allocation.md)) I interleave the sub-query lists round-robin, dedupe, then fill
+For the slots I interleave the sub-query lists round-robin, dedupe, then fill
 from the full-question list. Scores from different sub-queries are not comparable, and a score merge let the easier half
 take all 10 slots.
 

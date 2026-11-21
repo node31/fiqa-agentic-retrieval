@@ -5,7 +5,7 @@
 
 .EXAMPLE
   .\scripts\bootstrap.ps1                      # sync write mode (default), smoke test at the end
-  .\scripts\bootstrap.ps1 -Mode async          # async write mode (ADR 0013)
+  .\scripts\bootstrap.ps1 -Mode async          # async write mode (docs/09_live_updates_consistency.md)
   .\scripts\bootstrap.ps1 -MigrateCheck        # also prove a live blue/green model migration works
   .\scripts\bootstrap.ps1 -BuildIndex          # encode embeddings locally instead of downloading them
   .\scripts\bootstrap.ps1 -Down                # stop everything (data and caches are kept)

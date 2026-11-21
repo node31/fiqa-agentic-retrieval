@@ -10,9 +10,9 @@ I built it because the service makes promises about time and order that are easy
 |---|---|---|
 | a write is searchable within 1 s of its ack (sync: at once) | `store.py` (sync), `async_apply.py` (async) | `freshness_demo`, `03` |
 | retries and late, older versions are harmless no-ops | `store._is_newer`, `AsyncApplier.accepted` | `idempotency` |
-| 3 shards answer exactly like 1 node | `router.py` DFS phase + global merge (ADR 0003) | `01` + `02` (golden) |
+| 3 shards answer exactly like 1 node | `router.py` DFS phase + global merge | `01` + `02` (golden) |
 | a model migration never fails a query; answers change only at cutover; rollback restores them | `router.py` MODEL MIGRATION, `store.start_build` | `04`, `05` |
-| a dead shard gives partial answers, not errors; a restart loses no acked write | ADR 0006, `wal.py` | `06`, `07` |
+| a dead shard gives partial answers, not errors; a restart loses no acked write | `router.py` partial results, `wal.py` | `06`, `07` |
 
 The pieces: `scripts/scenario.py` (runner), `scripts/replay_html.py` (replay page generator), `scenarios/*.jsonl`
 (the catalog) and `tests/test_scenario.py` (runs them in both modes).

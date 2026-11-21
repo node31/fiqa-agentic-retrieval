@@ -164,7 +164,7 @@ def test_wal_write_after_torn_tail_survives_next_restart(tmp_path):
     assert [r["doc_id"] for r in WAL(p, fsync=False).replay()] == ["a", "c"]
 
 
-# ---------------------------------------------------------------- async apply mode (ADR 0013)
+# ---------------------------------------------------------------- async apply mode
 def make_async_store(tmp_path=None, embed_fn=embed, **kw):
     return ShardStore(0, 1, state_dir=tmp_path, embed=embed_fn, use_cache=False, apply_mode="async",
                       **kw).load(CORPUS, ("minilm",))

@@ -1,6 +1,6 @@
 # 05 · Hybrid retrieval: fusing BM25 and dense
 
-Code: `src/retrieval/hybrid.py`. Results: `results/ablation_fusion_*.json`. Decision: [ADR 0012](adr/0012-linear-fusion-default.md).
+Code: `src/retrieval/hybrid.py`. Results: `results/ablation_fusion_*.json`. Sweeps: [16](16_ablations.md).
 
 ## Why fuse, and how
 
@@ -31,7 +31,7 @@ flowchart LR
   is textbook RRF. A list whose scores are all equal is mapped to 1.0 instead of dividing by zero.
 - Each list is 100 deep (`config.CANDIDATE_DEPTH`); a doc missing from one list gets 0 from it.
 - Fusion runs at the router on the globally merged lists. Fusing per shard is wrong for linear fusion because min-max
-  would use each shard's own min and max ([ADR 0003](adr/0003-merge-then-fuse.md)).
+  would use each shard's own min and max ([08](08_sharding_scatter_gather.md)).
 
 ## Results: dev sweep, MiniLM (`results/ablation_fusion_minilm.json`)
 

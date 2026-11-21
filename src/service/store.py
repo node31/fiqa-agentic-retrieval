@@ -22,7 +22,7 @@ WRITE PATH (upsert/delete), docs/09_live_updates_consistency.md
        dense indexes, and release the lock.
     4. Ack. The write is now searchable, so freshness lag = 0 after the ack.
 
-    That is the DEFAULT, "sync" apply mode (ADR 0007). ``apply_mode="async"`` (ADR 0013,
+    That is the DEFAULT, "sync" apply mode. ``apply_mode="async"`` (
     src/service/async_apply.py) is the alternative kept for comparison: version check -> WAL +
     fsync -> ack, and a background thread embeds (parallel, one doc per call) and applies;
     searchable within 1 s (enforced by back-pressure). scripts/write_load.py compares both under
@@ -141,7 +141,7 @@ class ShardStore:
         # use_cache=False: never touch artifacts/emb_*.npy, always call the embedder
         # (toy corpora in tests/examples, where loading the 57K-row FiQA cache is wasted work).
         self._use_cache = use_cache
-        # apply_mode: "sync" (default, ADR 0007) applies before the ack; "async" (ADR 0013) acks
+        # apply_mode: "sync" (default) applies before the ack; "async" acks
         # after the WAL and applies in a background thread (src/service/async_apply.py). The
         # applier is created at the end of load(), after WAL replay, so replay stays single-threaded.
         self.apply_mode = apply_mode

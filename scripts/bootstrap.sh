@@ -4,7 +4,7 @@
 # Windows: scripts\bootstrap.ps1 does the same steps. Full guide: DEPLOY.md.
 #
 #   ./scripts/bootstrap.sh                    # sync write mode (default), smoke test at the end
-#   ./scripts/bootstrap.sh --mode async       # async write mode (ADR 0013)
+#   ./scripts/bootstrap.sh --mode async       # async write mode (docs/09_live_updates_consistency.md)
 #   ./scripts/bootstrap.sh --migrate-check    # also prove a live blue/green model migration works
 #   ./scripts/bootstrap.sh --build-index      # encode embeddings locally instead of downloading them
 #   ./scripts/bootstrap.sh --down             # stop everything (data and caches are kept)

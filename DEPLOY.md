@@ -10,7 +10,7 @@ and a smoke test. I made it safe to re-run: every step skips work that is alread
 
 | bash | PowerShell | what it does |
 |---|---|---|
-| `--mode async` | `-Mode async` | start the shards in async write mode ([ADR 0013](docs/adr/0013-async-apply-mode.md)); default `sync` |
+| `--mode async` | `-Mode async` | start the shards in async write mode ([09](docs/09_live_updates_consistency.md)); default `sync` |
 | `--migrate-check` | `-MigrateCheck` | also run a live blue/green model migration (minilm → bge-small → rollback → cleanup) as part of the check |
 | `--build-index` | `-BuildIndex` | encode the embeddings locally (~30 to 40 min CPU) instead of downloading them |
 | `--down` | `-Down` | stop all containers (data, caches and WALs stay on disk) |

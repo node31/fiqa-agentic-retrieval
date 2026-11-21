@@ -66,7 +66,7 @@ say the weaker retriever should get.
 | linear | 0.9 | 0.4038 | 0.4709 | 0.485 |
 
 What I concluded: linear at α = 0.7 is the best row for both models (0.419 MiniLM, 0.4155 bge-small), so I made it the
-default ([ADR 0012](adr/0012-linear-fusion-default.md)). Textbook RRF (α = 0.5) scored below dense alone, 0.3733 vs
+default. Textbook RRF (α = 0.5) scored below dense alone, 0.3733 vs
 0.3881, and RRF kept improving as I shifted weight to dense, still ending below linear at its best (0.4062 at α = 0.9).
 
 My explanation: RRF gives each list's rank 1 to 4 almost the same credit (1/61 to 1/64), so it can't tell a close
@@ -147,7 +147,7 @@ What I concluded: I kept global statistics, at about 4 ms of p50.
 My explanation: I hash-partition by `crc32(doc_id)`, so each shard is a random third of the corpus and its local df is
 close to a third of the global df. The IDFs come out nearly the same, and the 0.0011 nDCG difference is noise. I still
 pay for DFS because it makes the sharded system score exactly like a single node (0.0% difference, against a 1%
-requirement), and it stays correct if shards ever become skewed ([ADR 0004](adr/0004-dfs-global-stats.md)).
+requirement), and it stays correct if shards ever become skewed ([08](08_sharding_scatter_gather.md)).
 
 ## 5. Stratified recall: query length and long gold passages
 

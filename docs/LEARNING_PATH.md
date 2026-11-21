@@ -30,8 +30,7 @@ Each one goes deeper on one part of the system and says why I built it that way.
 The results write-ups are [part_a_results](walkthroughs/part_a_results.md), [part_b_results](walkthroughs/part_b_results.md) and `results/failures.md`.
 
 ## 3. Design and decisions
-1. [DESIGN.md](../DESIGN.md), end to end. Its "Agent evaluation and routing" section compares the haiku dev run with the final Azure gpt-6-sol run and explains why the routing decision changed.
-2. The [ADRs](adr/README.md): one page per major choice, with what I rejected and what it cost.
+[DESIGN.md](../DESIGN.md), end to end. Its "Agent evaluation and routing" section compares the haiku dev run with the final Azure gpt-6-sol run and explains why the routing decision changed.
 
 ## 4. Questions
 [project_faq.md](project_faq.md) and [concepts_faq.md](concepts_faq.md) hold the questions I expect about this system and my answers.
@@ -45,7 +44,7 @@ pytest -q                                                                       
 python -m src.service.cluster                                                            # router :8000 + 3 shards
 python src/search.py --query "what is short selling?"                                    # one search against it
 pytest -q tests/test_store.py tests/test_integration_service.py tests/test_integration_async.py
-python -m scripts.write_load --mode both --duration 30                                   # sync vs async under load (ADR 0013)
+python -m scripts.write_load --mode both --duration 30                                   # sync vs async under load
 python scripts/migration_demo.py                                                         # zero-downtime model migration
 python scripts/agent_eval.py --backend fake                                              # agent eval plumbing, no LLM cost
 python -m scripts.docker_check        # Docker functional checks; tears the stack down unless --keep

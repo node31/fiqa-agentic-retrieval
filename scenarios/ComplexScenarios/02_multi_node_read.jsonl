@@ -1,24 +1,24 @@
-# 01: single-node reads. ONE shard holds the whole corpus: the baseline every sharded answer is compared to.
+# 02: multi-node reads. THREE shards; 🐘 elephant asks the same four questions as in 01, with the same
+# save_as names.
 #
-#   python scripts/scenario.py scenarios/01_single_node_read.jsonl --start-cluster --tiny --golden-save toy_runs/golden/read_tiny.json
-#   (then run 02 with --golden-check toy_runs/golden/read_tiny.json)
+#   python scripts/scenario.py scenarios/ComplexScenarios/02_multi_node_read.jsonl --start-cluster --tiny --golden-check toy_runs/golden/read_tiny.json
 #
-# 🐘 elephant asks four questions (hybrid, dense, bm25, hybrid) and remembers each ranked answer
-# (save_as), then asks them again three times: expect_same_as demands the EXACT same ranked list.
-# A search engine must be deterministic: same data + same query = same answer (ties are broken by
-# doc id, see src/retrieval/hybrid.py _sorted). The save_as answers can be saved as a "golden" file
-# and compared with a 3-shard run (02). Same result in sync and async mode: nobody writes here.
-{"op": "config", "shards": 1, "description": "1 shard = the single-node baseline; elephant's repeated questions get identical answers", "actors": {
+# Scatter-gather (router -> 3 shards -> merge -> fuse) gives EXACTLY the single-node answer: the
+# router first collects GLOBAL BM25 statistics (DFS phase), merges the per-shard lists globally and
+# only then fuses. --golden-check compares every save_as answer with 01's golden file and
+# fails on any difference in ids or order. Compare the search latency with 01: fan-out costs a little.
+# Same result in sync and async mode: nobody writes here.
+{"op": "config", "shards": 3, "description": "3 shards; elephant's answers must equal the single-node golden answers of 01", "actors": {
   "elephant": {"role": "user", "description": "asks four finance questions and remembers the answers, then asks them again"},
   "ops": {"role": "ops", "description": "checks the cluster status"}}}
 
-{"op": "label", "text": "1. Elephant asks four questions on ONE shard and remembers each ranked answer (save_as)"}
+{"op": "label", "text": "1. The same four questions, now scattered to 3 shards and merged by the router"}
 {"op": "search", "actor": "elephant", "query": "short selling borrowing shares", "strategy": "hybrid", "save_as": "q1_hybrid", "expect_ok": true}
 {"op": "search", "actor": "elephant", "query": "roth ira tax free withdrawals", "strategy": "dense", "save_as": "q2_dense", "expect_ok": true}
 {"op": "search", "actor": "elephant", "query": "mortgage interest rate deduction", "strategy": "bm25", "save_as": "q3_bm25", "expect_ok": true}
 {"op": "search", "actor": "elephant", "query": "index funds returns after inflation", "strategy": "hybrid", "save_as": "q4_hybrid", "expect_ok": true}
 
-{"op": "label", "text": "2. Elephant asks again, 3 rounds: identical ranked lists every time (determinism)"}
+{"op": "label", "text": "2. Ask again, 3 rounds: identical (and --golden-check compares them with 1 shard)"}
 {"op": "repeat", "times": 3, "ops": [
     {"op": "search", "actor": "elephant", "query": "short selling borrowing shares", "strategy": "hybrid", "expect_same_as": "q1_hybrid", "expect_ok": true},
     {"op": "search", "actor": "elephant", "query": "roth ira tax free withdrawals", "strategy": "dense", "expect_same_as": "q2_dense", "expect_ok": true},

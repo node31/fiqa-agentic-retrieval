@@ -4,7 +4,7 @@
 #
 # FORMAT: one operation per line, comma separated:
 #
-#     actor, operation, text, t_ms, doc_id
+#     actor, operation, text, t_ms, doc_id, version
 #
 #   actor      who does it. A persona (fox, elephant, owl, ... any name) or a bot (bot1, bot-2, ...) is a
 #              CLIENT: it may search, upsert, delete, wait_visible, wait_gone. ADMIN (or admin2, ...) runs
@@ -19,8 +19,10 @@
 #              Empty = right after the line before.
 #   doc_id     optional. upsert: the id to write (empty = automatic, <actor>-<n>-<run id>).
 #              delete / wait_visible / wait_gone: which doc (empty = the last doc this actor upserted,
-#              else the last doc anyone upserted). search: a doc you EXPECT in the top 10; the replay
-#              marks it found or missing (recorded only, never fails the run).
+#              else the last doc anyone upserted). search: a doc you EXPECT in the top 10 ("!doc" = you
+#              expect it GONE); the replay marks it found / missing (recorded only, never fails the run).
+#   version    optional, upsert / delete only: an explicit version (empty = last one + 1). Lets you write a
+#              retry or a late, older write; see 8_Idempotency.csv.
 #
 #   operation      column 3 (text)                           what it does
 #   search         the query                                 top 10 for the query
@@ -44,13 +46,13 @@
 #
 #   Windows (PowerShell):
 #     New-Item -ItemType Directory -Force toy_runs | Out-Null
-#     Copy-Item scenarios\simple_template.csv toy_runs\my_scenario.csv
+#     Copy-Item scenarios\SimpleScenarios\simple_template.csv toy_runs\my_scenario.csv
 #     notepad toy_runs\my_scenario.csv                    # edit it
 #     .\.venv\Scripts\python scripts\scenario.py toy_runs\my_scenario.csv --start-cluster --tiny --open
 #
 #   macOS / Linux:
 #     mkdir -p toy_runs
-#     cp scenarios/simple_template.csv toy_runs/my_scenario.csv
+#     cp scenarios/SimpleScenarios/simple_template.csv toy_runs/my_scenario.csv
 #     open -e toy_runs/my_scenario.csv                    # edit it
 #     .venv/bin/python scripts/scenario.py toy_runs/my_scenario.csv --start-cluster --tiny --open
 #

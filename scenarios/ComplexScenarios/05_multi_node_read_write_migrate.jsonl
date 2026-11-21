@@ -1,7 +1,7 @@
 # 05: reads + WRITES during a model migration. Proves dual-write: docs written while the new index
 # is being built are found by DENSE search after the cutover (and after the old index is dropped).
 #
-#   python scripts/scenario.py scenarios/05_multi_node_read_write_migrate.jsonl --start-cluster --tiny --mode async
+#   python scripts/scenario.py scenarios/ComplexScenarios/05_multi_node_read_write_migrate.jsonl --start-cluster --tiny --mode async
 #
 # Actors: 🦊 fox writes two docs before the migration; 🛠️ admin migrates / cuts over / rolls back /
 # finalizes; 🤖 bot-1 keeps writing during the build and the finalize; 🤖 bot-2 keeps reading;

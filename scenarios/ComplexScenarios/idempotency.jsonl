@@ -1,7 +1,7 @@
 # Idempotency: 🦊 fox's phone has a flaky network. Her retries and late, out-of-order writes must be
 # harmless no-ops. 🐘 elephant checks what is visible.
 #
-#   python scripts/scenario.py scenarios/idempotency.jsonl --start-cluster --tiny --mode async
+#   python scripts/scenario.py scenarios/ComplexScenarios/idempotency.jsonl --start-cluster --tiny --mode async
 #
 # The CLIENT picks the version; the owner shard applies a write only if its version is STRICTLY
 # greater than the highest one it has seen for that doc (deletes leave a versioned "tombstone").

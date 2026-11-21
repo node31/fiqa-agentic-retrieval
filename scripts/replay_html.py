@@ -542,7 +542,7 @@ $("scnName").textContent = META.scenario || "scenario";
     : "sync: ack only after the write is applied, searchable by the very next search"}">${esc(mode.toUpperCase())} mode</span>`);
   if (SUMMARY.passed !== undefined)
     b.push(`<span class="badge ${SUMMARY.passed ? "pass" : "fail"}">${SUMMARY.passed ? "PASS" : "FAIL"} &middot;
-      ${SUMMARY.checks_passed ?? 0} ok / ${SUMMARY.checks_failed ?? 0} failed</span>`);
+      ${(SUMMARY.checks_passed ?? 0) + (SUMMARY.soft_found ?? 0)} ok / ${SUMMARY.checks_failed ?? 0} failed</span>`);
   b.push(`<span class="badge">${esc(META.started_at || "")}</span>`);
   b.push(`<span class="badge">${N_SHARDS} shard${N_SHARDS === 1 ? "" : "s"} &middot; ${esc(META.cluster || "")}</span>`);
   b.push(`<span class="badge mono">${esc(META.url || "")}</span>`);
@@ -1383,7 +1383,9 @@ function updateCurrentRow(force) {
 function renderScore() {
   const tile = (v, k, cls = "") => `<div class="tile"><div class="v ${cls}">${v}</div><div class="k">${k}</div></div>`;
   const a50 = pct(score.ack, 50), a95 = pct(score.ack, 95), s50 = pct(score.search, 50), s95 = pct(score.search, 95);
-  $("score").innerHTML = tile(score.pass, "expectations passed", "ok-t") +
+  // "passed" counts every check that held, hard or soft; "failed" only hard checks (they fail the run);
+  // a soft check that did not hold is a soft miss, allowed and shown in its own tile.
+  $("score").innerHTML = tile(score.pass + score.softOk, `expectations passed (${score.pass} hard, ${score.softOk} soft)`, "ok-t") +
     tile(score.fail, "expectations failed", score.fail ? "bad-t" : "") +
     tile(score.softMiss + " / " + (score.softOk + score.softMiss), "soft misses (allowed)", score.softMiss ? "soft-t" : "") +
     tile(score.writes, `writes (${score.applied} applied, ${score.noop} no-op)`) +
@@ -1392,7 +1394,7 @@ function renderScore() {
     tile(s50 == null ? "-" : fmtMs(s50), "search p50" + (s95 == null ? "" : ` &middot; p95 ${fmtMs(s95)}`)) +
     tile(score.errors, "errors", score.errors ? "bad-t" : "") +
     tile(score.partial, "partial searches", score.partial ? "soft-t" : "");
-  $("miniScore").innerHTML = `<b class="ok-t">&#10003; ${score.pass}</b> &middot; <b class="${score.fail ? "bad-t" : ""}">&#10007; ${score.fail}</b>` +
+  $("miniScore").innerHTML = `<b class="ok-t">&#10003; ${score.pass + score.softOk}</b> &middot; <b class="${score.fail ? "bad-t" : ""}">&#10007; ${score.fail}</b>` +
     ` &middot; ~ ${score.softMiss} soft &middot; writes <b>${score.writes}</b> &middot; searches <b>${score.searches}</b>`;
   const list = (items, empty) => items.length ? items.slice(0, 80).map((f) =>
     `<li><span class="${f.cls}">${f.html}</span><span class="muted">${f.tag ? f.tag + " &middot; " : ""}t=${f.t.toFixed(2)}</span></li>`).join("") : `<li class="muted">${empty}</li>`;

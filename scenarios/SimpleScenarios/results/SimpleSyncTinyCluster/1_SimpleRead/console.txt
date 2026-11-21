@@ -1,0 +1,15 @@
+$ python scripts/scenario.py scenarios/SimpleScenarios/1_SimpleRead.csv --start-cluster --tiny --mode sync --out scenarios/SimpleScenarios/results/SimpleSyncTinyCluster/1_SimpleRead --no-color
+
+starting tiny cluster (sync mode, 3 shards, models minilm, router :19000, shards :19101+) ...
+cluster up in 12.1 s
+scenario 1_SimpleRead.csv: mode=sync, 3 shards, model=minilm, url=http://127.0.0.1:19000, run id 3290ac
+[   0.010s] Elephant   SEARCH  "what is short selling?" [hybrid k=10] -> 10 hits (13.5 ms, model minilm)
+[   0.024s] Fox        SEARCH  "should I pay off my mortgage early?" [hybrid k=10] -> 10 hits (11.9 ms, model minilm)
+=== SUMMARY  1_SimpleRead  mode=sync  shards=3  (0.04 s) ===
+ops run          2  (errors 0)
+expectations     0 passed (0 hard, 0 soft), 0 failed
+writes           0 (0 applied)
+searches         2   p50 11.9 ms  p95 13.5 ms
+RESULT           PASS
+events           scenarios\SimpleScenarios\results\SimpleSyncTinyCluster\1_SimpleRead\events.jsonl
+replay           scenarios\SimpleScenarios\results\SimpleSyncTinyCluster\1_SimpleRead\replay.html

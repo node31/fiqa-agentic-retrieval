@@ -1,7 +1,7 @@
 # Freshness demo: 🦊 fox writes a new doc, 🐘 elephant searches for it at once, then again after 1 s.
 #
-#   python scripts/scenario.py scenarios/freshness_demo.jsonl --start-cluster --tiny --mode sync
-#   python scripts/scenario.py scenarios/freshness_demo.jsonl --start-cluster --tiny --mode async
+#   python scripts/scenario.py scenarios/ComplexScenarios/freshness_demo.jsonl --start-cluster --tiny --mode sync
+#   python scripts/scenario.py scenarios/ComplexScenarios/freshness_demo.jsonl --start-cluster --tiny --mode async
 #
 # What to compare between the two runs:
 #   sync : the ack comes AFTER the shard applied the write, so elephant's immediate search always finds it.

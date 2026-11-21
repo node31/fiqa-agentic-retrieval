@@ -1,0 +1,19 @@
+$ python scripts/scenario.py scenarios/SimpleScenarios/2_SimpleReadAfterWrite.csv --start-cluster --real --mode async --out scenarios/SimpleScenarios/results/SimpleAsyncFullCluster/2_SimpleReadAfterWrite --no-color
+
+starting REAL-corpus cluster (async mode, 3 shards, models minilm, router :19000, shards :19101+) ...
+cluster up in 44.3 s
+scenario 2_SimpleReadAfterWrite.csv: mode=async, 3 shards, model=minilm, url=http://127.0.0.1:19000, run id d94e8f
+[   0.011s] Elephant   SEARCH  "what is short selling?" [hybrid k=10] -> 10 hits (33.7 ms, model minilm)
+[   0.045s] Fox        SEARCH  "should I pay off my mortgage early?" [hybrid k=10] -> 10 hits (30.7 ms, model minilm)
+[   0.075s] Owl        UPSERT  owl-annuity-d94e8f v1 -> shard 2 ... OK applied (ack 8.8 ms, async: queued, not yet visible)
+[   0.084s] Fox        SEARCH  "zebraprobe annuity guaranteed monthly i…" [hybrid k=10] -> 10 hits (34.0 ms, model minilm)
+                               expected owl-annuity-d94e8f: FOUND (#1) (doc acked 0.084 s, search sent 0.084 s, answer back 0.118 s, difference 34 ms) ✓
+=== SUMMARY  2_SimpleReadAfterWrite  mode=async  shards=3  (0.12 s) ===
+ops run          4  (errors 0)
+expectations     1 passed (0 hard, 1 soft), 0 failed
+writes           1 (1 applied)   ack p50 8.8 ms  p95 8.8 ms
+searches         3   p50 33.7 ms  p95 34.0 ms
+expected docs    search sent <1 s after the ack: found 1/1   (when the search ran, not the lag)
+RESULT           PASS
+events           scenarios\SimpleScenarios\results\SimpleAsyncFullCluster\2_SimpleReadAfterWrite\events.jsonl
+replay           scenarios\SimpleScenarios\results\SimpleAsyncFullCluster\2_SimpleReadAfterWrite\replay.html

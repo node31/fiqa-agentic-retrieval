@@ -1,0 +1,29 @@
+$ python scripts/scenario.py scenarios/SimpleScenarios/6_ReadWriteMigrateWriteDuringMigrateRead.csv --start-cluster --tiny --mode sync --out scenarios/SimpleScenarios/results/SimpleSyncTinyCluster/6_ReadWriteMigrateWriteDuringMigrateRead --no-color
+
+starting tiny cluster (sync mode, 3 shards, models minilm, router :19000, shards :19101+) ...
+cluster up in 11.4 s
+scenario 6_ReadWriteMigrateWriteDuringMigrateRead.csv: mode=sync, 3 shards, model=minilm, url=http://127.0.0.1:19000, run id bce601
+[   0.011s] Elephant   SEARCH  "what is short selling?" [hybrid k=10] -> 10 hits (13.1 ms, model minilm)
+[   0.024s] Fox        SEARCH  "should I pay off my mortgage early?" [hybrid k=10] -> 10 hits (17.6 ms, model minilm)
+[   0.042s] Owl        UPSERT  owl-annuity-bce601 v1 -> shard 1 ... OK applied (ack 6.0 ms, sync: applied, searchable now)
+[   0.048s] Fox        SEARCH  "zebraprobe annuity guaranteed monthly i…" [hybrid k=10] -> 10 hits (11.9 ms, model minilm)
+                               expected owl-annuity-bce601: FOUND (#1) (doc acked 0.048 s, search sent 0.048 s, answer back 0.059 s, difference 12 ms) ✓
+[   0.060s] ADMIN      ADMIN   migrate minilm -> bge-small: build started on every shard (9.1 ms); queries still use the old model
+[   0.069s] Elephant   UPSERT  elephant-bonds-bce601 v1 -> shard 0 ... OK applied (ack 5.5 ms, sync: applied, searchable now)
+[   0.075s] ADMIN      READY   bge-small ready on every shard after 6 ms (1 polls, progress {'0': 1.0, '1': 1.0, '2': 1.0})
+[   0.081s] ADMIN      ADMIN   cutover: queries now use bge-small (previous minilm) (10.8 ms)
+[   1.201s] Fox        SEARCH  "zebraprobe annuity guaranteed monthly i…" [hybrid k=10] -> 10 hits (13.7 ms, model bge-small)
+                               expected owl-annuity-bce601: FOUND (#1) (doc acked 0.047 s, search sent 1.201 s, answer back 1.214 s, difference 14 ms) ✓
+[   1.300s] Fox        SEARCH  "quokkaprobe laddered bond portfolio" [hybrid k=10] -> 10 hits (13.1 ms, model bge-small)
+                               expected elephant-bonds-bce601: FOUND (#1) (doc acked 0.074 s, search sent 1.300 s, answer back 1.313 s, difference 13 ms) ✓
+=== SUMMARY  6_ReadWriteMigrateWriteDuringMigrateRead  mode=sync  shards=3  (1.31 s) ===
+ops run          10  (errors 0)
+expectations     4 passed (1 hard, 3 soft), 0 failed
+writes           2 (2 applied)   ack p50 5.5 ms  p95 6.0 ms
+searches         5   p50 13.1 ms  p95 17.6 ms
+expected docs    search sent <1 s after the ack: found 1/1; search sent >=1 s after the ack: found 2/2   (when the search ran, not the lag)
+visibility lag   0 for every acked write (sync mode applies the write before the ack)
+admin timeline   migrate(bge-small)@0.07s -> wait_ready(bge-small)@0.08s -> cutover(bge-small)@0.09s
+RESULT           PASS
+events           scenarios\SimpleScenarios\results\SimpleSyncTinyCluster\6_ReadWriteMigrateWriteDuringMigrateRead\events.jsonl
+replay           scenarios\SimpleScenarios\results\SimpleSyncTinyCluster\6_ReadWriteMigrateWriteDuringMigrateRead\replay.html

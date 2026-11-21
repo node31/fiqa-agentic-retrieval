@@ -1,0 +1,34 @@
+$ python scripts/scenario.py scenarios/SimpleScenarios/7_ReadWriteMigrateWriteDuringMigrateRollbackRead.csv --start-cluster --tiny --mode sync --out scenarios/SimpleScenarios/results/SimpleSyncTinyCluster/7_ReadWriteMigrateWriteDuringMigrateRollbackRead --no-color
+
+starting tiny cluster (sync mode, 3 shards, models minilm, router :19000, shards :19101+) ...
+cluster up in 11.4 s
+scenario 7_ReadWriteMigrateWriteDuringMigrateRollbackRead.csv: mode=sync, 3 shards, model=minilm, url=http://127.0.0.1:19000, run id ebc06f
+[   0.011s] Elephant   SEARCH  "what is short selling?" [hybrid k=10] -> 10 hits (15.4 ms, model minilm)
+[   0.026s] Fox        SEARCH  "should I pay off my mortgage early?" [hybrid k=10] -> 10 hits (19.1 ms, model minilm)
+[   0.046s] Owl        UPSERT  owl-annuity-ebc06f v1 -> shard 2 ... OK applied (ack 7.1 ms, sync: applied, searchable now)
+[   0.053s] Fox        SEARCH  "zebraprobe annuity guaranteed monthly i…" [hybrid k=10] -> 10 hits (13.7 ms, model minilm)
+                               expected owl-annuity-ebc06f: FOUND (#1) (doc acked 0.053 s, search sent 0.053 s, answer back 0.067 s, difference 14 ms) ✓
+[   0.067s] ADMIN      ADMIN   migrate minilm -> bge-small: build started on every shard (13.1 ms); queries still use the old model
+[   0.080s] Elephant   UPSERT  elephant-bonds-ebc06f v1 -> shard 1 ... OK applied (ack 8.3 ms, sync: applied, searchable now)
+[   0.088s] ADMIN      READY   bge-small ready on every shard after 8 ms (1 polls, progress {'0': 1.0, '1': 1.0, '2': 1.0})
+[   0.096s] ADMIN      ADMIN   cutover: queries now use bge-small (previous minilm) (12.2 ms)
+[   1.201s] Fox        SEARCH  "zebraprobe annuity guaranteed monthly i…" [hybrid k=10] -> 10 hits (16.4 ms, model bge-small)
+                               expected owl-annuity-ebc06f: FOUND (#1) (doc acked 0.053 s, search sent 1.201 s, answer back 1.217 s, difference 16 ms) ✓
+[   1.300s] Fox        SEARCH  "quokkaprobe laddered bond portfolio" [hybrid k=10] -> 10 hits (12.6 ms, model bge-small)
+                               expected elephant-bonds-ebc06f: FOUND (#1) (doc acked 0.088 s, search sent 1.300 s, answer back 1.313 s, difference 13 ms) ✓
+[   1.400s] ADMIN      ADMIN   rollback: queries now use minilm (previous bge-small) (8.6 ms)
+[   1.500s] Fox        SEARCH  "zebraprobe annuity guaranteed monthly i…" [hybrid k=10] -> 10 hits (13.7 ms, model minilm)
+                               expected owl-annuity-ebc06f: FOUND (#1) (doc acked 0.053 s, search sent 1.500 s, answer back 1.514 s, difference 14 ms) ✓
+[   1.601s] Fox        SEARCH  "quokkaprobe laddered bond portfolio" [hybrid k=10] -> 10 hits (15.6 ms, model minilm)
+                               expected elephant-bonds-ebc06f: FOUND (#1) (doc acked 0.088 s, search sent 1.601 s, answer back 1.616 s, difference 16 ms) ✓
+=== SUMMARY  7_ReadWriteMigrateWriteDuringMigrateRollbackRead  mode=sync  shards=3  (1.62 s) ===
+ops run          13  (errors 0)
+expectations     6 passed (1 hard, 5 soft), 0 failed
+writes           2 (2 applied)   ack p50 7.1 ms  p95 8.3 ms
+searches         7   p50 15.4 ms  p95 19.1 ms
+expected docs    search sent <1 s after the ack: found 1/1; search sent >=1 s after the ack: found 4/4   (when the search ran, not the lag)
+visibility lag   0 for every acked write (sync mode applies the write before the ack)
+admin timeline   migrate(bge-small)@0.08s -> wait_ready(bge-small)@0.10s -> cutover(bge-small)@0.11s -> rollback@1.41s
+RESULT           PASS
+events           scenarios\SimpleScenarios\results\SimpleSyncTinyCluster\7_ReadWriteMigrateWriteDuringMigrateRollbackRead\events.jsonl
+replay           scenarios\SimpleScenarios\results\SimpleSyncTinyCluster\7_ReadWriteMigrateWriteDuringMigrateRollbackRead\replay.html

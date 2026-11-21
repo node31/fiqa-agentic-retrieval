@@ -1,0 +1,40 @@
+# Scenario 8: Idempotency
+#
+# Scenario 3 with explicit versions (column 6): a retried write, a late older write, and a late
+# write after the delete. Every write carries (doc_id, version); a shard applies it only if the version is
+# newer than the newest it has seen for that doc, so retries and stragglers are harmless no-ops.
+# Look at: the UPSERT lines say "no-op (stale_or_duplicate)" for the retry (v1 again), the late v1 and the late
+# v2 after the delete (v3). The delete leaves a tombstone, so the old v2 cannot bring the doc back; only v4 can.
+#
+# Run it (from the repo root; Windows: .\.venv\Scripts\python, macOS/Linux: python):
+#   python scripts/scenario.py scenarios/SimpleScenarios/8_Idempotency.csv --start-cluster --tiny --open             # tiny corpus, sync
+#   python scripts/scenario.py scenarios/SimpleScenarios/8_Idempotency.csv --start-cluster --tiny --mode async --open
+#   python scripts/scenario.py scenarios/SimpleScenarios/8_Idempotency.csv --start-cluster --open                    # real corpus (57,638 docs)
+#   python scripts/scenario.py scenarios/SimpleScenarios/8_Idempotency.csv --start-cluster --mode async --open
+# All eight on all four clusters:  python scripts/run_simple_scenarios.py
+# My recorded runs: scenarios/SimpleScenarios/results/<cluster>/8_Idempotency/console.txt
+#
+# Columns: actor, operation, text, t_ms[, doc_id[, version]]
+#   t_ms    = do not start before t ms after the run started (lines still run one after another)
+#   doc_id  = on upsert/delete: the doc; on search: a doc I expect in the answer ("!doc" = expect it gone).
+#             Search checks are soft: the console and replay say found / missing, the run never fails on them.
+#   {run}   = a random id per run, so every run writes new docs
+
+Elephant, search, "what is short selling?", 10
+Fox, search, "should I pay off my mortgage early?", 20
+Owl, upsert, "zebraprobe annuity: a fixed annuity pays a guaranteed monthly income for life", 30, owl-annuity-{run}, 1
+# the same write again, as a client would retry after a timeout: no-op
+Owl, upsert, "zebraprobe annuity: a fixed annuity pays a guaranteed monthly income for life", 35, owl-annuity-{run}, 1
+Fox, search, "zebraprobe annuity guaranteed monthly income", 40, owl-annuity-{run}
+Owl, upsert, "zebraprobe annuity v2: a fixed annuity with inflation protection pays a rising monthly income", 45, owl-annuity-{run}, 2
+# v1 arrives late (a slow network path): older than v2, so a no-op
+Owl, upsert, "zebraprobe annuity: a fixed annuity pays a guaranteed monthly income for life", 48, owl-annuity-{run}, 1
+Fox, search, "zebraprobe annuity inflation protection rising income", 50, owl-annuity-{run}
+Owl, delete, , 55, owl-annuity-{run}, 3
+# v2 arrives late after the delete: older than the tombstone (v3), so it cannot resurrect the doc
+Owl, upsert, "zebraprobe annuity v2: a fixed annuity with inflation protection pays a rising monthly income", 58, owl-annuity-{run}, 2
+Fox, search, "zebraprobe annuity guaranteed monthly income", 60, !owl-annuity-{run}
+Fox, search, "zebraprobe annuity guaranteed monthly income", 70, !owl-annuity-{run}
+# a genuinely new version re-creates the doc
+Owl, upsert, "zebraprobe annuity v4: back on sale, a guaranteed monthly income for life", 75, owl-annuity-{run}, 4
+Fox, search, "zebraprobe annuity guaranteed monthly income", 80, owl-annuity-{run}

@@ -1,0 +1,21 @@
+$ python scripts/scenario.py scenarios/SimpleScenarios/4_ReadMigrateRead.csv --start-cluster --real --mode sync --out scenarios/SimpleScenarios/results/SimpleSyncFullCluster/4_ReadMigrateRead --no-color
+
+starting REAL-corpus cluster (sync mode, 3 shards, models minilm, router :19000, shards :19101+) ...
+cluster up in 46.7 s
+scenario 4_ReadMigrateRead.csv: mode=sync, 3 shards, model=minilm, url=http://127.0.0.1:19000, run id f0aee8
+[   0.010s] Elephant   SEARCH  "what is short selling?" [hybrid k=10] -> 10 hits (38.2 ms, model minilm)
+[   0.049s] Fox        SEARCH  "should I pay off my mortgage early?" [hybrid k=10] -> 10 hits (30.6 ms, model minilm)
+[   0.079s] ADMIN      ADMIN   migrate minilm -> bge-small: build started on every shard (351.2 ms); queries still use the old model
+[   0.431s] ADMIN      READY   bge-small ready on every shard after 7 ms (1 polls, progress {'0': 1.0, '1': 1.0, '2': 1.0})
+[   0.438s] ADMIN      ADMIN   cutover: queries now use bge-small (previous minilm) (25.1 ms)
+[   1.000s] Elephant   SEARCH  "what is short selling?" [hybrid k=10] -> 10 hits (41.0 ms, model bge-small)
+[   1.100s] Fox        SEARCH  "should I pay off my mortgage early?" [hybrid k=10] -> 10 hits (43.6 ms, model bge-small)
+=== SUMMARY  4_ReadMigrateRead  mode=sync  shards=3  (1.14 s) ===
+ops run          7  (errors 0)
+expectations     1 passed (1 hard, 0 soft), 0 failed
+writes           0 (0 applied)
+searches         4   p50 38.2 ms  p95 43.6 ms
+admin timeline   migrate(bge-small)@0.43s -> wait_ready(bge-small)@0.44s -> cutover(bge-small)@0.46s
+RESULT           PASS
+events           scenarios\SimpleScenarios\results\SimpleSyncFullCluster\4_ReadMigrateRead\events.jsonl
+replay           scenarios\SimpleScenarios\results\SimpleSyncFullCluster\4_ReadMigrateRead\replay.html

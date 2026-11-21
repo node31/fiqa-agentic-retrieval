@@ -1,0 +1,19 @@
+$ python scripts/scenario.py scenarios/SimpleScenarios/2_SimpleReadAfterWrite.csv --start-cluster --tiny --mode async --out scenarios/SimpleScenarios/results/SimpleAsyncTinyCluster/2_SimpleReadAfterWrite --no-color
+
+starting tiny cluster (async mode, 3 shards, models minilm, router :19000, shards :19101+) ...
+cluster up in 11.9 s
+scenario 2_SimpleReadAfterWrite.csv: mode=async, 3 shards, model=minilm, url=http://127.0.0.1:19000, run id c85931
+[   0.010s] Elephant   SEARCH  "what is short selling?" [hybrid k=10] -> 10 hits (19.0 ms, model minilm)
+[   0.029s] Fox        SEARCH  "should I pay off my mortgage early?" [hybrid k=10] -> 10 hits (19.3 ms, model minilm)
+[   0.049s] Owl        UPSERT  owl-annuity-c85931 v1 -> shard 2 ... OK applied (ack 6.8 ms, async: queued, not yet visible)
+[   0.056s] Fox        SEARCH  "zebraprobe annuity guaranteed monthly i…" [hybrid k=10] -> 10 hits (13.6 ms, model minilm)
+                               expected owl-annuity-c85931: FOUND (#1) (doc acked 0.056 s, search sent 0.056 s, answer back 0.069 s, difference 14 ms) ✓
+=== SUMMARY  2_SimpleReadAfterWrite  mode=async  shards=3  (0.07 s) ===
+ops run          4  (errors 0)
+expectations     1 passed (0 hard, 1 soft), 0 failed
+writes           1 (1 applied)   ack p50 6.8 ms  p95 6.8 ms
+searches         3   p50 19.0 ms  p95 19.3 ms
+expected docs    search sent <1 s after the ack: found 1/1   (when the search ran, not the lag)
+RESULT           PASS
+events           scenarios\SimpleScenarios\results\SimpleAsyncTinyCluster\2_SimpleReadAfterWrite\events.jsonl
+replay           scenarios\SimpleScenarios\results\SimpleAsyncTinyCluster\2_SimpleReadAfterWrite\replay.html

@@ -1,0 +1,33 @@
+$ python scripts/scenario.py scenarios/SimpleScenarios/7_ReadWriteMigrateWriteDuringMigrateRollbackRead.csv --start-cluster --real --mode async --out scenarios/SimpleScenarios/results/SimpleAsyncFullCluster/7_ReadWriteMigrateWriteDuringMigrateRollbackRead --no-color
+
+starting REAL-corpus cluster (async mode, 3 shards, models minilm, router :19000, shards :19101+) ...
+cluster up in 46.6 s
+scenario 7_ReadWriteMigrateWriteDuringMigrateRollbackRead.csv: mode=async, 3 shards, model=minilm, url=http://127.0.0.1:19000, run id 90f115
+[   0.010s] Elephant   SEARCH  "what is short selling?" [hybrid k=10] -> 10 hits (44.8 ms, model minilm)
+[   0.055s] Fox        SEARCH  "should I pay off my mortgage early?" [hybrid k=10] -> 10 hits (29.3 ms, model minilm)
+[   0.085s] Owl        UPSERT  owl-annuity-90f115 v1 -> shard 0 ... OK applied (ack 7.4 ms, async: queued, not yet visible)
+[   0.092s] Fox        SEARCH  "zebraprobe annuity guaranteed monthly i…" [hybrid k=10] -> 10 hits (31.5 ms, model minilm)
+                               expected owl-annuity-90f115: FOUND (#1) (doc acked 0.092 s, search sent 0.092 s, answer back 0.124 s, difference 31 ms) ✓
+[   0.124s] ADMIN      ADMIN   migrate minilm -> bge-small: build started on every shard (354.7 ms); queries still use the old model
+[   0.479s] Elephant   UPSERT  elephant-bonds-90f115 v1 -> shard 1 ... OK applied (ack 7.7 ms, async: queued, not yet visible)
+[   0.487s] ADMIN      READY   bge-small ready on every shard after 244 ms (3 polls, progress {'0': 1.0, '1': 1.0, '2': 1.0})
+[   0.730s] ADMIN      ADMIN   cutover: queries now use bge-small (previous minilm) (27.5 ms)
+[   1.200s] Fox        SEARCH  "zebraprobe annuity guaranteed monthly i…" [hybrid k=10] -> 10 hits (39.3 ms, model bge-small)
+                               expected owl-annuity-90f115: FOUND (#1) (doc acked 0.092 s, search sent 1.200 s, answer back 1.239 s, difference 39 ms) ✓
+[   1.300s] Fox        SEARCH  "quokkaprobe laddered bond portfolio" [hybrid k=10] -> 10 hits (42.5 ms, model bge-small)
+                               expected elephant-bonds-90f115: FOUND (#1) (doc acked 0.487 s, search sent 1.300 s, answer back 1.343 s, difference 42 ms) ✓
+[   1.400s] ADMIN      ADMIN   rollback: queries now use minilm (previous bge-small) (18.4 ms)
+[   1.501s] Fox        SEARCH  "zebraprobe annuity guaranteed monthly i…" [hybrid k=10] -> 10 hits (34.8 ms, model minilm)
+                               expected owl-annuity-90f115: FOUND (#1) (doc acked 0.092 s, search sent 1.501 s, answer back 1.535 s, difference 35 ms) ✓
+[   1.600s] Fox        SEARCH  "quokkaprobe laddered bond portfolio" [hybrid k=10] -> 10 hits (40.5 ms, model minilm)
+                               expected elephant-bonds-90f115: FOUND (#1) (doc acked 0.487 s, search sent 1.600 s, answer back 1.641 s, difference 40 ms) ✓
+=== SUMMARY  7_ReadWriteMigrateWriteDuringMigrateRollbackRead  mode=async  shards=3  (1.64 s) ===
+ops run          13  (errors 0)
+expectations     6 passed (1 hard, 5 soft), 0 failed
+writes           2 (2 applied)   ack p50 7.4 ms  p95 7.7 ms
+searches         7   p50 39.3 ms  p95 44.8 ms
+expected docs    search sent <1 s after the ack: found 2/2; search sent >=1 s after the ack: found 3/3   (when the search ran, not the lag)
+admin timeline   migrate(bge-small)@0.48s -> wait_ready(bge-small)@0.73s -> cutover(bge-small)@0.76s -> rollback@1.42s
+RESULT           PASS
+events           scenarios\SimpleScenarios\results\SimpleAsyncFullCluster\7_ReadWriteMigrateWriteDuringMigrateRollbackRead\events.jsonl
+replay           scenarios\SimpleScenarios\results\SimpleAsyncFullCluster\7_ReadWriteMigrateWriteDuringMigrateRollbackRead\replay.html

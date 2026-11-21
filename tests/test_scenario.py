@@ -1,7 +1,7 @@
 """Scenario runner end to end: real clusters (tiny corpus, hash embedder), both apply modes.
 
 What this proves:
-  * the example scenarios in scenarios/ pass in SYNC and ASYNC mode (freshness, idempotency,
+  * the example scenarios in scenarios/ComplexScenarios/ pass in SYNC and ASYNC mode (freshness, idempotency,
     model migration with rollback, writes during a migration, a shard crash + WAL replay);
   * a failed hard expectation makes the run fail (so scenarios work as tests), a soft one does not;
   * golden files round-trip (--golden-save / --golden-check);
@@ -24,7 +24,8 @@ from scripts.scenario import ScenarioError, parse_scenario, parse_simple, resolv
 from src.service.cluster import Cluster
 
 ROOT = Path(__file__).resolve().parents[1]
-SCN = ROOT / "scenarios"
+SCN = ROOT / "scenarios" / "ComplexScenarios"
+SIMPLE = ROOT / "scenarios" / "SimpleScenarios"
 FIX = Path(__file__).parent / "fixtures" / "tinyfiqa"
 
 
@@ -224,6 +225,8 @@ def test_simple_format_parses_the_users_example_with_defaults():
     ("fox, search, q, soon", "line 1: t_ms must be a number"),
     ("fox, search:magic, q, 1", "only search takes a strategy"),
     ("ADMIN, rollback, now, 1", "rollback takes no text"),
+    ("fox, search, q, 1, , 2", "only upsert and delete take a version"),
+    ("owl, upsert, t, 1, d, two", "version must be a whole number"),
 ])
 def test_simple_format_errors_name_the_line(text, msg):
     with pytest.raises(ScenarioError, match=msg):
@@ -231,7 +234,7 @@ def test_simple_format_errors_name_the_line(text, msg):
 
 
 def test_simple_template_parses_and_uses_every_simple_operation():
-    ops = parse_simple((SCN / "simple_template.csv").read_text(encoding="utf-8"))
+    ops = parse_simple((SIMPLE / "simple_template.csv").read_text(encoding="utf-8"))
     kinds = {o["op"] for o in ops} | {"wait_gone" for o in ops if o.get("absent")}
     assert {"search", "upsert", "delete", "wait_visible", "wait_gone", "migrate", "wait_ready", "cutover",
             "rollback", "finalize", "flush", "status", "label"} <= kinds
@@ -240,7 +243,7 @@ def test_simple_template_parses_and_uses_every_simple_operation():
 
 @pytest.mark.parametrize("mode", ["sync", "async"])
 def test_simple_template_runs_green_and_honours_t_ms(mode, tmp_path):
-    res = run(SCN / "simple_template.csv", tmp_path, start=True, tiny=True, mode=mode, router_port=19540,
+    res = run(SIMPLE / "simple_template.csv", tmp_path, start=True, tiny=True, mode=mode, router_port=19540,
               base_port=19641)
     s = res.summary
     assert res.ok and s["errors"] == 0 and s["checks_failed"] == 0, s
@@ -252,3 +255,42 @@ def test_simple_template_runs_green_and_honours_t_ms(mode, tmp_path):
     ts = [e["t"] for e in starts]
     assert ts == sorted(ts)                     # file order, one after the other
 
+
+def test_simple_format_version_column_and_expect_absent():
+    ops = parse_simple("owl, upsert, zebra, 10, d1, 1\n"
+                       "owl, upsert, zebra, 20, d1, 1\n"      # a retry: same version
+                       "fox, search, zebra, 30, d1\n"
+                       "owl, delete, , 40, d1, 3\n"
+                       "fox, search, zebra, 50, !d1\n")
+    assert [o.get("version") for o in ops] == [1, 1, None, 3, None]
+    assert ops[2]["expect"] == ["d1"] and ops[4]["expect_absent"] == ["d1"] and ops[4]["soft"]
+
+
+def test_simple_scenarios_parse_and_tell_their_story():
+    files = sorted(p for p in SIMPLE.glob("*.csv") if p.name[0].isdigit())
+    assert [f.stem.split("_")[0] for f in files] == [str(i) for i in range(1, 9)]
+    for f in files:
+        ops = parse_simple(f.read_text(encoding="utf-8"))
+        roles = {a["name"]: a["role"] for a in resolve_actors(ops)}
+        assert roles.get("ADMIN", "admin") == "admin" and all(roles[a] == "user" for a in ("Elephant", "Fox")), f
+    seven = parse_simple((SIMPLE / "7_ReadWriteMigrateWriteDuringMigrateRollbackRead.csv").read_text(encoding="utf-8"))
+    assert [o["op"] for o in seven if o["op"] not in ("search", "upsert")] == ["migrate", "wait_ready", "cutover",
+                                                                               "rollback"]
+    ats = [o["at"] for o in seven if "at" in o]
+    assert ats == sorted(ats)                   # time only moves forward
+
+
+@pytest.mark.parametrize("mode", ["sync", "async"])
+def test_idempotency_simple_scenario_writes_are_no_ops(mode, tmp_path):
+    res = run(SIMPLE / "8_Idempotency.csv", tmp_path, start=True, tiny=True, mode=mode, router_port=19560,
+              base_port=19661)
+    assert res.ok and res.summary["errors"] == 0, res.summary
+    events = [json.loads(ln) for ln in res.events_path.read_text(encoding="utf-8").splitlines()]
+    writes = [e for e in events if e["type"] == "op_end" and e["op"] in ("upsert", "delete")]
+    # v1, v1 retry, v2, late v1, delete v3, late v2, v4
+    assert [w["resp"]["applied"] for w in writes] == [True, False, True, False, True, False, True]
+    after_delete = [c for e in events if e["type"] == "op_end" for c in e.get("checks", [])
+                    if c["kind"] == "expect_absent"]
+    assert len(after_delete) == 2
+    if mode == "sync":   # async may still show the doc a few ms after the delete's ack (it is queued)
+        assert all(not c["found"] for c in after_delete)   # and the tombstone blocked the late v2

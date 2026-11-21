@@ -1,0 +1,31 @@
+# Scenario 5: ReadWriteMigrateRead
+#
+# Owl writes a doc before the migration; after cutover Fox searches for it.
+# Look at: Fox's last search finds Owl's doc with bge-small, although the doc was written while only minilm
+# existed. The migration's backfill embedded every existing doc, Owl's included, with the new model.
+#
+# Run it (from the repo root; Windows: .\.venv\Scripts\python, macOS/Linux: python):
+#   python scripts/scenario.py scenarios/SimpleScenarios/5_ReadWriteMigrateRead.csv --start-cluster --tiny --open             # tiny corpus, sync
+#   python scripts/scenario.py scenarios/SimpleScenarios/5_ReadWriteMigrateRead.csv --start-cluster --tiny --mode async --open
+#   python scripts/scenario.py scenarios/SimpleScenarios/5_ReadWriteMigrateRead.csv --start-cluster --open                    # real corpus (57,638 docs)
+#   python scripts/scenario.py scenarios/SimpleScenarios/5_ReadWriteMigrateRead.csv --start-cluster --mode async --open
+# All eight on all four clusters:  python scripts/run_simple_scenarios.py
+# My recorded runs: scenarios/SimpleScenarios/results/<cluster>/5_ReadWriteMigrateRead/console.txt
+#
+# Columns: actor, operation, text, t_ms[, doc_id[, version]]
+#   t_ms    = do not start before t ms after the run started (lines still run one after another)
+#   doc_id  = on upsert/delete: the doc; on search: a doc I expect in the answer ("!doc" = expect it gone).
+#             Search checks are soft: the console and replay say found / missing, the run never fails on them.
+#   {run}   = a random id per run, so every run writes new docs
+
+Elephant, search, "what is short selling?", 10
+Fox, search, "should I pay off my mortgage early?", 20
+Owl, upsert, "zebraprobe annuity: a fixed annuity pays a guaranteed monthly income for life", 30, owl-annuity-{run}
+Fox, search, "zebraprobe annuity guaranteed monthly income", 40, owl-annuity-{run}
+# migrate only STARTS building the bge-small index; wait_ready waits for every shard; cutover switches
+# queries to bge-small. Until cutover every answer still comes from minilm.
+ADMIN, migrate, bge-small, 
+ADMIN, wait_ready, bge-small, 
+ADMIN, cutover, bge-small, 
+# answered by the migrated model (bge-small)
+Fox, search, "zebraprobe annuity guaranteed monthly income", 1200, owl-annuity-{run}

@@ -1,7 +1,7 @@
 # 04: reads during a blue/green MODEL MIGRATION (minilm -> bge-small), with a rollback.
 #
-#   python scripts/scenario.py scenarios/04_multi_node_read_migrate.jsonl --start-cluster --tiny --mode sync
-#   python scripts/scenario.py scenarios/04_multi_node_read_migrate.jsonl --start-cluster --mode sync   (real corpus)
+#   python scripts/scenario.py scenarios/ComplexScenarios/04_multi_node_read_migrate.jsonl --start-cluster --tiny --mode sync
+#   python scripts/scenario.py scenarios/ComplexScenarios/04_multi_node_read_migrate.jsonl --start-cluster --mode sync   (real corpus)
 #
 # Actors (one lane each, named like the actor):
 #   🛠️ admin     runs the migration: migrate, wait until ready, cutover, rollback, cutover, finalize.

@@ -14,25 +14,26 @@ I built it because the service makes promises about time and order that are easy
 | a model migration never fails a query; answers change only at cutover; rollback restores them | `router.py` MODEL MIGRATION, `store.start_build` | `04`, `05` |
 | a dead shard gives partial answers, not errors; a restart loses no acked write | `router.py` partial results, `wal.py` | `06`, `07` |
 
-The pieces: `scripts/scenario.py` (runner), `scripts/replay_html.py` (replay page generator), `scenarios/*.jsonl`
-(the catalog), `scenarios/simple_template.csv` (a copy-and-edit starting point in the simple format) and
-`tests/test_scenario.py` (runs them in both modes).
+The pieces: `scripts/scenario.py` (runner), `scripts/replay_html.py` (replay page generator),
+`scenarios/ComplexScenarios/*.jsonl` (the catalog), `scenarios/SimpleScenarios/*.csv` (eight small stories in the simple
+format, plus `simple_template.csv` to copy and edit), `scripts/run_simple_scenarios.py` (runs the eight on four
+clusters) and `tests/test_scenario.py` (runs them in both modes).
 
 ## Quick start
 
 ```powershell
 # fastest: tiny 24-doc corpus + hash "embedder", a fresh 3-shard cluster on ports 19000/19101+ (starts in ~10 s)
-python scripts/scenario.py scenarios/freshness_demo.jsonl --start-cluster --tiny --mode sync
-python scripts/scenario.py scenarios/freshness_demo.jsonl --start-cluster --tiny --mode async
+python scripts/scenario.py scenarios/ComplexScenarios/freshness_demo.jsonl --start-cluster --tiny --mode sync
+python scripts/scenario.py scenarios/ComplexScenarios/freshness_demo.jsonl --start-cluster --tiny --mode async
 
 # the real FiQA corpus (57,638 docs) + MiniLM: same command without --tiny (startup ~1-2 min)
-python scripts/scenario.py scenarios/freshness_demo.jsonl --start-cluster --mode async
+python scripts/scenario.py scenarios/ComplexScenarios/freshness_demo.jsonl --start-cluster --mode async
 
 # against a cluster you already run (python -m src.service.cluster, docker compose, ...)
-python scripts/scenario.py scenarios/freshness_demo.jsonl --url http://127.0.0.1:8000
+python scripts/scenario.py scenarios/ComplexScenarios/freshness_demo.jsonl --url http://127.0.0.1:8000
 
 # the simple CSV format, opening the replay in the browser when the run ends
-python scripts/scenario.py scenarios/simple_template.csv --start-cluster --tiny --open
+python scripts/scenario.py scenarios/SimpleScenarios/simple_template.csv --start-cluster --tiny --open
 
 # re-render the replay page from a recorded log (also how old runs get the newest page features)
 python scripts/scenario.py --replay-only toy_runs/scenarios/<run>/events.jsonl
@@ -59,7 +60,7 @@ dev cluster's 8000/8101+ or the tests' 18000-18999.
 For a quick story I don't want to write JSON. A `.csv` file is read in the simple format, one op per line:
 
 ```text
-actor, operation, text, t_ms[, doc_id]
+actor, operation, text, t_ms[, doc_id[, version]]
 ```
 
 ```text
@@ -78,7 +79,7 @@ Column 3 depends on the operation:
 
 | operation | column 3 | column 5 (`doc_id`) |
 |---|---|---|
-| `search` (`search:bm25`, `search:dense`; plain `search` is hybrid) | the query (required) | optional: a doc I expect in the answer. Recorded as a soft check, so a miss is reported but never fails the run |
+| `search` (`search:bm25`, `search:dense`; plain `search` is hybrid) | the query (required) | optional: `doc` = a doc I expect in the answer, `!doc` = a doc I expect to be gone (after a delete). Recorded as a soft check, so a miss is reported but never fails the run |
 | `upsert` (alias `update`, `write`) | the document text (required) | optional: empty gives `<actor>-<n>-{run}` (`bot1-1-a3f9c2`) |
 | `delete` (alias `remove`) | empty | optional: empty = this actor's last upserted doc, else the last doc anyone upserted |
 | `wait_visible` / `wait_gone` | the query; empty = the doc's upserted text | same default as `delete`. `wait_gone` waits until the doc is no longer found |
@@ -95,7 +96,11 @@ hint gets its role from its first line. A persona that tries `migrate`, or ADMIN
 names the line and says how to fix it; so is an unknown operation, a bad `t_ms`, or a `delete` with nothing upserted
 before it.
 
-`scenarios/simple_template.csv` uses every operation in an order that works end to end, and its header has the exact
+Column 6, `version`, is only for `upsert` and `delete`: an explicit version, to write a retry (the same version
+again), a late older write or a stale write after a delete (see `8_Idempotency.csv`). Empty means "the last version this
+run used for that doc, plus 1", which is what a normal client does.
+
+`scenarios/SimpleScenarios/simple_template.csv` uses every operation in an order that works end to end, and its header has the exact
 commands for Windows and macOS. It passes on the tiny cluster in both modes (22 ops, 0 errors) and is part of the
 tests. Two flags help with it: `--open` opens `replay.html` in the default browser when the run ends, and
 `--to-jsonl` prints the JSON Lines a CSV becomes, without running anything (useful when I later want `parallel` or
@@ -195,8 +200,8 @@ When answers must stay identical and when they may change (scenarios 04 and 05 e
 last row of the replay timeline). I use it for 1 shard vs 3 shards:
 
 ```powershell
-python scripts/scenario.py scenarios/01_single_node_read.jsonl --start-cluster --tiny --golden-save toy_runs/golden/read_tiny.json
-python scripts/scenario.py scenarios/02_multi_node_read.jsonl  --start-cluster --tiny --golden-check toy_runs/golden/read_tiny.json
+python scripts/scenario.py scenarios/ComplexScenarios/01_single_node_read.jsonl --start-cluster --tiny --golden-save toy_runs/golden/read_tiny.json
+python scripts/scenario.py scenarios/ComplexScenarios/02_multi_node_read.jsonl  --start-cluster --tiny --golden-check toy_runs/golden/read_tiny.json
 ```
 
 A golden file only compares with the same corpus and model (tiny/hash and real/MiniLM give different answers); its
@@ -291,7 +296,7 @@ The summary at the end:
 
 | line | meaning |
 |---|---|
-| `expectations` | hard checks passed / failed; soft ones found / missed |
+| `expectations` | checks that held, hard and soft (split in brackets); hard checks that failed (they fail the run); soft checks that missed (allowed) |
 | `writes`, `searches` | counts and client-side p50/p95; `(N partial)` = searches a shard missed |
 | `answer checks` | `same_as`, `overlap`, `golden` passed/total |
 | `expected docs` | searches that expected a doc, split by when they were sent after its ack: `<1 s` and `>=1 s`. This is when the search ran, not the lag. A search sent 3 s after the ack only shows the doc was visible by then |
@@ -369,9 +374,31 @@ op types. The page embeds the events as JSON and replays them on a `requestAnima
 Scrubbing backwards resets and re-applies all events up to the new time without animations, which was simpler than
 undoing them. Packets use the Web Animations API. The JavaScript in `scripts/replay_html.py` is commented.
 
+## Simple scenarios
+
+`scenarios/SimpleScenarios/` holds eight short CSV stories, each one step beyond the last. They use the personas
+Elephant, Fox and Owl and the admin ADMIN, and every write uses a doc id with `{run}` in it.
+
+| file | what happens | what it shows |
+|---|---|---|
+| `1_SimpleRead` | Elephant and Fox search | the baseline: fan-out, merge, the time split |
+| `2_SimpleReadAfterWrite` | + Owl upserts a doc, Fox searches for it | read-your-writes: sync finds it at once; async may miss it for a few ms |
+| `3_SimpleReadAfterWriteAndDelete` | + Owl deletes it, Fox searches three times expecting it gone (`!doc`) | deletes become visible the same way writes do |
+| `4_ReadMigrateRead` | search, ADMIN `migrate` / `wait_ready` / `cutover` to bge-small, search again | answers switch models only at cutover |
+| `5_ReadWriteMigrateRead` | Owl writes before the migration; Fox finds it with bge-small after cutover | the backfill embeds existing docs with the new model |
+| `6_ReadWriteMigrateWriteDuringMigrateRead` | + Elephant writes between migrate and cutover; Fox finds both | dual-write: during a migration every write is embedded with both models |
+| `7_ReadWriteMigrateWriteDuringMigrateRollbackRead` | + ADMIN rolls back; Fox finds both with minilm | rollback is instant and loses nothing |
+| `8_Idempotency` | 3 with explicit versions: a retry, a late v1, a late v2 after the delete, then v4 | retries and stale writes are no-ops; a tombstone blocks resurrection |
+
+`scripts/run_simple_scenarios.py` runs all eight on four clusters, each run on its own fresh 3-shard cluster
+(`--start-cluster`): SimpleSyncTinyCluster and SimpleAsyncTinyCluster (`--tiny`), SimpleSyncFullCluster and
+SimpleAsyncFullCluster (the real corpus). It writes `scenarios/SimpleScenarios/results/<cluster>/<scenario>/` with the
+console output (`console.txt`, checked in), the events and the replay (gitignored), plus `results/SUMMARY.md`, a grid of
+all 32 runs. [scenarios/SimpleScenarios/README.md](../scenarios/SimpleScenarios/README.md) reads my results.
+
 ## The scenario catalog
 
-All run in both modes and declare their actors. "Tiny" means `--start-cluster --tiny`. Each takes 0.1 to 7 s (06: ~23 s
+These are the JSONL files in `scenarios/ComplexScenarios/`. All run in both modes and declare their actors. "Tiny" means `--start-cluster --tiny`. Each takes 0.1 to 7 s (06: ~23 s
 on Windows) plus ~10 to 15 s cluster start.
 
 | file | cluster | actors | what happens | what to look for |

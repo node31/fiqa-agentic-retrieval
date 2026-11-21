@@ -1,8 +1,8 @@
 """Scenario runner: play a file of writes, searches and admin actions against the live service.
 
-    python scripts/scenario.py scenarios/freshness_demo.jsonl --start-cluster --tiny --mode async
-    python scripts/scenario.py scenarios/04_multi_node_read_migrate.jsonl --start-cluster --tiny
-    python scripts/scenario.py scenarios/freshness_demo.jsonl --url http://127.0.0.1:8000
+    python scripts/scenario.py scenarios/ComplexScenarios/freshness_demo.jsonl --start-cluster --tiny --mode async
+    python scripts/scenario.py scenarios/ComplexScenarios/04_multi_node_read_migrate.jsonl --start-cluster --tiny
+    python scripts/scenario.py scenarios/ComplexScenarios/freshness_demo.jsonl --url http://127.0.0.1:8000
     python scripts/scenario.py --replay-only toy_runs/scenarios/<run>/events.jsonl
 
 WHAT
@@ -177,7 +177,7 @@ def parse_scenario(text: str) -> list[dict]:
 
 
 # ----------------------------------------------------------------------------- the simple CSV format
-# One op per line:  actor, operation, text, t_ms[, doc_id]   (docs/scenarios.md "Simple format").
+# One op per line:  actor, operation, text, t_ms[, doc_id[, version]]   (docs/scenarios.md "Simple format").
 # Lines run in FILE ORDER. t_ms = "do not start before t ms after the run started" (empty = right
 # after the previous line). Column 3 depends on the operation:
 SIMPLE_TEXT = {
@@ -228,11 +228,12 @@ def simple_to_ops(text: str) -> list[dict]:
         if not ops and cols and cols[0].lower() == "actor":
             continue   # an optional header row
         if len(cols) < 2 or not cols[0] or not cols[1]:
-            raise ScenarioError(f"{where}: expected  actor, operation, text, t_ms[, doc_id]  got {raw.strip()!r}")
-        cols += [""] * (5 - len(cols))
-        if len(cols) > 5:
+            raise ScenarioError(f"{where}: expected  actor, operation, text, t_ms[, doc_id[, version]]  "
+                                f"got {raw.strip()!r}")
+        cols += [""] * (6 - len(cols))
+        if len(cols) > 6:
             raise ScenarioError(f"{where}: too many columns ({len(cols)}); put text with commas in double quotes")
-        actor, opname, body, t_ms, doc = cols[:5]
+        actor, opname, body, t_ms, doc, version = cols[:6]
         kind, _, strategy = opname.lower().partition(":")
         kind = SIMPLE_ALIASES.get(kind, kind)
         gone = kind == "wait_gone"   # = wait_visible with absent=true (after a delete)
@@ -267,13 +268,23 @@ def simple_to_ops(text: str) -> list[dict]:
             if at < prev_at:
                 op["_warn"] = f"{where}: t_ms {t_ms} is earlier than the line before; it runs right after it"
             op["at"], prev_at = at, max(prev_at, at)
+        if version:   # column 6: an explicit version (retries and stale writes); empty = last one + 1
+            if kind not in ("upsert", "delete"):
+                raise ScenarioError(f"{where}: only upsert and delete take a version (column 6)")
+            if not version.isdigit():
+                raise ScenarioError(f"{where}: version must be a whole number, got {version!r}")
+            op["version"] = int(version)
         if kind == "search":
             if not body:
                 raise ScenarioError(f"{where}: search needs a query in column 3")
             op["query"] = body
             if strategy:
                 op["strategy"] = strategy
-            if doc:   # column 5 on a search = "I expect this doc"; recorded, never fails the run
+            # Column 5 on a search: "doc" = I expect it in the answer, "!doc" = I expect it gone.
+            # Recorded as a soft check: reported, never fails the run.
+            if doc.startswith("!"):
+                op["expect_absent"], op["soft"] = [doc[1:].strip()], True
+            elif doc:
                 op["expect"], op["soft"] = [doc], True
         elif kind == "upsert":
             if not body:
@@ -1379,7 +1390,8 @@ class Runner:
             if k in ("expect", "expect_absent"):
                 want = "expected" if k == "expect" else "expected absent"
                 got = (c(f"FOUND (#{ch['rank']})", "green" if ch["pass"] else "red") if ch["found"]
-                       else c("MISSING", "green" if ch["pass"] else ("red" if ch["hard"] else "yellow")))
+                       else c("MISSING" if k == "expect" else "ABSENT",
+                              "green" if ch["pass"] else ("red" if ch["hard"] else "yellow")))
                 # Freshness as plain facts on the run's clock: doc acked, search sent, answer back, and
                 # the difference. A search sent late only says the script searched late; how fast a
                 # write becomes searchable is what wait_visible measures.
@@ -1469,8 +1481,10 @@ def print_summary(s: dict, meta: dict, console: Console) -> None:
     lines = [c(f"=== SUMMARY  {meta.get('scenario')}  mode={meta.get('mode')}  shards={meta.get('n_shards')}  "
                f"({s['duration_s']:.2f} s) ===", "bold"),
              f"ops run          {s['ops']}  (errors {s['errors']})",
-             f"expectations     {s['checks_passed']} passed, {s['checks_failed']} failed"
-             + (f"; soft: {s['soft_found']} ok, {s['soft_missed']} missed (allowed)" if s['soft_found'] + s['soft_missed'] else "")]
+             # passed = every check that held, hard or soft; failed = hard checks only (they fail the run)
+             f"expectations     {s['checks_passed'] + s['soft_found']} passed ({s['checks_passed']} hard, "
+             f"{s['soft_found']} soft), {s['checks_failed']} failed"
+             + (f"; {s['soft_missed']} soft missed (allowed)" if s['soft_missed'] else "")]
     w, q = s["write_ack_ms"], s["search_ms"]
     lines.append(f"writes           {s['writes']} ({s['writes_applied']} applied)"
                  + (f"   ack p50 {w['p50']:.1f} ms  p95 {w['p95']:.1f} ms" if w else ""))

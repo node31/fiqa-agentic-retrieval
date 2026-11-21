@@ -1,0 +1,33 @@
+$ python scripts/scenario.py scenarios/SimpleScenarios/8_Idempotency.csv --start-cluster --tiny --mode async --out scenarios/SimpleScenarios/results/SimpleAsyncTinyCluster/8_Idempotency --no-color
+
+starting tiny cluster (async mode, 3 shards, models minilm, router :19000, shards :19101+) ...
+cluster up in 11.5 s
+scenario 8_Idempotency.csv: mode=async, 3 shards, model=minilm, url=http://127.0.0.1:19000, run id 142ffe
+[   0.010s] Elephant   SEARCH  "what is short selling?" [hybrid k=10] -> 10 hits (15.7 ms, model minilm)
+[   0.026s] Fox        SEARCH  "should I pay off my mortgage early?" [hybrid k=10] -> 10 hits (12.0 ms, model minilm)
+[   0.038s] Owl        UPSERT  owl-annuity-142ffe v1 -> shard 1 ... OK applied (ack 5.8 ms, async: queued, not yet visible)
+[   0.044s] Owl        UPSERT  owl-annuity-142ffe v1 -> shard 1 ... no-op (stale_or_duplicate, current v1) (3.5 ms)
+[   0.048s] Fox        SEARCH  "zebraprobe annuity guaranteed monthly i…" [hybrid k=10] -> 10 hits (11.2 ms, model minilm)
+                               expected owl-annuity-142ffe: FOUND (#1) (doc acked 0.044 s, search sent 0.048 s, answer back 0.059 s, difference 11 ms) ✓
+[   0.059s] Owl        UPSERT  owl-annuity-142ffe v2 -> shard 1 ... OK applied (ack 5.0 ms, async: queued, not yet visible)
+[   0.064s] Owl        UPSERT  owl-annuity-142ffe v1 -> shard 1 ... no-op (stale_or_duplicate, current v2) (3.5 ms)
+[   0.068s] Fox        SEARCH  "zebraprobe annuity inflation protection…" [hybrid k=10] -> 10 hits (12.1 ms, model minilm)
+                               expected owl-annuity-142ffe: FOUND (#1) (doc acked 0.064 s, search sent 0.068 s, answer back 0.080 s, difference 12 ms) ✓
+[   0.080s] Owl        DELETE  owl-annuity-142ffe v3 -> shard 1 ... OK applied (ack 5.8 ms, async: queued, not yet visible)
+[   0.086s] Owl        UPSERT  owl-annuity-142ffe v2 -> shard 1 ... no-op (stale_or_duplicate, current v3) (4.5 ms)
+[   0.091s] Fox        SEARCH  "zebraprobe annuity guaranteed monthly i…" [hybrid k=10] -> 10 hits (13.6 ms, model minilm)
+                               expected absent owl-annuity-142ffe: ABSENT (doc acked 0.086 s, search sent 0.091 s, answer back 0.104 s, difference 14 ms) ✓
+[   0.104s] Fox        SEARCH  "zebraprobe annuity guaranteed monthly i…" [hybrid k=10] -> 10 hits (13.0 ms, model minilm)
+                               expected absent owl-annuity-142ffe: ABSENT (doc acked 0.086 s, search sent 0.104 s, answer back 0.117 s, difference 13 ms) ✓
+[   0.118s] Owl        UPSERT  owl-annuity-142ffe v4 -> shard 1 ... OK applied (ack 5.6 ms, async: queued, not yet visible)
+[   0.123s] Fox        SEARCH  "zebraprobe annuity guaranteed monthly i…" [hybrid k=10] -> 10 hits (13.4 ms, model minilm)
+                               expected owl-annuity-142ffe: FOUND (#1) (doc acked 0.123 s, search sent 0.123 s, answer back 0.137 s, difference 13 ms) ✓
+=== SUMMARY  8_Idempotency  mode=async  shards=3  (0.14 s) ===
+ops run          14  (errors 0)
+expectations     5 passed (0 hard, 5 soft), 0 failed
+writes           7 (4 applied)   ack p50 5.0 ms  p95 5.8 ms
+searches         7   p50 13.0 ms  p95 15.7 ms
+expected docs    search sent <1 s after the ack: found 3/3   (when the search ran, not the lag)
+RESULT           PASS
+events           scenarios\SimpleScenarios\results\SimpleAsyncTinyCluster\8_Idempotency\events.jsonl
+replay           scenarios\SimpleScenarios\results\SimpleAsyncTinyCluster\8_Idempotency\replay.html

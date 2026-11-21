@@ -1,0 +1,30 @@
+# Scenario 4: ReadMigrateRead
+#
+# Two users search, ADMIN migrates the cluster to the bge-small embedding model, they search again.
+# Look at: the model on each search card (minilm before, bge-small after), the router's model badge flipping
+# at cutover and the bge-small progress bars on each shard. BM25 answers do not change; dense answers do.
+#
+# Run it (from the repo root; Windows: .\.venv\Scripts\python, macOS/Linux: python):
+#   python scripts/scenario.py scenarios/SimpleScenarios/4_ReadMigrateRead.csv --start-cluster --tiny --open             # tiny corpus, sync
+#   python scripts/scenario.py scenarios/SimpleScenarios/4_ReadMigrateRead.csv --start-cluster --tiny --mode async --open
+#   python scripts/scenario.py scenarios/SimpleScenarios/4_ReadMigrateRead.csv --start-cluster --open                    # real corpus (57,638 docs)
+#   python scripts/scenario.py scenarios/SimpleScenarios/4_ReadMigrateRead.csv --start-cluster --mode async --open
+# All eight on all four clusters:  python scripts/run_simple_scenarios.py
+# My recorded runs: scenarios/SimpleScenarios/results/<cluster>/4_ReadMigrateRead/console.txt
+#
+# Columns: actor, operation, text, t_ms[, doc_id[, version]]
+#   t_ms    = do not start before t ms after the run started (lines still run one after another)
+#   doc_id  = on upsert/delete: the doc; on search: a doc I expect in the answer ("!doc" = expect it gone).
+#             Search checks are soft: the console and replay say found / missing, the run never fails on them.
+#   {run}   = a random id per run, so every run writes new docs
+
+Elephant, search, "what is short selling?", 10
+Fox, search, "should I pay off my mortgage early?", 20
+# migrate only STARTS building the bge-small index; wait_ready waits for every shard; cutover switches
+# queries to bge-small. Until cutover every answer still comes from minilm.
+ADMIN, migrate, bge-small, 
+ADMIN, wait_ready, bge-small, 
+ADMIN, cutover, bge-small, 
+# answered by the migrated model (bge-small)
+Elephant, search, "what is short selling?", 1000
+Fox, search, "should I pay off my mortgage early?", 1100

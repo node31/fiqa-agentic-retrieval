@@ -1,0 +1,15 @@
+$ python scripts/scenario.py scenarios/SimpleScenarios/1_SimpleRead.csv --start-cluster --real --mode async --out scenarios/SimpleScenarios/results/SimpleAsyncFullCluster/1_SimpleRead --no-color
+
+starting REAL-corpus cluster (async mode, 3 shards, models minilm, router :19000, shards :19101+) ...
+cluster up in 44.3 s
+scenario 1_SimpleRead.csv: mode=async, 3 shards, model=minilm, url=http://127.0.0.1:19000, run id 8480b3
+[   0.010s] Elephant   SEARCH  "what is short selling?" [hybrid k=10] -> 10 hits (32.5 ms, model minilm)
+[   0.043s] Fox        SEARCH  "should I pay off my mortgage early?" [hybrid k=10] -> 10 hits (29.1 ms, model minilm)
+=== SUMMARY  1_SimpleRead  mode=async  shards=3  (0.07 s) ===
+ops run          2  (errors 0)
+expectations     0 passed (0 hard, 0 soft), 0 failed
+writes           0 (0 applied)
+searches         2   p50 29.1 ms  p95 32.5 ms
+RESULT           PASS
+events           scenarios\SimpleScenarios\results\SimpleAsyncFullCluster\1_SimpleRead\events.jsonl
+replay           scenarios\SimpleScenarios\results\SimpleAsyncFullCluster\1_SimpleRead\replay.html

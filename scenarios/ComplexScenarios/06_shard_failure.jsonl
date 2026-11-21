@@ -1,6 +1,6 @@
 # 06: SHARD FAILURE under traffic. 🧑‍🔧 ops kills shard 1 (like a crash) and restarts it later.
 #
-#   python scripts/scenario.py scenarios/06_shard_failure.jsonl --start-cluster --tiny --mode sync
+#   python scripts/scenario.py scenarios/ComplexScenarios/06_shard_failure.jsonl --start-cluster --tiny --mode sync
 #   (kill_shard / restart_shard need --start-cluster: the runner owns the shard processes)
 #
 # Actors (one lane each, coordinated with signals): 🦊 fox writes docs (before, during and after the

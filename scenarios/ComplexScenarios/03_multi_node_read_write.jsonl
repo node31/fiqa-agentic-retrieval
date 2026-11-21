@@ -1,6 +1,6 @@
 # 03: multi-node reads + writes under load: bots write and read, 🦊 fox checks freshness.
 #
-#   python scripts/scenario.py scenarios/03_multi_node_read_write.jsonl --start-cluster --tiny --mode async
+#   python scripts/scenario.py scenarios/ComplexScenarios/03_multi_node_read_write.jsonl --start-cluster --tiny --mode async
 #
 # Actors (each lane = one thread + one keep-alive HTTP client):
 #   🤖 bot-1, bot-2 : 3 bursts of 20 upserts each (new docs), then wait_visible on the burst's LAST doc

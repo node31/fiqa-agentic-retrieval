@@ -1,7 +1,7 @@
 # 07: ASYNC burst + crash. Three bots write 30 docs to shard 1 as fast as they can; 🧑‍🔧 ops kills
 # shard 1 the moment the last ack arrives, then restarts it. 🐘 elephant checks every acked doc.
 #
-#   python scripts/scenario.py scenarios/07_async_burst_crash.jsonl --start-cluster --tiny --mode async
+#   python scripts/scenario.py scenarios/ComplexScenarios/07_async_burst_crash.jsonl --start-cluster --tiny --mode async
 #
 # Meaningful in ASYNC mode: an ack there means "fsynced to the WAL", NOT "applied". Killing the
 # shard right after the acks leaves some writes accepted but not applied (watch the queue on shard 1

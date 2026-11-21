@@ -1,290 +1,191 @@
-# Chapter 3: Keyword search: tokens, inverted index, TF-IDF, BM25
+# Chapter 3: Keyword search with BM25
 
-> Goal: you can compute a BM25 score by hand for a real FiQA document, explain every symbol in the formula,
-> and build your own BM25 index that reproduces our numbers.
+BM25 ("Best Matching 25", from the 1990s) is the classic keyword-scoring formula and still the default in Elasticsearch,
+OpenSearch and Lucene. Here's the idea in one sentence: a document scores high if it contains the query's words,
+especially rare ones, especially several times (with diminishing returns), and especially if the document is short. I
+wrote my own BM25 in `src/retrieval/bm25.py`, and this chapter walks through it.
 
-> ⚙️ **Running the commands:** open a terminal in the repo root (the folder with `src/`) and use the venv's Python.
-> Seeing `No module named 'src'`? You're in the wrong folder. See "Before you run ANY command" in the [guide README](README.md).
+## Step zero: tokens
 
-**BM25** ("Best Matching 25", from the 1990s) is the classic keyword-search formula. It's still the default in
-Elasticsearch, OpenSearch and Lucene, and still a strong baseline in 2026. Its idea in one sentence:
-*a document scores high if it contains the query's words, especially the **rare** ones, especially **several times**
-(with diminishing returns), especially if the document is **short**.*
-
----
-
-## 3.1 Step zero: turn text into "tokens"
-
-> 🎯 **Why we're doing this:** Keyword search only works if the query's words and the document's words are written the same way. Tokenisation decides what counts as "the same word", and a mismatch here silently zeroes scores.
-
-A computer can't compare meaning; it compares strings. So first we normalise text into a list of **tokens**
-(standardised words), so "Selling", "sells" and "SELL" all become the same token `sell`.
+Computers compare strings, not meaning, so I first normalise text into tokens. "Selling", "sells" and "SELL" should all
+become `sell`, and queries and documents must go through the same tokenizer or nothing matches.
 
 ```mermaid
 flowchart LR
-    T["1. Raw text<br/>'What is Short-Selling?'"] --> L["2. lowercase<br/>'what is short-selling?'"]
-    L --> S["3. split on anything that is<br/>not a-z or 0-9<br/>[what, is, short, selling]"]
-    S --> W["4. drop stopwords<br/>(33 very common words:<br/>is, the, a, of, not...)<br/>[what, short, selling]"]
-    W --> M["5. stem: cut endings<br/>selling → sell<br/>[what, short, sell]"]
+    T["'What is Short-Selling?'"] --> L["lowercase"]
+    L --> S["split on anything not a-z or 0-9<br/>what, is, short, selling"]
+    S --> W["drop stopwords<br/>what, short, selling"]
+    W --> M["stem<br/>what, short, sell"]
 ```
 
-- **Stopwords** are words so common they carry no topic information ("the", "is"). We use Lucene's list of 33 so our numbers
-  are comparable with published BM25 results. Pitfall: it includes **"not"** and **"no"**, so "taxable" and "not taxable" look identical to BM25.
-- **Stemming** (the Snowball/Porter algorithm) chops suffixes with rules: `investing → invest`, `mortgages → mortgag`,
-  `early → earli`. Stems aren't real words, and that's fine: they only need to be *consistent*.
-- Real examples from our tokenizer:
-  - `"I'm not paying taxes on my 401(k) withdrawals early"` → `[i, m, pay, tax, my, 401, k, withdraw, earli]`
-  - `"What is short selling?"` → `[what, short, sell]`
+Stopwords are words too common to say anything about the topic. I use Lucene's list of 33 so my numbers are comparable
+with published BM25 results. That list includes "not" and "no", so BM25 sees "taxable" and "not taxable" as the same.
+Stemming (Snowball, the Porter2 algorithm) cuts suffixes by rule: `investing → invest`, `mortgages → mortgag`,
+`early → earli`. Stems don't have to be real words, they only have to be consistent.
 
-**Critical rule:** queries and documents must go through the **same** tokenizer, or nothing will match.
+Two real outputs of my tokenizer:
 
-## 3.2 The inverted index: the "back-of-the-book index"
+- `"I'm not paying taxes on my 401(k) withdrawals early"` → `[i, m, pay, tax, my, 401, k, withdraw, earli]`
+- `"What is short selling?"` → `[what, short, sell]`
 
-> 🎯 **Why we're doing this:** Scoring all 57,638 docs from raw text per query would be far too slow. The inverted index makes BM25 cost ~1 ms, and it's also the structure we must update for live writes in Part B.
+## The inverted index
 
-To find documents containing `short`, we can't read all 57,638 documents per query. Instead, we build, **once,
-in advance**, a map from each token to the documents containing it (and how many times). That's exactly the index
-at the back of a textbook: "mortgage → pages 12, 85, 201".
+Reading all 57,638 documents per query would be far too slow. So once, in advance, I build a map from each token to the
+documents that contain it and how many times. It's the index at the back of a textbook.
 
 ```
- Forward (what we have):                 Inverted (what we build):
- d1: [short, sell, borrow, share]        borrow → [(d1, tf=1)]
- d2: [short, stock, loss, unlimit]       sell   → [(d1, 1)]
- d3: [mortgag, pay, earli, mortgag]      short  → [(d1, 1), (d2, 1)]
-                                         mortgag→ [(d3, 2)]        ← tf = term frequency in that doc
-                                         ...
+ Forward (what I have):                  Inverted (what I build):
+ d1: [short, sell, borrow, share]        borrow  → [(d1, tf=1)]
+ d2: [short, stock, loss, unlimit]       sell    → [(d1, 1)]
+ d3: [mortgag, pay, earli, mortgag]      short   → [(d1, 1), (d2, 1)]
+                                         mortgag → [(d3, 2)]       tf = count in that doc
 ```
-Each list is a **postings list**. To score the query `[short, sell]`, read just two short lists: cost ∝ the
-number of postings, not the number of documents. FiQA has 54,807 distinct tokens and 3.77 million (token, doc) pairs.
 
-## 3.3 The ingredients of the score
+Each list is a postings list. To score `[short, sell]` I read just those two lists, so the cost grows with the number of
+postings, not the number of documents. FiQA has 54,807 distinct tokens and 3.77 million (token, doc) pairs. This index
+is also the structure I have to update for live writes in Part B.
 
-> 🎯 **Why we're doing this:** Each ingredient fixes a specific flaw of naive word counting: rare words matter more (IDF), repeats have diminishing value (saturation), long docs shouldn't win by size (length norm). Knowing which ingredient does what tells you which knob to turn.
+## The ingredients
 
-| symbol | name | meaning | example (FiQA) |
-|---|---|---|---|
-| `N` | corpus size | number of documents | 57,638 |
-| `df(t)` | document frequency | how many docs contain token t | df(short) = 3,112 |
-| `tf(t,d)` | term frequency | how many times t appears in doc d | `short` appears 11× in doc 336018 |
-| `len(d)` (in the formulas below it's written as d between two vertical bars) | document length | number of tokens in doc d | 271 |
-| `avgdl` | average doc length | mean of `len(d)` over all docs | 95.2 |
-| `k1` | saturation knob | how fast extra repeats stop helping | 1.2 |
-| `b` | length knob | how much long docs are penalised (0 = none, 1 = full) | 0.75 |
+| symbol | meaning | FiQA example |
+|---|---|---|
+| `N` | number of documents | 57,638 |
+| `df(t)` | documents containing token t | df(short) = 3,112 |
+| `tf(t,d)` | times t appears in doc d | `short` appears 11 times in doc 336018 |
+| `\|d\|` | length of doc d in tokens | 271 |
+| `avgdl` | average doc length | 95.2 |
+| `k1` | how fast extra repeats stop helping | 1.2 |
+| `b` | how much long docs are penalised (0 none, 1 full) | 0.75 |
 
 ### IDF: rare words are better evidence
-**IDF** (Inverse Document Frequency) turns df into a weight:  `idf(t) = ln(1 + (N − df + 0.5) / (df + 0.5))`
 
-Real FiQA values (computed with our tokenizer):
+`idf(t) = ln(1 + (N − df + 0.5) / (df + 0.5))`. Real FiQA values with my tokenizer:
 
-| token | df | idf | intuition |
-|---|---|---|---|
-| `what` | 15,719 | 1.30 | in 27% of docs: weak evidence |
-| `stock` | 6,621 | 2.16 | common in a finance forum |
-| `sell` | 5,639 | 2.32 | |
-| `short` | 3,112 | 2.92 | |
-| `ira` | 1,296 | 3.80 | |
-| `roth` | 822 | 4.25 | |
-| `bitcoin` | 346 | 5.11 | |
-| `prepay` | 115 | 6.21 | rare: very strong evidence |
-| a token in only 1 doc | 1 | 10.56 | the maximum |
+| token | df | idf |
+|---|---|---|
+| `what` | 15,719 | 1.30 |
+| `stock` | 6,621 | 2.16 |
+| `sell` | 5,639 | 2.32 |
+| `short` | 3,112 | 2.92 |
+| `ira` | 1,296 | 3.79 |
+| `roth` | 822 | 4.25 |
+| `bitcoin` | 346 | 5.11 |
+| `prepay` | 115 | 6.21 |
+| a token in only 1 doc | 1 | 10.56 |
 
-Matching `prepay` is worth ~5× matching `what`. That's the core insight of keyword search.
+`what` is in 27% of documents, so matching it says little. Matching `prepay` is worth about 5 times as much.
 
-### TF with saturation: the 2nd mention helps, the 20th barely does
-If we used tf directly, a spammy doc repeating "loan" 100 times would win. BM25 *saturates* tf instead:
+### TF with saturation
 
-`tf-part = tf · (k1 + 1) / (tf + k1 · norm)`, where `norm = 1 − b + b · |d| / avgdl` (= 1 for an average-length doc)
+If I used raw tf, a spammy doc repeating "loan" 100 times would win. BM25 saturates it:
+
+`tf-part = tf · (k1 + 1) / (tf + k1 · norm)`, where `norm = 1 − b + b · |d| / avgdl`
 
 | tf (average-length doc, k1 = 1.2) | 1 | 2 | 5 | 20 | 100 |
 |---|---|---|---|---|---|
-| tf-part | 1.00 | 1.38 | 1.77 | 2.08 | 2.17 (max is k1 + 1 = 2.2) |
+| tf-part | 1.00 | 1.38 | 1.77 | 2.08 | 2.17 (the ceiling is k1 + 1 = 2.2) |
 
-### Length normalisation: a match in a short doc means more
-**The idea:** a 10-word doc mentioning "loan" once is probably *about* loans. A 1,000-word doc mentioning "loan" once
-probably isn't; it just has room for lots of words. So BM25 should give a match in a **long** doc **less** credit.
-`norm` is the number that does this. Read it in three steps.
+### Length normalisation
 
-**Step 1: how long is this doc compared to an average one?** That's just the ratio `|d| / avgdl`:
+A 10-word doc that mentions "loan" once is probably about loans. A 1,000-word doc that mentions it once probably isn't.
+`norm` handles this. It blends 1 ("ignore length") with the ratio `|d| / avgdl`, using b as the mix, and it sits in the
+denominator, so a bigger norm means a smaller score. With b = 0 every doc gets norm 1. With b = 1 norm is the ratio itself.
+I use the default b = 0.75.
 
-| doc length `len(d)` (avgdl = 100) | 25 | 50 | 100 | 200 | 400 |
+One mention (tf = 1, k1 = 1.2, avgdl = 100):
+
+| doc length | 25 | 50 | 100 | 200 | 400 |
 |---|---|---|---|---|---|
-| ratio `len(d) / avgdl` | 0.25 (¼ of average) | 0.5 | **1.0** (exactly average) | 2.0 (twice average) | 4.0 |
+| norm (b = 0.75) | 0.438 | 0.625 | 1.000 | 1.750 | 3.250 |
+| tf-part | 1.443 | 1.257 | 1.000 | 0.710 | 0.449 |
 
-**Step 2: blend that ratio with 1, using b as the mix.** `norm = 1 − b + b · ratio` is the same as
-`norm = (1 − b) · 1  +  b · ratio`, i.e. *"take (1−b) parts of 'ignore length' (=1) and b parts of 'the real ratio'"*:
-- **b = 0**: norm = 1 for every doc. Length is ignored completely.
-- **b = 1**: norm = the ratio itself. Fully proportional to length.
-- **b = 0.75** (the default): mostly the ratio, softened a bit towards 1, so very long docs aren't punished *quite* as hard.
+A doc a quarter of the average length gets a 44% bonus for the same mention, and a doc 4 times longer gets less than half.
 
-**Step 3: norm sits in the *denominator* of the tf-part**, `tf · (k1+1) / (tf + k1 · norm)`. So **bigger norm → bigger denominator → smaller score**.
-Here's the tf-part for one mention (tf = 1, k1 = 1.2):
-
-| doc length (avgdl = 100) | 25 | 50 | 100 | 200 | 400 |
-|---|---|---|---|---|---|
-| **b = 0** → norm | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
-| tf-part | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 ← length makes no difference |
-| **b = 0.75** → norm | 0.438 | 0.625 | **1.000** | 1.750 | 3.250 |
-| tf-part | **1.443** | 1.257 | **1.000** | 0.710 | **0.449** ← short doc: bonus; long doc: penalty |
-| **b = 1** → norm | 0.250 | 0.500 | 1.000 | 2.000 | 4.000 |
-| tf-part | 1.692 | 1.375 | 1.000 | 0.647 | 0.379 ← strongest effect |
-
-How to read the b = 0.75 row:
-- An **average-length** doc gets norm = 1: no bonus, no penalty (tf-part 1.0).
-- A doc **¼ as long** as average gets norm 0.44, so the same single mention is worth **1.44**, a 44% bonus.
-- A doc **4× longer** gets norm 3.25, so the same mention is worth **0.45**, less than half.
-
-**On the real data** (avgdl = 95.21): doc 336018 has 271 tokens → ratio 271/95.21 = 2.85 →
-norm = 1 − 0.75 + 0.75 × 2.85 = **2.385**. It's almost 3× longer than average, so each of its matches is discounted (§3.5 below).
-(Toy 02 prints the same effect with avgdl = 50: one mention scores 1.49 in a 10-word doc and 0.11 in a 1,000-word doc.)
-
-## 3.4 The full formula
-
-> 🎯 **Why we're doing this:** You'll implement this exactly (Ch. 3 §D). Every symbol must be clear, or your numbers won't match ours and you won't know why.
+## The full formula
 
 ```
-            ┌─ for every query token t ─────────────────────────────────────┐
-BM25(q,d) = Σ    idf(t)  ×        tf(t,d) · (k1 + 1)
-            t∈q            ─────────────────────────────────────
-                            tf(t,d) + k1 · (1 − b + b · |d|/avgdl)
-            └── "how rare" ──┘  └── "how much, saturated, length-adjusted" ──┘
+BM25(q, d) = Σ over query tokens t of   idf(t) × tf(t,d) · (k1 + 1) / (tf(t,d) + k1 · (1 − b + b · |d|/avgdl))
+                                        "how rare"   "how much, saturated, length-adjusted"
 ```
 
 ```mermaid
 flowchart TB
-    Q["1. Query tokens<br/>[what, short, sell]"] --> F["2. For each token t:<br/>look up its postings list"]
-    F --> I["3. idf(t) from df(t), N"]
-    F --> P["4. for each doc d in the list:<br/>tf-part(t, d) using tf, |d|, avgdl"]
-    I --> X["5. contribution = idf × tf-part<br/>add to score[d]"]
+    Q["Query tokens"] --> F["For each token,<br/>read its postings list"]
+    F --> I["idf from df and N"]
+    F --> P["tf-part for each doc in the list"]
+    I --> X["score of doc += idf × tf-part"]
     P --> X
-    X --> S["6. after all tokens:<br/>sort docs by score"]
-    S --> K["7. return top 10"]
+    X --> S["Sort, return top 10"]
 ```
 
-## 3.5 A real example computed by hand
+## One real score by hand
 
-> 🎯 **Why we're doing this:** Computing one real score by hand is the fastest way to *believe* the formula, and it's the debugging technique you'll use when your implementation disagrees with ours.
+Query "What is short selling?" gives `[what, short, sell]`. N = 57,638, avgdl = 95.21, k1 = 1.2, b = 0.75.
 
-Query: **"What is short selling?"** → tokens `[what, short, sell]`. N = 57,638, avgdl = 95.21, k1 = 1.2, b = 0.75.
-BM25's **#1 result** is doc **336018** (271 tokens): *"...Good description (I hope) from Short Selling: What is Short Selling..."*
+BM25's top result is doc 336018 (271 tokens): "...Good description (I hope) from Short Selling: What is Short Selling...".
+Its norm is 1 − 0.75 + 0.75 × 271 / 95.21 = 2.385, since it's almost 3 times the average length.
 
-**Its norm:** 1 − 0.75 + 0.75 × 271 / 95.21 = **2.385** (it's 2.8× longer than average, so it gets penalised)
-
-| token | df | idf | tf in doc | tf-part = tf·2.2 / (tf + 1.2·2.385) | contribution |
+| token | df | idf | tf | tf-part = tf·2.2 / (tf + 1.2·2.385) | contribution |
 |---|---|---|---|---|---|
 | what | 15,719 | 1.299 | 5 | 11.0 / (5 + 2.862) = 1.399 | 1.818 |
 | short | 3,112 | 2.919 | 11 | 24.2 / (11 + 2.862) = 1.746 | 5.096 |
 | sell | 5,639 | 2.324 | 8 | 17.6 / (8 + 2.862) = 1.620 | 3.766 |
-| | | | | **total** | **10.680** |
+| | | | | total | 10.680 |
 
-And BM25's **#5 result**, doc **127585** (81 tokens, *"In India the Short is what is called ... Naked Short..."*): norm = 0.888
+The fifth result is doc 127585 (81 tokens, "In India the Short is what is called ... Naked Short..."), with norm 0.888:
 
 | token | tf | tf-part | contribution |
 |---|---|---|---|
 | what | 1 | 1.065 | 1.384 |
 | short | 5 | 1.813 | 5.293 |
 | sell | 2 | 1.435 | 3.336 |
-| | | **total** | **10.013** |
+| | | total | 10.013 |
 
-Look how close they are: the long doc mentions "short" **11** times, the short doc only **5**, yet "short"
-contributes *more* in the short doc (5.29 vs 5.10). That's saturation + length normalisation at work.
-Our index returns exactly 10.6799 and 10.0129 for these two docs.
+The long doc says "short" 11 times and the short doc only 5, yet "short" contributes more in the short doc (5.29 vs 5.10).
+That's saturation and length normalisation working together. My index returns 10.6799 and 10.0129 for these two docs, so
+the hand computation matches the code.
 
-## 3.6 Where BM25 fails (why we need Chapter 4)
+## Where BM25 fails
 
-> 🎯 **Why we're doing this:** Knowing a method's failure modes tells you what to combine it with. BM25's failures are exactly dense retrieval's strengths, which is the whole argument for hybrid (Ch. 5).
+Paraphrases share no tokens: "shorting equities" and "betting a share price will fall" score 0 against each other.
+Negation disappears because "not" is a stopword. And one rare word can dominate the score of an off-topic doc.
 
-1. **Synonyms / paraphrases:** query "shorting equities" vs doc "betting a share price will fall" → zero shared tokens → score 0.
-2. **Negation is erased:** "not" is a stopword.
-3. **Rare-word hijacking:** one rare word can dominate the score even if the doc is off-topic.
+These are exactly the cases meaning search handles well, which is my argument for hybrid search in Chapter 5. On dev, my
+BM25 gets nDCG@10 0.2642, Recall@10 0.3135, MRR@10 0.3222, at p50 1.2 ms. The published BEIR number on FiQA test is
+0.236, so mine is in the expected range. It's the weakest system, but it's fast and catches what dense misses.
 
-Our measured result: **BM25 nDCG@10 = 0.264** on dev (the published BEIR test number is 0.236). It's the weakest
-system, but it is fast (1.2 ms/query) and complements meaning search (Chapter 5).
+## How I implemented it
 
----
-
-## 🧸 A. The toys
-
-| toy | shows | run |
-|---|---|---|
-| `00_tokenization.py` | the 5 steps of §3.1 on one sentence, and why stemming makes `investing`/`invest` match | `python examples/00_tokenization.py` |
-| `01_tf_idf_by_hand.py` | df and idf on 10 hand-written docs, and plain TF-IDF ranking | `python examples/01_tf_idf_by_hand.py` |
-| `02_bm25_by_hand.py` | the saturation table, the length-normalisation table, and a **hand computation vs the real index** (they match: 0.7510 = 0.7510) | `python examples/02_bm25_by_hand.py` |
-| `03_inverted_index_sparse.py` | the inverted index as a sparse matrix; adding docs (delta) and deleting them (tombstones) | `python examples/03_inverted_index_sparse.py` |
-
-**How to read toy 02:** Step 2 is the saturation table (watch it approach 2.2). Step 3 is the length table (watch
-0.114 for the 1,000-word doc). Step 4 prints `hand=... index=...`, which must be equal. Then do `TRY THIS 1`: set
-`k1 = 0` and figure out why BM25 becomes "does the doc contain the word: yes/no".
-
-## 🏭 B. The real thing in this repo: `src/retrieval/bm25.py`
-
-- `tokenize(text)`: regex `[a-z0-9]+` on lowercased text → drop the 33 stopwords → Snowball stem (cached).
+- `tokenize(text)`: regex `[a-z0-9]+` on lowercased text, drop the 33 stopwords, Snowball stem (cached).
 - `idf(n_docs, df)`: the Lucene formula above.
-- `CorpusStats(n_docs, total_len, df)`: the numbers IDF and avgdl need. `merge()` adds two together; this matters
-  hugely in Part B (Chapter 7: sharded IDF).
-- `BM25Index`:
-  - `build(doc_ids, texts)`: tokenises everything, builds a **scipy sparse matrix** (rows = docs, columns = tokens,
-    values = tf). It's stored twice: CSC (fast "all docs for this token", i.e. postings) and CSR (fast "all tokens of this doc", for deletes).
-  - `search(terms, k, stats)`: **vectorised** BM25. It computes `norm` for all docs at once, then for each query term
-    adds `idf · tf·(k1+1)/(tf+norm)` into a numpy `scores` array, only at that term's postings. Then picks the top-k with `argpartition`.
-  - `add(doc_id, text)` / `delete(doc_id)`: live updates (Chapter 7) through a small "delta" dict plus an `alive` mask.
+- `CorpusStats(n_docs, total_len, df)`: what IDF and avgdl need. `merge()` adds two together, which Part B uses to get
+  global statistics across shards (Chapter 7).
+- `BM25Index.build(doc_ids, texts)`: builds a scipy sparse matrix (rows = docs, columns = tokens, values = tf). I keep it
+  as CSC for fast "all docs for this token" and CSR for fast "all tokens of this doc", which deletes need.
+- `BM25Index.search(terms, k, stats)`: vectorised. It computes `norm` for all docs in one numpy operation, adds each
+  term's contribution into a `scores` array at that term's postings only, then takes the top k with `argpartition`.
+- `add(doc_id, text)` and `delete(doc_id)`: live updates through a small delta dict for new docs and an `alive` mask for
+  deleted ones (Chapter 7).
 
 ```mermaid
 sequenceDiagram
     participant C as Caller
     participant T as tokenize()
     participant I as BM25Index
-    C->>T: 1. "What is short selling?"
-    T-->>C: [what, short, sell]
-    C->>I: 2. search(terms, k=10)
-    I->>I: 3. norm[all docs] = k1·(1−b+b·len/avgdl)   (one numpy op)
-    loop 4. for each term
-        I->>I: idf from df, then read postings (rows, tf) from the CSC column
-        I->>I: scores[rows] += idf·tf·(k1+1)/(tf+norm[rows])
+    C->>T: "What is short selling?"
+    T-->>C: what, short, sell
+    C->>I: search(terms, k=10)
+    I->>I: norm for all docs in one numpy op
+    loop for each term
+        I->>I: idf from df, read postings from the CSC column
+        I->>I: add idf × tf-part into scores at those rows
     end
-    I->>I: 5. zero out deleted docs, then top-k via argpartition
-    I-->>C: 6. [(336018, 10.68), (226496, 10.67), ...]
+    I->>I: zero out deleted docs, top k via argpartition
+    I-->>C: (336018, 10.68), (226496, 10.67), ...
 ```
 
-Run it on FiQA: `python -m src.eval --mode local --strategy bm25 --name my-bm25`
-→ **nDCG@10 0.2642, Recall@10 0.3135, MRR@10 0.3222, p50 1.2 ms**.
-Build time: ~9 s for 57,638 docs (54,807 distinct tokens).
+```powershell
+python -m src.eval --mode local --strategy bm25 --name my-bm25
+```
 
-## ✍️ C. The toy, by you
-
-1. **On paper**, with 3 docs:
-   `d1 = "short selling means borrowing shares"`, `d2 = "a short story about selling a house and selling a car"`,
-   `d3 = "mortgage rates rose"`. Query: `"short selling"`.
-   Tokenise each (of these words only "a" and "and" are Lucene stopwords; "about" is kept!), compute df, idf (N = 3),
-   |d|, avgdl, then BM25 for d1 and d2. Which wins, and why? (d2 has tf(sell) = 2, but it's longer...)
-   *Answer:* d1 = `[short, sell, mean, borrow, share]` (5 tokens), d2 = `[short, stori, about, sell, hous, sell, car]` (7 tokens);
-   **d2 wins narrowly, 0.985 vs 0.940**: the second "sell" outweighs the length penalty here.
-2. **In code** (`exercises/ch03_bm25/my_bm25.py`, ~50 lines, only `math`, `re`, `collections`; check with `python -m pytest exercises\ch03_bm25`):
-   `tokenize` (lowercase + regex + stopword set + use `snowballstemmer`), `build_index(docs) -> {token: [(doc, tf)]}`,
-   `bm25_search(query, index, ...)`. **Check:** your scores equal the real one for the same 3 docs:
-   ```powershell
-   .\.venv\Scripts\python -c "from src.retrieval.bm25 import BM25Index, tokenize; i=BM25Index().build(['d1','d2','d3'],['short selling means borrowing shares','a short story about selling a house and selling a car','mortgage rates rose']); print(i.search(tokenize('short selling'),3))"
-   ```
-
-## 🔧 D. The real thing, by you
-
-1. **Version 1, pure Python dicts:** inverted index `{token: [(doc_idx, tf)]}`, doc lengths in a list, a score dict
-   per query. Run all 500 dev queries through your Chapter 2 evaluator.
-   **Target:** nDCG@10 ≈ **0.264** (exact if you use the same tokenizer: Lucene's 33 stopwords + `snowballstemmer` English
-   + Lucene IDF + k1 = 1.2, b = 0.75). Expect it to be slower than ours (tens of ms/query). That's fine for now.
-2. **Version 2, numpy/scipy:** build a `scipy.sparse.csc_matrix` (docs × tokens) and vectorise the scoring like §B.
-   **Target:** the same metrics, ~1–2 ms/query.
-3. **Experiments** (each one teaches something):
-   - b = 0 vs 0.75 vs 1.0. Does length normalisation help on FiQA?
-   - remove stemming → how much does nDCG drop?
-   - remove "not" from the stopword list
-4. **Live updates** (needed for Part B): add `add(doc)` and `delete(doc)` *without rebuilding*. Hint: a delta dict for
-   new docs, an `alive` boolean array for deletes, and keep `df`/`total_len` updated. Test: add a doc with a made-up word,
-   search for it, delete it, search again.
-
-### Check yourself
-1. Why is `idf` of a word in every doc ≈ 0? Why does Lucene add `1 +` inside the log?
-2. What does `k1 = 0` do? What does `b = 0` do?
-3. Doc A has tf = 11 and is 271 tokens long; doc B has tf = 5 and is 81 tokens long. Why can B's contribution be larger?
-4. Name a FiQA query where BM25 must fail, and say why.
-
-**Next:** [Chapter 4: meaning search with embeddings](04_meaning_search_embeddings.md)
+Next: [Chapter 4: meaning search with embeddings](04_meaning_search_embeddings.md)

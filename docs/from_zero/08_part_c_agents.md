@@ -1,133 +1,98 @@
 # Chapter 8: Part C: LLMs, tool calling, agents, multi-agent
 
-> Goal: you understand that an "agent" is just **a loop in your code around an LLM**, how the single agent and the
-> planner → workers → verifier team work, how we measured whether they help, and you can build both yourself.
+An agent is a loop in my code around an LLM. In this chapter I show the single agent, the planner, workers and verifier
+team, how I measured whether either one helps, and which queries I route to which.
 
-> ⚙️ **Running the commands:** open a terminal in the repo root (the folder with `src/`) and use the venv's Python.
-> Seeing `No module named 'src'`? You're in the wrong folder. See "Before you run ANY command" in the [guide README](README.md).
+## 8.1 What an LLM call is
 
----
+An LLM (GPT, Claude, ...) is a function from text to text. Four facts about it drive every guardrail in this chapter:
+you pay per token (a token is about 3/4 of a word), the whole prompt is re-sent and re-paid on every call, the output is
+sometimes confidently wrong (an invented doc id, say), and it's slow. So I validate everything it returns and cache every
+response, which also makes re-runs identical.
 
-## 8.1 What an LLM is (just enough)
+Cost is `input_tokens x price_in + output_tokens x price_out` (prices per 1M tokens). Input is everything I send: system
+prompt, request, earlier results. I control its size, for example by cutting each passage to 200 characters
+(`snippet_chars` in `src/agent/tools.py`). Output is what the model writes back, capped by `max_output_tokens` (planner
+200, agent and verifier 250). Output is generated one token at a time, so it is usually priced 3 to 5 times higher.
 
-> 🎯 **Why we're doing this:** you can't design or budget an agent without knowing what an LLM call *is*: text in,
-> text out, billed per token, sometimes wrong. Every guardrail in this chapter follows from those four facts.
+An example from my dev run (`results/agent_eval_dev_copilot.json`, single agent, plain queries): 1.67 LLM calls, about
+1,789 tokens and about $0.002 per query. With my prices ($1 per 1M input, $4 per 1M output, `src/config.py`) that solves
+to roughly 1,720 input and 70 output tokens (my estimate, since the file stores only the total). So about 96% of the
+tokens are input. For agents the bill is mostly prompt re-reading, which is why compact prompts, passing only ids and
+snippets, and caching matter more than capping the answer. The prices are placeholders (I don't know the real
+`gpt-6-sol` price). Override them with `PRICE_PER_1M_INPUT` and `PRICE_PER_1M_OUTPUT`.
 
-An **LLM** (large language model: GPT, Claude, ...) is a function: **text in → text out**. That's all.
+## 8.2 Tool calling: the LLM asks, my code acts
 
-| term | meaning | why you care |
-|---|---|---|
-| **token** | a chunk of text, ~¾ of a word (`"mortgage"` ≈ 1–2 tokens) | **you pay per token**, input and output, every call |
-| **prompt** | the input text. Usually a **system** part (the rules / role) + a **user** part (this request) | the system part is re-sent (and re-paid) on every call |
-| **context window** | max tokens per call | long transcripts get expensive, then impossible |
-| **temperature** | randomness of the output (0 = most deterministic) | reproducibility; we also **cache** every response |
-| **hallucination** | confident, wrong output (e.g. an invented doc id) | **validate everything the LLM returns** |
-
-Cost formula: `$ = input_tokens × price_in + output_tokens × price_out` (prices are per 1M tokens).
-
-**Input vs output tokens.** Input = everything you *send* on a call; output = everything the model *writes back*.
-
-| | Input tokens | Output tokens |
-|---|---|---|
-| What | system prompt (rules, tool descriptions) + user request + any history/passages you include | the model's reply, e.g. `{"action":"search","query":"..."}` or the final 10 doc ids |
-| Who controls the size | **you**: shorter prompts, truncated passages (we cut each to 200 chars, `snippet_chars` in `src/agent/tools.py`) | the model, capped by `max_output_tokens` (we pass 200–250 per call: planner 200, agent/verifier 250) |
-| Why priced differently | read in one parallel pass, so cheap | generated **one token at a time**, each a full forward pass, so usually **3–5× pricier** |
-| Paid again? | **yes**: the system prompt + history are re-sent on **every** call, so a 3-step agent pays for them 3× | once |
-
-**Worked example from our own run** (`results/agent_eval_dev_copilot.json`, single agent, plain queries): 1.67 LLM calls,
-~1,789 tokens and ~$0.002 per query. With our prices ($1/M input, $4/M output, `src/config.py`) that solves to roughly
-**1,720 input + 70 output** tokens (an estimate: the file stores only the total and a rounded cost, not the split):
-
-```
-1,720 × $1/1M + 70 × $4/1M = $0.00172 + $0.00028 ≈ $0.002 per query
-```
-
-So ~96% of the tokens are input. **For agents the bill is mostly prompt re-reading**, which is why compact prompts,
-passing only ids/snippets between agents, and caching matter more than capping the answer length.
-
-> ⚠️ The prices are **placeholders** (the real `gpt-6-sol` price is unknown). Override them with the env vars
-> `PRICE_PER_1M_INPUT` / `PRICE_PER_1M_OUTPUT`.
-
-## 8.2 Tool calling: the LLM asks, *your code* acts
-
-> 🎯 **Why we're doing this:** an LLM can't search our index by itself. It can only *write text*. Tool calling is the
-> trick that lets it *request* a search, which our code executes. This is the foundation of every agent.
-
-The LLM never runs anything. We describe a tool in the prompt, the LLM replies with a **structured request**
-(JSON), *our* code runs the function, and we send the result back in the next prompt.
+The LLM can't search my index. It can only write text. So I describe a search tool in the prompt, the LLM replies with a
+JSON request, my code runs the search, and I send the results back in the next prompt:
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant C as Your code (the loop)
+    participant C as My code (the loop)
     participant L as LLM
-    participant T as search tool (our router)
-    C->>L: system: "You can call search(query). Reply ONLY with JSON."<br/>user: "Question: ... Results so far: ..."
+    participant T as search tool (router)
+    C->>L: system: "You can call search(query). Reply only with JSON."<br/>user: "Question: ... Results so far: ..."
     L-->>C: {"action": "search", "query": "short selling borrow fee"}
-    C->>C: parse JSON, validate (known action? query non-empty?)
+    C->>C: parse JSON, validate (known action? non-empty query?)
     C->>T: search("short selling borrow fee", hybrid)
     T-->>C: top-10 ids + snippets
     C->>L: same system + user + "Search 2 results: ..."
     L-->>C: {"action": "finish", "doc_ids": ["d2", "d10", "d1"]}
-    C->>C: keep only ids we actually showed it (drop invented ones)
+    C->>C: keep only ids it was shown, drop invented ones
 ```
 
-"Native function calling" in the OpenAI/Anthropic APIs is the same loop: the provider just enforces the JSON schema and returns
-the call in a dedicated field. We use a plain **JSON-in-text protocol**, so the same agent code works with any backend.
+"Native function calling" in the OpenAI and Anthropic APIs is the same loop, with the provider enforcing the JSON schema.
+I use a plain JSON-in-text protocol, so the same agent code works with any backend.
 
-## 8.3 An agent = a loop. Our single agent
-
-> 🎯 **Why we're doing this:** Part C2 asks for one agent with a search tool. It's also the baseline the multi-agent
-> design has to beat. If one loop already solves it, a team isn't worth its cost.
+## 8.3 The single agent
 
 ```mermaid
 flowchart TB
-    S0["0. FREE step (no LLM): search the question with hybrid<br/>(grounds the LLM in real results)"] --> L1
-    L1["1. LLM step: look at all results so far →<br/>reply JSON: search again OR finish"] --> D{"action?"}
-    D -- "search(new query)<br/>(steps left)" --> RUN["2. run the search,<br/>append results to the transcript"] --> L1
-    D -- "finish(doc_ids)<br/>or last step" --> V["3. validate: keep only ids it has SEEN,<br/>dedupe"]
-    D -- "bad JSON / budget / timeout" --> V
+    S0["0. free step, no LLM: search the question with hybrid"] --> L1
+    L1["1. LLM step: read all results so far<br/>reply JSON: search again or finish"] --> D{"action?"}
+    D -- "search(new query), steps left" --> RUN["2. run the search,<br/>append results to the transcript"] --> L1
+    D -- "finish(doc_ids) or last step" --> V["3. validate: keep only ids it has seen, dedupe"]
+    D -- "bad JSON, budget, timeout" --> V
     V --> FILL["4. fill the remaining slots with RRF<br/>over every search it ran"]
     FILL --> OUT["5. final top 10"]
 ```
 
-Guardrails (real code: `src/agent/single_agent.py`): max **3 LLM steps** (the last one is forced to `finish`), a **token budget**
-(12K), invented ids dropped, any error → fall back to the results gathered so far. **An agent must never return *worse than
-nothing*: the worst case is the plain search.**
-
-Cost insight (toy 21): every step **re-sends the whole transcript**, so step 2's prompt is longer than step 1's. Agent cost
-grows faster than linearly with the number of steps.
+The first search is free so the LLM starts from real results. The guardrails (`src/agent/single_agent.py`): at most 3 LLM
+steps (the last one is forced to `finish`), a 12K token budget, invented ids dropped, and any error falls back to the
+results gathered so far. The worst case is the plain search, never something worse. Every step re-sends the whole
+transcript, so step 2's prompt is longer than step 1's and cost grows faster than the number of steps.
 
 ## 8.4 The test set: compound questions
 
-> 🎯 **Why we're doing this:** on ordinary one-topic questions, plain hybrid search is already good, so an agent has
-> little to add. To find out *when* agents help, we need questions where plain search predictably fails: two needs in one question.
-
-`data/build_compound.py` (Part C1) builds **100 two-topic questions** from dev:
+On ordinary one-topic questions plain hybrid search is already good, so an agent has little to add. To find out when
+agents help, I needed questions where plain search predictably fails: two needs in one question. `data/build_compound.py`
+builds 100 of them from dev:
 
 ```mermaid
 flowchart LR
-    A["1. sample 200 dev queries<br/>(seed 42)"] --> B["2. embed them; pair each with<br/>a random partner of cosine < 0.25<br/>(= different topics)"]
-    B --> C["3. merge each pair into ONE natural<br/>question (rewrites written by an LLM;<br/>10 hand-checked by a human)"]
-    C --> D["4. gold = both halves' gold docs,<br/>each tagged 'a' or 'b'<br/>(for Coverage@10)"]
+    A["1. sample 200 dev queries<br/>seed 42"] --> B["2. embed them, pair each with<br/>a partner of cosine below 0.25<br/>(different topics)"]
+    B --> C["3. merge each pair into one<br/>natural question, rewritten by an LLM"]
+    C --> D["4. gold = both halves' gold docs,<br/>each tagged 'a' or 'b'<br/>for Coverage@10"]
 ```
 
-A real one (`c000`): **"Why might a share price not change at all for several days, and what are the steps to buying a home?"**
-Gold: `128888` (half a), `283141` and `390447` (half b). Plain hybrid search here tends to fill the top 10 with one half,
-so Coverage@10 suffers (baseline Coverage **0.10**).
+An example (`c000`): "Why might a share price not change at all for several days, and what are the steps to buying a
+home?" Gold: `128888` (half a), `283141` and `390447` (half b). Plain search tends to fill the top 10 with one half, so
+baseline Coverage@10 is 0.10. I set aside 10 rewrites for a human hand-check in `data/compound_review_sheet.md`; that
+check is not done yet.
 
-## 8.5 The multi-agent team: planner → workers → verifier
+## 8.5 The multi-agent team
 
-> 🎯 **Why we're doing this:** Part C3 asks for multiple cooperating roles with budgets and failure handling. The design
-> question is *which* steps need an LLM at all. Every LLM call costs seconds and money, so we use one only where judgement is needed.
+Every LLM call costs seconds and money, so I use one only where judgement is needed:
 
 | role | LLM? | job |
 |---|---|---|
-| **Orchestrator** | **no: plain Python** | owns the budget, timeouts and the final 10 slots. Control flow you can unit-test beats asking a model to "coordinate". |
-| **Gate** | no (regex + length) | short, single-clause question → skip the planner entirely (0 LLM calls) |
-| **Planner** | yes (1 call) | "simple, or compound?" → up to 3 standalone sub-queries |
-| **Workers** | no | one search per sub-query + one for the full question, **in parallel** threads, 10 s timeout each |
-| **Verifier** | yes (1 batched call) | sees the top-5 snippets per sub-query; may rewrite a drifted sub-query once |
+| Orchestrator | no, plain Python | owns the budget, timeouts and the final 10 slots. Control flow I can unit-test |
+| Gate | no (regex + length) | short single-clause question: skip the planner, 0 LLM calls |
+| Planner | yes, 1 call | simple or compound? Up to 3 standalone sub-queries |
+| Workers | no | one search per sub-query plus one for the full question, in parallel threads, 10 s timeout each |
+| Verifier | yes, 1 batched call | sees the top 5 snippets per sub-query, may rewrite a drifted sub-query once |
 
 ```mermaid
 sequenceDiagram
@@ -139,230 +104,153 @@ sequenceDiagram
     participant W as Workers (parallel searches)
     participant V as Verifier (LLM)
     U->>O: "How does short selling work, and should I pay off my mortgage early?"
-    O->>G: looks_simple? (≤ 12 words, no 'and'/','/2nd '?')
-    G-->>O: no → needs the planner
-    O->>P: plan (budget: ≤ 3 calls, ≤ 8K tokens per query)
+    O->>G: looks_simple? (at most 12 words, no 'and', no comma, no second '?')
+    G-->>O: no, needs the planner
+    O->>P: plan (budget: at most 3 calls, 8K tokens per query)
     P-->>O: {"simple": false, "subqueries": ["how short selling works", "pay off mortgage early or invest"]}
     par in parallel, 10 s timeout each
         O->>W: search(sub 0)
         O->>W: search(sub 1)
-        O->>W: search(full question)  (slot filler)
+        O->>W: search(full question)
     end
-    W-->>O: 3 result lists (failed/slow ones dropped + recorded)
-    O->>V: top-5 snippets per sub-query: on topic?
+    W-->>O: 3 result lists (failed or slow ones dropped and recorded)
+    O->>V: top 5 snippets per sub-query: on topic?
     V-->>O: {"checks": [{"sub": 1, "relevant": false, "rewrite": "mortgage prepayment vs investing"}]}
     O->>W: re-search sub 1 with the rewrite
-    O->>O: SLOTS: interleave A1, B1, A2, B2, ... (≈ 5 + 5), dedupe, fill from full-question list
-    O-->>U: top 10 (+ errors, trace, calls, tokens)
+    O->>O: interleave A1, B1, A2, B2, ... dedupe, fill from the full-question list
+    O-->>U: top 10 + errors, trace, calls, tokens
 ```
 
-**Why interleave instead of sorting by score?** Scores from different sub-queries aren't comparable. Toy 25: a score merge
-gave all 10 slots to the "easy" half (Coverage **0.00**); interleave guaranteed both halves (Coverage **1.00**).
-Price: each half keeps only its top ~5.
+I interleave instead of sorting by score because scores from different sub-queries aren't comparable. A score merge can
+hand all 10 slots to the easy half. Interleaving guarantees both halves get about 5 slots each, at the price of keeping
+only each half's top 5. Budgets are checked before each call by reserving the worst case (prompt plus max output), so
+even parallel workers can't jointly overspend. When the budget runs out, the orchestrator skips the remaining LLM steps
+and still returns results.
 
-**Budgets are checked *before* each call** (reserve the worst case: prompt + max output). That way even parallel workers can't jointly overspend.
-When the budget runs out, the orchestrator *skips* the remaining LLM steps and still returns results.
+## 8.6 Did it help?
 
-## 8.6 Did it help? The evaluation
+An agent costs 1 to 3 LLM calls per query, so it's only worth shipping if it measurably improves the queries it's used
+on. I evaluated on 100 plain dev queries (seed 42) and the 100 compound ones, through the same search API.
 
-> 🎯 **Why we're doing this:** agents cost 1–3 LLM calls (seconds and money) per query. They're only worth shipping if
-> they measurably improve something users care about, on the queries where they're used. Part C4 asks for exactly this decision.
+### Dev run: claude-haiku-4.5 (free, via GitHub Copilot CLI)
 
-Dev evaluation: 100 plain dev queries (seed 42) + the 100 compound ones, through the same search API
-(`results/agent_eval_dev_copilot.json`, LLM = claude-haiku-4.5 via the free GitHub Copilot CLI):
+`results/agent_eval_dev_copilot.json`. This is a dev run; the final numbers are the Azure run below.
 
 | set | system | Recall@10 | MRR@10 | Coverage@10 | LLM calls / q | tokens / q |
 |---|---|---|---|---|---|---|
-| plain | baseline (no LLM) | **0.502** | **0.485** | – | 0 | 0 |
-| plain | single agent | 0.494 | 0.432 | – | 1.67 | 1,789 |
-| plain | multi-agent | 0.476 | 0.472 | – | 0.53 | 138 |
+| plain | baseline (no LLM) | 0.502 | 0.485 | n/a | 0 | 0 |
+| plain | single agent | 0.494 | 0.432 | n/a | 1.67 | 1,789 |
+| plain | multi-agent | 0.476 | 0.472 | n/a | 0.53 | 138 |
 | compound | baseline | 0.204 | 0.365 | 0.10 | 0 | 0 |
-| compound | single agent | 0.327 | **0.513** | **0.29** | 2.24 | 2,681 |
-| compound | multi-agent | **0.335** | 0.493 | 0.26 | 2.00 | 940 |
+| compound | single agent | 0.327 | 0.513 | 0.29 | 2.24 | 2,681 |
+| compound | multi-agent | 0.335 | 0.493 | 0.26 | 2.00 | 940 |
 
-**How to read it (haiku dev run; the Azure run below changes part of this):**
-- **Plain questions: agents don't help** (slightly worse). There was nothing to fix, and the LLM's re-ordering lost some MRR.
-- **Compound questions: agents help a lot.** Recall goes from 0.20 to ~0.33 (+60% relative), and Coverage from 0.10 to 0.26–0.29.
-- Single vs multi: similar quality, but multi uses **~3× fewer tokens** and fewer calls. Why is explained just below.
-- Traces: the planner split **100/100** compound questions and kept **91/100** plain ones simple (56 by the free gate). All of
-  multi's plain-set loss comes from the **9 wrongly split** plain questions (their recall fell 0.70 → 0.40).
+On plain questions the agents didn't help: there was nothing to fix, and haiku's re-ordering lost some MRR. On compound
+questions they helped a lot: recall went from 0.20 to about 0.33 and Coverage from 0.10 to 0.26 (multi) and 0.29
+(single). The planner split all 100 compound questions and kept 91 of 100 plain ones simple (56 by the free gate). All of
+multi's plain-set loss comes from the 9 wrongly split plain questions, whose recall fell from 0.70 to 0.40.
 
-### Why does multi-agent need fewer LLM calls AND fewer tokens?
+### Why multi-agent needs fewer calls and fewer tokens
 
-> 🎯 **Why we're doing this:** "more agents" sounds like "more LLM calls". Here it's the opposite, and the reason is the most
-> useful design lesson of Part C: **put the decisions that don't need an LLM into plain code.**
+Multi does more searches (3.38 per compound question vs 2.24) and still uses about a third of the tokens, because it gives
+the LLM less to do and less to read: searching, the "ask the LLM at all?" decision and merging are plain code.
 
-It is not a smarter model. The multi-agent system gives the LLM **less to do and less to read**: searching, the "should we
-even ask the LLM?" decision and merging the results are ordinary code. The LLM only answers two small, fixed questions.
+The workers use no LLM. In `src/agent/orchestrator.py` a worker is a function call in a thread pool that runs `search()`,
+so each extra search costs 0 tokens. In the single agent, every search is chosen by an LLM call.
 
-**1. The "workers" use no LLM at all.** In `src/agent/orchestrator.py` a retrieval worker is a plain function call in a thread
-pool that runs `search()`. So multi does **more** searches (3.38 per compound question vs 2.24) for **0 tokens**. In the single
-agent, every search is chosen by an LLM call ("what should I search next?").
+The single agent re-reads everything on every step. An LLM has no memory between calls, so `single_agent.py` rebuilds the
+prompt each step: system prompt (about 194 tokens) plus question plus all search results so far (about 517 tokens per
+search of 10 hits, measured as characters / 4). So call 1 sends about 740 input tokens, call 2 about 1,260 and call 3
+about 1,780. 2.24 calls on average plus the replies comes to about 2,600, which matches the measured 2,681 tokens per
+compound question.
 
-**2. The single agent re-reads everything on every step.** An LLM has no memory between calls, so `single_agent.py` rebuilds
-the whole prompt each step: system prompt + question + **all search results so far**. Measured sizes (≈ characters / 4):
-system prompt ≈ 194 tokens, one result line ≈ 52 tokens, so one search of 10 hits ≈ 517 tokens.
+The multi-agent flow has only two small LLM calls. The planner sees its instructions (118 tokens) and the question, with
+no search results, about 200 tokens in total. The verifier sees its instructions (106) and the top 5 hits (not 10) of each
+sub-question in one batched call, about 740. Together that's about 940, and the measured value is 940. The `Budget` cap
+(`max_llm_calls=3`) is a safety net on top.
 
-| single-agent step | what the prompt contains | input tokens (≈) |
-|---|---|---|
-| call 1 | 194 + question + 1 search (517) | 740 |
-| call 2 | 194 + question + 2 searches (1,034) | 1,260 |
-| call 3 | 194 + question + 3 searches (1,551) | 1,780 |
+Most plain questions never reach the LLM. `looks_simple()` is a free check: at most 12 words and no sign of a second
+question (no "and / also / plus / as well as / additionally / then / while", no comma or semicolon, not two question
+marks). On the 100 plain questions, the gate answered 56 for free, the planner said "simple" for 35 (1 call each) and
+wrongly split 9 (2 calls each), which averages to (35 + 9 x 2) / 100 = 0.53 calls. The single agent always makes at least
+one. On the compound questions every multi-agent run used exactly 2 calls, and the verifier rewrote a sub-question in 36
+of them (each rewrite is one more search, still 0 tokens).
 
-The prompt grows every step, so cost grows faster than the number of calls. 2.24 calls on average plus the replies ≈ 2,600,
-which matches the measured **2,681 tokens** per compound question.
+Multi is cheap because its flow is fixed: plan once, search in parallel, verify once. The single agent is adaptive: it
+reads results and decides what to search next, and pays for that in tokens. With haiku the fixed flow did as well on
+compound questions (recall 0.335 vs 0.327) for about a third of the tokens. With a stronger model, the adaptive loop
+starts paying off.
 
-**3. The multi-agent LLM calls are small and capped at two.**
+### Final run: Azure gpt-6-sol
 
-| multi-agent call | what it sees | tokens (≈, incl. the reply) |
-|---|---|---|
-| planner | its instructions (118) + the question. **No search results at all** | ~200 |
-| verifier | its instructions (106) + the **top 5** hits (not 10) of each sub-question, all in **one** batched call | ~740 |
-| **total** | the flow has only these 2 LLM steps (the `Budget` cap, `max_llm_calls=3`, is a safety net on top) | **~940** (measured **940**) |
-
-**4. Most plain questions never reach the LLM.** `looks_simple()` is a free code check: 12 words or fewer and no sign of a
-second question (no "and / also / plus / as well as / additionally / then / while", no comma or semicolon, not two question
-marks). From the traces of the 100 plain questions:
-
-| path | questions | LLM calls each |
-|---|---|---|
-| free gate said "simple" → just search | 56 | 0 |
-| planner called, said "simple" → just search | 35 | 1 |
-| planner split it (wrongly) → workers + verifier | 9 | 2 |
-| **average** | | **(35 + 9 × 2) / 100 = 0.53** |
-
-The single agent always makes at least one call (it must decide whether to search again): 1.67 calls, 1,789 tokens.
-On the 100 compound questions every multi-agent run used exactly 2 calls, and the verifier rewrote a sub-question in 36 of them
-(each rewrite = one extra search, still 0 tokens).
-
-**The trade-off.** Multi is cheap because its flow is **fixed**: plan once, search in parallel, verify once. The single agent is
-**adaptive**: it reads the results and decides what to search next (up to 3 times), and pays for that freedom in tokens. On
-compound questions, with haiku, the fixed flow did as well (Recall 0.335 vs 0.327) for about a third of the tokens. When a
-fixed recipe handles the task, code beats an LLM loop on both cost and predictability. *But see the Azure run below: with a
-stronger model, the adaptive loop's freedom starts paying off.*
-
-### The final run: Azure `gpt-6-sol` (your run)
-
-Same 200 queries and the same code, only the LLM changed (`results/agent_eval.json`; reasoning effort `low`; search =
-single-node router, which gives the same quality as the 3 shards). 0 errors, 394 s, ≈ 655K tokens,
-**$0.79 at placeholder prices** ($1 / $4 per 1M input / output tokens; the real rates weren't known).
+Same 200 queries and the same code, only the LLM changed (`results/agent_eval.json`, reasoning effort `low`, search
+through the single-node router, which gives the same quality as 3 shards). 0 errors, 394 s, about 655K tokens, $0.79 at
+the placeholder prices ($1 / $4 per 1M input / output tokens). The dry-run estimate beforehand was $0.47.
 
 | set | system | Recall@10 | MRR@10 | Coverage@10 | LLM calls / q | tokens / q | p50 / p95 s |
 |---|---|---|---|---|---|---|---|
-| plain | baseline (no LLM) | 0.502 | 0.485 | – | 0 | 0 | 0.06 / 0.08 |
-| plain | single agent | **0.547** | **0.642** | – | 1.96 | 2,118 | 4.09 / 7.27 |
-| plain | multi-agent | 0.481 | 0.466 | – | 0.51 | 130 | 0.03 / 3.59 |
+| plain | baseline (no LLM) | 0.502 | 0.485 | n/a | 0 | 0 | 0.06 / 0.08 |
+| plain | single agent | 0.547 | 0.642 | n/a | 1.96 | 2,118 | 4.09 / 7.27 |
+| plain | multi-agent | 0.481 | 0.466 | n/a | 0.51 | 130 | 0.03 / 3.59 |
 | compound | baseline | 0.204 | 0.365 | 0.10 | 0 | 0 | 0.08 / 0.10 |
-| compound | single agent | **0.400** | **0.609** | **0.40** | 2.70 | 3,380 | 5.75 / 9.28 |
+| compound | single agent | 0.400 | 0.609 | 0.40 | 2.70 | 3,380 | 5.75 / 9.28 |
 | compound | multi-agent | 0.355 | 0.518 | 0.32 | 2.00 | 925 | 3.40 / 4.75 |
 
-**What changed vs the haiku dev run:**
-- **The single agent now wins everywhere on quality.** On plain questions it improved recall on 7 queries and hurt it on
-  **0**, and moved the first relevant hit up on 30 (down on 3). Its last step is "pick the final 10 from everything you
-  saw", i.e. an **LLM reranker over 200-char snippets**. haiku was a bad reranker (plain MRR 0.485 → 0.432); gpt-6-sol is a
-  good one (0.485 → 0.642).
-- **The multi-agent barely moved** (compound recall 0.335 → 0.355). Its LLM never ranks anything; it only splits the
-  question and checks sub-results. A smarter model can't improve a step it doesn't do.
-- **The token story still holds:** multi used 925 tokens per compound question vs single's 3,380 (3.7×), for the same
-  reasons as above. Its p95 (4.7 s) is half of single's (9.3 s), because the flow is fixed at 2 calls.
-- **Is the single > multi gap real?** On compound questions, per query: recall +0.045 (bootstrap 95% CI +0.007 to +0.085),
-  coverage +0.08 (CI +0.01 to +0.15). It is real but small at n = 100.
-- The multi-agent's plain-set loss is again entirely the false splits: 7 this time, whose recall fell 0.82 → 0.51.
+What changed against the haiku run:
 
-> 💡 **Lesson:** "which architecture is best" is not a property of the architecture alone. It depends on the model. An
-> eval you ran with one model is a decision you must re-check when you swap the model.
+- The single agent now wins on quality everywhere. On plain questions it improved recall on 7 queries and hurt it on 0,
+  and moved the first relevant hit up on 30 (down on 3). Its last step picks the final 10 from everything it saw, which
+  makes it an LLM reranker over 200-character snippets. haiku was a bad reranker (plain MRR 0.485 to 0.432). gpt-6-sol is
+  a good one (0.485 to 0.642).
+- The multi-agent barely moved (compound recall 0.335 to 0.355). Its LLM never ranks anything; it only splits the question
+  and checks sub-results, so a smarter model can't improve a step it doesn't do.
+- The token pattern held: multi used 925 tokens per compound question against single's 3,380 (3.7x), and its p95 (4.75 s)
+  is about half of single's (9.28 s), because its flow is fixed at 2 calls.
+- The single vs multi gap on compound questions is real but small at n = 100: recall +0.045 per query (bootstrap 95% CI
+  +0.007 to +0.085), coverage +0.08 (CI +0.01 to +0.15).
+- Multi's plain-set loss is again entirely false splits: 7 this time, whose recall fell from 0.82 to 0.51.
 
-**Decision: route, now with two agentic options.**
-- Simple (free gate / planner) → plain search: ~30 ms, free. The single agent *does* improve plain questions (+0.045
-  recall, +0.157 MRR), but costs ~4 s and ~2K tokens each, so offer it only as an opt-in "deep search".
-- Compound → **single agent** when quality matters most (best recall and coverage, p95 ≈ 9 s).
-- Compound under a tight latency or cost budget → **multi-agent** (p95 ≈ 5 s, ~¼ of the tokens, still far better than
-  one search: coverage 0.32 vs 0.10).
-- Next fix: stop the false splits. Worth trying: multi-agent retrieval plus *one* final rerank call by the strong model,
-  which could give single's ordering at multi's latency. Full write-up: `DESIGN.md` §7.
+Which architecture is best depended on the model, so when I swap the model I re-run this eval before trusting the old
+decision.
 
-## 8.7 Three LLM backends, and cost control
+My routing decision:
 
-> 🎯 **Why we're doing this:** real LLM calls cost money and are slow and non-deterministic, which is terrible for tests
-> and iteration. Swappable backends let us develop for free and spend only on the final measurement.
+- Plain questions (free gate or planner says simple) go to non-agentic hybrid search: about 30 ms and free. The single
+  agent does improve them (+0.045 recall, +0.157 MRR) but costs about 4 s and 2K tokens each, so I offer it only as an
+  opt-in "deep search".
+- Compound questions go to the single agent when quality matters most (best recall and coverage, p95 about 9 s).
+- Compound questions under a tight latency or cost budget go to the multi-agent (p95 about 5 s, about a quarter of the
+  tokens, coverage 0.32 against the baseline's 0.10).
+
+The next fix is to stop the false splits. I would also try multi-agent retrieval followed by one final rerank call by the
+strong model, which could give single's ordering at multi's latency. Not built yet. Full write-up: `DESIGN.md` §7.
+
+## 8.7 Three LLM backends and cost control
+
+Real LLM calls cost money and are slow and non-deterministic, which is bad for tests. So the agent code talks to one
+interface with three backends, and I spend money only on the final measurement:
 
 ```mermaid
 flowchart LR
-    A["agent code<br/>(same for all)"] --> I["LLM interface<br/>complete(system, user, max_tokens, budget)"]
-    I --> F["fake: scripted responses<br/>tests + toys, $0, instant"]
-    I --> CP["copilot: GitHub Copilot CLI<br/>free dev runs, ~30-60 s/call"]
-    I --> AZ["azure: Foundry gpt-6-sol<br/>Responses API, costs $<br/>needs --confirm-spend"]
-    I -.-> CA[("disk cache by prompt hash:<br/>re-runs are free + identical")]
+    A["agent code, same for all"] --> I["LLM interface<br/>complete(system, user, max_tokens, budget)"]
+    I --> F["fake: scripted responses<br/>tests, $0, instant"]
+    I --> CP["copilot: GitHub Copilot CLI<br/>free dev runs, 30-60 s per call"]
+    I --> AZ["azure: Foundry gpt-6-sol<br/>Responses API, costs money<br/>needs --confirm-spend"]
+    I -.-> CA[("disk cache by prompt hash<br/>re-runs are free and identical")]
 ```
 
-Cost guards: `--dry-run` (estimate tokens/$ with the fake LLM first), `--max-usd` (abort the run past a cap), a per-query
-`Budget`, `max_output_tokens` on every call, snippets truncated to ~200 characters, and the cache.
+The cost guards are `--dry-run` (estimate tokens and dollars with the fake LLM first), `--max-usd` (abort past a cap), a
+per-query `Budget`, `max_output_tokens` on every call, snippets cut to about 200 characters, and the cache.
 
----
-
-## 🧸 A. The toys
-
-| toy | shows |
-|---|---|
-| `20_tool_calling_loop.py` | the bare loop: LLM text → parse JSON → run the tool → repeat → finish |
-| `21_query_rewrite_agent.py` | the single agent on a two-topic question; an invented id gets dropped; prompts grow each step |
-| `22_planner_decompose.py` | which questions the free gate skips (56/100 plain, 0/100 compound) |
-| `23_budget_guardrails.py` | call cap and token budget refusing a call *before* spending; graceful degradation |
-| `24_partial_failure.py` | 3 parallel workers: one crashes, one is too slow, one works; the user still gets results |
-| `25_slot_allocation.py` | score merge vs RRF vs interleave → Coverage 0.00 vs 1.00 |
-| `26_cost_accounting.py` | tokens → dollars for single vs multi; caching savings |
-
-All use the **fake** LLM (scripted replies), so they're free, instant and deterministic. **How to read toy 21:** Step 0 is the
-free search; each `LLM action` line is one parsed JSON reply; the final line shows `llm_calls`, `searches` and approximate tokens.
-
-## 🏭 B. The real thing in this repo
-
-| file | role |
-|---|---|
-| `src/agent/llm.py` | `LLM` base (`complete`: reserve budget (worst case) → disk-cache lookup → backend call if not cached → record tokens), `FakeLLM`, `CopilotLLM`, `AzureLLM`, `Budget`, `parse_json` (finds the JSON object even inside ```` ``` ```` fences) |
-| `src/agent/prompts.py` | the 3 prompts: `SINGLE_AGENT`, `PLANNER`, `VERIFIER`. Short, with the exact JSON format shown |
-| `src/agent/tools.py` | `SearchTool`: calls the router, returns ids + 200-char snippets; `render_hits` formats them for prompts |
-| `src/agent/single_agent.py` | `run_single_agent` (§8.3) |
-| `src/agent/orchestrator.py` | `looks_simple`, `plan`, `verify`, `interleave`, `Orchestrator.run` (§8.5) |
-| `data/build_compound.py` | the compound set (§8.4); `data/compound_review_sheet.md` = 10 for a human to check |
-| `scripts/agent_eval.py` | the evaluation (§8.6); `scripts/render_agent_table.py` prints the table |
-| `tests/test_agents.py` | 11 tests with the fake LLM: budgets, bad JSON, invented ids, worker failure, slot allocation |
+The code is in `src/agent/` (`llm.py`, `prompts.py`, `tools.py`, `single_agent.py`, `orchestrator.py`), the evaluation in
+`scripts/agent_eval.py`, and `tests/test_agents.py` covers budgets, bad JSON, invented ids, worker failure and slot
+allocation with the fake LLM.
 
 ```powershell
 .\.venv\Scripts\python scripts\agent_eval.py --backend fake --limit 10              # free, instant plumbing check
 .\.venv\Scripts\python scripts\agent_eval.py --backend copilot --limit 5 --workers 4 # free, slow (real LLM)
 .\.venv\Scripts\python scripts\agent_eval.py --backend azure --dry-run              # estimate $ first
-.\.venv\Scripts\python scripts\agent_eval.py --backend azure --confirm-spend --max-usd 2   # the real run (you)
+.\.venv\Scripts\python scripts\agent_eval.py --backend azure --confirm-spend --max-usd 2   # the real run
 ```
 
-## ✍️ C. The toy, by you
-
-1. Fill in `exercises/ch08_agents/agent_loop.py` (check: `python -m pytest exercises\ch08_agents`) with a **fake LLM**: a function that returns scripted strings in order
-   (`'{"action":"search","query":"..."}'`, then `'{"action":"finish","doc_ids":[...]}'`). Write the loop: parse JSON,
-   call your toy BM25 from Ch. 3, append results to the transcript, stop at finish or 3 steps.
-2. Add guardrails one by one, each with a scripted reply that triggers it: invalid JSON, an unknown action, an invented doc id,
-   too many steps. Each must end with a valid top-k, never an exception.
-3. Write `interleave(lists, k)` and reproduce toy 25: score merge → Coverage 0, interleave → Coverage 1.
-
-## 🔧 D. The real thing, by you
-
-1. **LLM client:** pick any OpenAI-compatible endpoint (e.g. your Azure Foundry deployment). Wrap it in your own
-   `complete(system, user, max_tokens)` with: a disk cache keyed by `sha256(model + system + user)`, token accounting from the
-   API's `usage`, a timeout, and a per-query budget checked *before* the call. Keep a fake implementation of the same interface for tests.
-2. **Compound set:** reproduce §8.4 (sample, pair by low cosine, rewrite, tag gold). Or reuse `data/compound_dev.jsonl` to
-   compare with our numbers.
-3. **Single agent** over your Part B router API. **Target** (compound, dev): Recall@10 well above the 0.20 baseline (ours: 0.33).
-4. **Multi-agent:** gate → planner → parallel workers (`ThreadPoolExecutor` + timeouts) → verifier → interleave. Unit-test it with the fake
-   LLM *before* spending a single token.
-5. **Evaluate** baseline vs single vs multi on plain + compound: Recall@10, MRR@10, Coverage@10, LLM calls, tokens, $ and p50/p95 latency.
-   Always `--dry-run` and set a dollar cap first.
-6. **Decide and write it down:** which queries get which path, and why (use your numbers). That's the deliverable, not the agent itself.
-
-### Check yourself
-1. What exactly does the LLM do in tool calling, and what does your code do?
-2. Why does the single agent search once *before* the first LLM call?
-3. Why is the orchestrator plain code and not another LLM?
-4. Why interleave sub-query results instead of sorting them by score?
-5. Agents lost a little on plain questions and gained a lot on compound ones. What routing policy follows?
-
-**Next:** [Chapter 9: rebuild it yourself](09_rebuild_it_yourself.md)
+**Next:** [Chapter 9: how I built it, in order](09_rebuild_it_yourself.md)

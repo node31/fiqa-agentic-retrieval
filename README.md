@@ -30,7 +30,9 @@ placeholder prices. Details in DESIGN.md §6.11.
 
 From a fresh clone, with only Docker installed: `./scripts/bootstrap.sh` (Linux/macOS) or `.\scripts\bootstrap.ps1`
 (Windows). It builds the image, fetches the data and embedding caches, starts the 4 containers and checks them.
-Options and troubleshooting are in [DEPLOY.md](DEPLOY.md).
+Options and troubleshooting are in [DEPLOY.md](DEPLOY.md). To try everything by hand, step by step with the numbers to
+expect, follow [docs/manual_tests_windows.md](docs/manual_tests_windows.md) or
+[docs/manual_tests_mac.md](docs/manual_tests_mac.md).
 
 ### Docker by hand (no local Python)
 
@@ -84,7 +86,10 @@ cluster (sync or async), checks the expectations and writes an animated HTML rep
 python scripts/scenario.py scenarios/freshness_demo.jsonl --start-cluster --tiny --mode async
 ```
 
-The format and the scenario catalog are in [docs/scenarios.md](docs/scenarios.md).
+A quicker way to write one is a CSV with one line per operation, `actor, operation, text, t_ms[, doc_id]`; copy
+[scenarios/simple_template.csv](scenarios/simple_template.csv), which uses every operation, and add `--open` to see
+the replay. The formats and the scenario catalog are in [docs/scenarios.md](docs/scenarios.md). For a single question,
+`python scripts/ask.py "what is a roth ira?" --strategy hybrid` (or `bm25`, `dense`, `single`, `multi`).
 
 ## LLM configuration (Part C)
 
@@ -102,13 +107,13 @@ src/            search.py (CLI) · eval.py · metrics.py · config.py · beir_da
   service/      router.py · shard_server.py · store.py · async_apply.py (async write mode) · wal.py · cluster.py
   agent/        llm.py · tools.py · prompts.py · single_agent.py · orchestrator.py · fake_policies.py
 data/           build_compound.py · compound_dev.jsonl · compound_rewrites.json · compound_review_sheet.md
-scripts/        bench.py · ablations.py · failure_cases.py · migration.py · query_load.py · migration_demo.py · agent_eval.py · scenario.py (+ replay_html.py)
+scripts/        ask.py (one question) · bench.py · ablations.py · failure_cases.py · migration.py · query_load.py · migration_demo.py · agent_eval.py · scenario.py (+ replay_html.py)
                 write_load.py (sync vs async) · docker_check.py · docker_trace.py · bootstrap.sh / bootstrap.ps1
-scenarios/      runnable JSONL scenarios for scripts/scenario.py (freshness, migration, shard failure, ...)
+scenarios/      runnable scenarios for scripts/scenario.py (freshness, migration, shard failure, ...) + simple_template.csv
 tests/          unit, in-process and multi-process integration tests
 results/        bench.json · runs/ (incl. the one TEST run) · ablation_*.json · migration_demo.json · write_load.json · agent_eval*.json · failures.md
 examples/       small standalone scripts
-docs/           topic docs 00-15 · 16_ablations · from_zero/ (the whole system from scratch) · walkthroughs/ · eval · scenarios · GLOSSARY · LEARNING_PATH · project_faq · concepts_faq
+docs/           topic docs 00-15 · 16_ablations · from_zero/ (the whole system from scratch) · walkthroughs/ · eval · scenarios · manual_tests_windows / _mac · GLOSSARY · LEARNING_PATH · project_faq · concepts_faq
 agent_context/  machine-readable handoff for AI agents (see AGENTS.md)
 ```
 

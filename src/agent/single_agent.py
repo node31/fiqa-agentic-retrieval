@@ -1,4 +1,4 @@
-"""Single agent (Part C2): one LLM, one tool, at most 3 steps, then a final top-10.
+r"""Single agent (Part C2): one LLM, one tool, at most 3 steps, then a final top-10.
 
 THE LOOP (docs/12_single_agent.md has a worked trace)
 
@@ -33,6 +33,146 @@ HOW TO READ ``run_single_agent``
     2. Loop: build the prompt from ALL searches so far, call the LLM, parse its JSON action.
        "search" -> run it and loop again; anything else -> treat as finish and stop.
     3. Keep only chosen ids we actually showed, then fill up to k from the fused ranking.
+
+WORKED EXAMPLE (a real run: compound question c020 from the Azure gpt-6-sol eval)
+
+    Every prompt below is EXACTLY what the model received. I rebuilt each one with this code
+    and found its sha256 in .llm_cache/azure/ (the cache key is a hash of the full prompt,
+    see src/agent/llm.py), so a single changed character would have missed the cache.
+
+    The question joins two unrelated questions (that is what makes it "compound"):
+        half a: "Can stock brokerage firms fail?"
+        half b: "(How) can I print my own checks on my printer on regular paper?"
+        gold passages: 526260, 122540, 370194 (half a) and 384251 (half b)
+
+    --- Step 0: search the raw question (no LLM call) ---------------------------------------
+
+    searches = [("hybrid", question, tool(question, "hybrid"))]
+
+    The tool returns 10 hit dicts. The router gives the full passage; SearchTool keeps only
+    doc_id, score and the first 200 characters of the text. The second hit, for example:
+        {"doc_id": "384251", "score": 0.917544,
+         "text": "There are certain standards that modern checks need to meet. These aren't
+                  required by law, ... print your own checks a"}     (200 chars, cut mid-word)
+
+    So after step 0:
+        searches = [
+            ("hybrid", "Can stock brokerage firms fail, and can I print my own checks on regular paper with my printer?", [10 hit dicts]),
+        ]
+
+    --- Step 1: the first LLM call -----------------------------------------------------------
+
+    1. enumerate(searches, 1) yields (1, ("hybrid", <question>, <10 hits>)). The tuple is
+       unpacked as i=1, s="hybrid", q=<question>, h=<10 hits>.
+    2. The f-string turns that into one block:
+           "Search 1 (hybrid): " + repr(q) + "\n" + render_hits(h)
+    3. {q!r} is repr(q): the query wrapped in quotes. Python picks single quotes, and switches
+       to double quotes when the text itself has an apostrophe:
+           repr("Can stock ...")     -> 'Can stock ...'
+           repr("What's a Roth IRA?") -> "What's a Roth IRA?"
+       The quotes show the model exactly where the query starts and ends, so it can tell what
+       was already searched and write a DIFFERENT query next.
+    4. render_hits(h) (src/agent/tools.py) makes one line per hit, "[doc_id] snippet":
+       * the score is dropped (the model judges by text; fewer characters = fewer tokens),
+       * " ".join(text.split()) collapses newlines and runs of spaces, so a hit can never
+         spill onto a second line. Hit 20791's raw snippet has a double space:
+             " and on line the offer check printing.  From what I've seen,"
+         and its rendered line has a single one ("printing. From").
+       * an empty list renders as "(no results)".
+    5. "\n\n".join(blocks) puts a blank line between blocks (only one block so far), and
+       "Question: ...\n\n" goes in front.
+
+    The system prompt is prompts.SINGLE_AGENT with "{remaining}" replaced by 3 (3 actions
+    left, counting this one). The USER prompt, exactly as sent (2316 characters):
+
+        Question: Can stock brokerage firms fail, and can I print my own checks on regular paper with my printer?
+
+        Search 1 (hybrid): 'Can stock brokerage firms fail, and can I print my own checks on regular paper with my printer?'
+        [500403] Not illegal. With respect to littleadv response, the printing of a check isn't illegal. I can order checks from cheap check printers, and they have no relationship to any bank, so long as they have my
+        [384251] There are certain standards that modern checks need to meet. These aren't required by law, but banks today generally insist on them. If you are able to meet these standards and print your own checks a
+        [135196] "Checks sold as ""business checks"" are larger than checks sold as ""personal checks"". Personal checks are usually 6"" x 2 1/2"" while business checks are 8 1/2 "" x 3 to 4 "". Also, business checks
+        [258419] For some very small private companies I know of (and am part of), paper stocks do exist. You can sit at the table with the damn things in your hand and wave them in people's faces. They tell everyone
+        [229546] "Legally, a check just needs to have a certain list of things (be an instruction to one's bank to pay a specific amount of money to bearer or to a specific entity, have a date, have a signature, etc.)
+        [362215] It might be illegal for the very reason you stated: The process of printing checks may seem like check forgery. Banks in the US are allowed to do that, and the only condition under which you can do it
+        [20791] There is no reason you must buy the bank's printed check. There are many places both physical stores and on line the offer check printing. From what I've seen, the requirement is the use of a magneti
+        [260499] I don't know, ask the various companies I'm forced to do business with why in the hell they want me to stop by their office so I can drop a check off vs just using some means of digital payment. I wo
+        [8854] "Technically it doesn't matter what size the check is. In fact, it doesn't even have to be written on paper. While writing it on a cow may not always fly, almost any object actually will. That said, m
+        [564870] "The answer to your question is ""no"". Unless you specifically ask to receive paper share certificates, then brokers will hold your shares with a custodian company in the broker's own nominee account
+
+    gpt-6-sol replied (749 input tokens, 46 output tokens, 1.43 s):
+        {"action":"search","query":"Can stock brokerage firms go bankrupt fail what happens to customers shares investments SIPC protection","strategy":"hybrid"}
+
+    8 of the 10 hits are about checks and the brokerage half is missing. The model's next query
+    targets that half only. The code runs that search and appends it:
+        searches = [
+            ("hybrid", <question>, <10 hits about checks>),
+            ("hybrid", "Can stock brokerage firms go bankrupt fail what happens to c...", <10 new hits>),
+        ]
+
+    --- Step 2: the second LLM call ----------------------------------------------------------
+
+    enumerate now yields TWO tuples, so the prompt has two blocks. The system prompt says
+    "at most 2 more action(s)". The USER prompt (4504 characters) is the step-1 prompt,
+    byte for byte, plus one new block at the end:
+
+        Question: Can stock brokerage firms fail, and can I print my own checks on regular paper with my printer?
+
+        Search 1 (hybrid): 'Can stock brokerage firms fail, and can I print my own checks on regular paper with my printer?'
+        [500403] Not illegal. With respect to littleadv response, the printing of a check isn't illegal. I can order checks from cheap check printers, and they have no relationship to any bank, so long as they have my
+        [... the other 9 hit lines of Search 1, identical to step 1 ...]
+
+        Search 2 (hybrid): 'Can stock brokerage firms go bankrupt fail what happens to customers shares investments SIPC protection'
+        [304851] You are asking about what happens when an ETF/mutual fund company goes bankrupt. If you were asking about a bank account you would be asking about FDIC coverage. Investment funds are different, the c
+        [322645] There is a measure of protection for investors. It is not the level of protection provided by FDIC or NCUA but it does exist: Securities Investor Protection Corporation What SIPC Protects SIPC protect
+        [122540] Yes, any company can go under. SIPC offers a level of protection. They don't guarantee against stocks dropping, but will replace stocks that you owned, but the broker stole from you. (overgeneralizati
+        [418336] Not sure if I follow your question completely. Re: What if some fraud takes place that's too big even for it to fund? SIPC does not fund anything. What it does is takes over the troubled brokerage f
+        [415915] "SIPC is a corporation - a legal entity separate from its owners. In the case of SIPC, it is funded through the fees paid by its members. All the US brokers are required to be members and to contribut
+        [55443] "I have received a response from SIPC, confirming littleadv's answer: For a brief background, the protections available under the Securities Investor Protection Act (""SIPA""), are only available in
+        [556549] "Careful with the ""stock stolen from your account"" thing. SIPC protects investors against broker/dealer insolvency. Don't think they provide protection against theft."
+        [526260] Brokerages are supposed to keep your money separate from theirs. So, even if they fail as a company, your money and investments are still there, and can be transferred to another brokerage. It doesn't
+        [226337] If you are using a US broker, you are protected by SIPC up to $500,000. SIPC also oversees the liquidation of the broker itself, either by appointing a trustee, or by directly contacting clients. If t
+        [217042] "Look at the link to the SIPC. I don't know exactly what you mean by ""runs out of funds,"" but the SIPC will replace shares of stock stolen from your account, and up to $100,000 in cash. The real ri
+
+    gpt-6-sol replied (1,248 input tokens, 66 output tokens, 2.32 s):
+        {"action":"finish","doc_ids":["122540","526260","226337","322645","229546","384251",
+                                     "500403","20791","8854","418336"]}
+
+    --- Finish: validate and fill ------------------------------------------------------------
+
+    * Every id the model returned appears in one of the two blocks, so all 10 survive the
+      "d in seen" check. Had it invented an id, that id would have been dropped silently.
+    * The model's list already has 10 ids, so the RRF fill adds nothing here.
+    * Look at where the picks come from: 122540, 526260, 226337, 322645, 418336 are from
+      Search 2 (brokerages), and 229546, 384251, 500403, 20791, 8854 are from Search 1
+      (checks). The final answer covers both halves, and 3 of the 4 gold passages are in it
+      (370194 was in neither search). The whole run used 2 LLM calls and 2,109 tokens.
+
+WHY THE WHOLE HISTORY IS SENT AGAIN ON EVERY STEP
+
+    1. The model API is stateless. Each llm.complete() is an independent HTTP request; the model
+       keeps nothing from the previous call. A chat app that "remembers" is doing exactly what
+       this loop does: resending the earlier turns. If step 2 only got the new block, the model
+       would not know that Search 1 happened, which half it already covered, or what it asked
+       for last time.
+    2. The finish action picks ids from ALL searches. In c020, half of the final list comes from
+       Search 1. Without Search 1's lines in the step-2 prompt, the model could not choose the
+       check-printing passages (it would not even know their ids), and half b would be lost.
+       The last step is effectively a rerank over everything seen so far, so everything seen
+       so far must be in front of it.
+    3. The code checks the model's ids against every search shown (the "seen" set). Showing
+       every search keeps "what the model could read" and "what we accept" the same set.
+
+    The cost is that input grows with each step: 749 input tokens at step 1, 1,248 at step 2,
+    and a third step would add about another 500. The 3-step cap keeps that bounded. I didn't
+    use the cheaper options:
+        * re-sending only the doc ids of earlier searches: the model can't judge passages it
+          can't read, so its final ordering would be guesswork for those ids;
+        * a provider-side conversation (a stored thread): the history still goes to the model
+          on every call, so it saves request bytes but not model input, and it ties the code to
+          one provider's API.
+    Because each new prompt starts with the previous prompt unchanged (only appended to), a
+    provider's prompt-prefix caching can reuse the repeated part. This code does not depend on
+    that.
 """
 from __future__ import annotations
 
@@ -113,15 +253,8 @@ def run_single_agent(question: str, llm: LLM, tool: SearchTool, max_steps: int =
         #                         and fewer characters means fewer tokens. No hits -> "(no results)".
         #   "\n\n".join(...)      a blank line between search blocks; the question goes first.
         #
-        # What the model receives after two searches (ids and text shortened):
-        #   Question: Should I pay off my mortgage or invest?
-        #
-        #   Search 1 (hybrid): 'Should I pay off my mortgage or invest?'
-        #   [12345] Paying down a 3% mortgage is a guaranteed return of 3% ...
-        #   [67890] If your employer matches 401k contributions, invest first ...
-        #
-        #   Search 2 (bm25): 'mortgage prepayment vs index fund'
-        #   [24680] Prepaying a mortgage reduces interest but locks money in the house ...
+        # The module docstring has a real run (WORKED EXAMPLE) showing the exact prompt at each
+        # step, and WHY THE WHOLE HISTORY IS SENT AGAIN ON EVERY STEP.
         #
         # The bracketed ids are what the model copies back in a finish action; the validation
         # further down keeps only ids that appear in these blocks. Cost: the prompt grows with

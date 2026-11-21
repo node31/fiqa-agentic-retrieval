@@ -53,7 +53,9 @@ services:
       context: .
       args: { PIP_INDEX_URL: "${PIP_INDEX_URL:-https://pypi.org/simple}" }
     image: fiqa-retrieval:latest
-    command: ["python", "-m", "src.service.router"]
+    # scripts/api_docs.py = the same router app (src.service.router.create_app) with example requests
+    # added to its API page, http://localhost:8000/docs. Request handling is identical.
+    command: ["python", "-m", "scripts.api_docs"]
     ports: ["8000:8000"]
     volumes:
       - ./data/raw:/app/data/raw

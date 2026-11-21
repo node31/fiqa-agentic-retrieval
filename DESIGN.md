@@ -78,7 +78,7 @@ flowchart LR
 | container | command | notes |
 |---|---|---|
 | `shard0`, `shard1`, `shard2` | `python -m src.service.shard_server` | `SHARD_ID` 0 to 2, `N_SHARDS=3`, port 8101 inside the network, `APPLY_MODE` sync (default) or async, state in `artifacts/docker/shardN`, healthcheck on `/health`, `mem_limit: 2g` |
-| `router` | `python -m src.service.router` | published on port 8000, `SHARD_URLS` lists the three shards, `SHARD_TIMEOUT_S=0.5`, state in `artifacts/docker/router_state.json`, starts after all shards are healthy |
+| `router` | `python -m scripts.api_docs` (the router app from `src.service.router`, plus example requests on `/docs`) | published on port 8000, `SHARD_URLS` lists the three shards, `SHARD_TIMEOUT_S=0.5`, state in `artifacts/docker/router_state.json`, starts after all shards are healthy |
 | `indexer` | download FiQA, then `python -m src.index.build_index` | run once; writes the embedding caches to `artifacts/` |
 | `eval` | `python -m src.eval --mode service --url http://router:8000 ...` | dev eval through the router |
 | `tools` | any command, e.g. `python src/search.py --url http://router:8000 ...` | has `ROUTER_URL` set and `.env` mounted read-only for the agent eval |

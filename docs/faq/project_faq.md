@@ -232,7 +232,7 @@ trace. `parse_json` tolerates code fences and chatter, an unknown strategy falls
 are kept only if the agent actually saw them.
 
 ### What will happen on the held-out compound test set?
-`python data/build_compound.py --split test` writes `data/compound_test.jsonl` with template joins ("<a>? Also, <b>"),
+`python data/build_compound.py --split test` writes `data/compound_test.jsonl` with template joins (`"<a>? Also, <b>"`),
 because rewrites exist only for dev. `scripts/agent_eval.py` reads `data/compound_dev.jsonl` directly today, so
 pointing it at the test file is a small live change (below). I haven't run it, and I won't tune on it.
 

@@ -1,281 +1,735 @@
-# DESIGN: FiQA distributed + agentic retrieval
+# Design: distributed, agentic retrieval over FiQA
 
-All numbers below come from files in `results/` and were produced on: **AMD EPYC 7763 (16 physical /
-32 logical cores visible), 128 GB RAM, Windows 11, Python 3.13, CPU only, 4 torch threads per process.**
-Quality metrics are on the **dev split (500 queries)** unless marked TEST. The test split was run **once**,
-for the final configuration only (§2).
+## 1. Problem statement
 
-## 1. Chosen operating point
+I built a retrieval system over BEIR FiQA: 57,638 personal-finance forum answers, with 5,500 train, 500 dev and 648 test
+questions, each labelled with the passages that answer it. The system has three layers:
 
-**Hybrid retrieval: BM25 + all-MiniLM-L6-v2, linear min-max fusion with α = 0.7 (dense weight),
-candidate depth 100 per component, no reranker, served by a router over 3 shards.**
+- Part A: three retrieval strategies (BM25, dense, hybrid) with an evaluation harness, ablations and a failure analysis.
+- Part B: a sharded service (one router, three shards) that accepts live writes and can switch its embedding model
+  with no downtime.
+- Part C: a single LLM agent and a multi-agent system that use the search service as a tool, and a measured decision
+  on when each one is worth its cost.
 
-- **Quality:** best dev nDCG@10 of all configurations that meet the constraints (0.419; +8% rel. over dense-only, +59% over BM25).
-- **Latency:** p95 40.5 ms through the router (constraint: ≤ 50 ms after warmup). bge-small would add ~12 ms of
-  query encoding (estimated from the single-node p50 gap of 30.6 vs 18.8 ms) and break the budget for a gain that
-  vanishes in hybrid (0.416 vs 0.419).
-- **Memory:** 723 MB peak RSS per shard process (constraint: ≤ 2 GB; also enforced by `mem_limit: 2g` in compose).
-- **CPU only**: both at index time and at serve time.
+I tuned everything on dev and ran the test split once, at the end, for the configuration I chose.
 
-## 2. Benchmark table (`results/bench.json`, `results/ablation_*.json`)
+## 2. Requirements
 
-| configuration | mode | nDCG@10 | R@10 | MRR@10 | warm p50 / p95 ms | cold p50 / p95 ms | peak RSS MB |
-|---|---|---|---|---|---|---|---|
-| BM25 | single node | 0.2642 | 0.3135 | 0.3222 | 1.2 / 2.0 | 1.2 / 1.9 | 511 (process) |
-| dense all-MiniLM-L6-v2 | single node | 0.3881 | 0.4665 | 0.4532 | 18.8 / 20.8 | 19.1 / 21.2 | 806 |
-| dense bge-small-en-v1.5 | single node | 0.3981 | 0.4681 | 0.4773 | 30.6 / 34.2 | 30.2 / 34.2 | 851 |
-| hybrid RRF (α=0.5, k=60), MiniLM | single node | 0.3733 | 0.4420 | 0.4485 | 22.1 / 39.9 | 21.7 / 24.3 | 812 |
-| **hybrid linear α=0.7, MiniLM** | single node | **0.4190** | **0.4914** | **0.4872** | 20.7 / 24.5 | 20.1 / 23.3 | 812 |
-| hybrid linear α=0.7, bge-small | single node | 0.4155 | 0.4856 | 0.4953 | 35.3 / 40.3 | 36.3 / 42.0 | 854 |
-| ablation: + cross-encoder rerank@10 | single node | 0.4058 | 0.4914 | 0.4688 | 338.6 / 366.8 | – | – |
-| ablation: + cross-encoder rerank@20 | single node | 0.3964 | 0.4829 | 0.4634 | 621.0 / 634.6 | – | – |
-| ablation: + cross-encoder rerank@50 | single node | 0.3771 | 0.4633 | 0.4444 | 1246.3 / 1366.6 | – | – |
-| BM25 | **router + 3 shards** | 0.2642 | 0.3135 | 0.3222 | 10.7 / 11.5 | 10.9 / 12.1 | 722 / shard |
-| BM25, shard-local IDF (no DFS) | router + 3 shards | 0.2653 | 0.3142 | 0.3226 | 6.8 / 7.4 | 7.1 / 8.1 | 722 / shard |
-| dense MiniLM | router + 3 shards | 0.3881 | 0.4665 | 0.4532 | 22.2 / 27.0 | 22.8 / 24.3 | 723 / shard |
-| **hybrid linear α=0.7 (CHOSEN)** | **router + 3 shards** | **0.4190** | **0.4914** | **0.4872** | **28.6 / 40.5** | 29.5 / 33.0 | **723 / shard** |
-| hybrid linear α=0.7, **in Docker** (compose: router + 3 shard containers) | router + 3 shards | 0.4190 | 0.4914 | 0.4872 | 30.4 / 34.1 | 30.5 / 34.2 | ~505 MiB / shard container |
-| hybrid linear α=0.7 | router + 1 shard | 0.4190 | 0.4914 | 0.4872 | 23.4 / 26.3 | 22.9 / 25.1 | 775 |
-| **TEST split, 648 queries (run once)** | single node | **0.3968** | **0.4658** | **0.4788** | 21.5 / 24.9 | 21.2 / 25.9 | 813 |
+**Functional**
 
-**Test split:** the chosen config was run on test exactly once, after every choice was frozen on dev (`python -m src.eval --split test --final-test-run ...`, `results/runs/FINAL-test-hybrid-linear-minilm.json`). nDCG@10 drops from 0.419 (dev) to 0.397 (test). Some optimism is expected after tuning α on dev, and for reference the published BEIR FiQA *test* numbers are BM25 0.236 and MiniLM ~0.37. Stratified test recall shows the same pattern as dev: short queries 0.328 (n = 29), gold in the longest docs 0.443 (n = 246) vs 0.480.
+| area | requirement | what I built |
+|---|---|---|
+| A1 | BM25, two dense models, a hybrid; a CLI | own BM25, all-MiniLM-L6-v2 and bge-small-en-v1.5, hybrid linear fusion; `python src/search.py --query ... --top-k 10 --strategy hybrid` |
+| A2 | nDCG@10, Recall@10, MRR, p50/p95, peak RAM, stratified recall, cold vs warm | `src/eval.py` writes `results/bench.json` |
+| A3 | at least one real ablation | fusion method x weight sweep, cross-encoder rerank depth sweep, dense model, local vs global IDF |
+| A4 | three analysed failures | `results/failures.md` |
+| B1 | ≥ 3 shards, router, ≤ 1% quality gap, timeouts, 1 vs N shard latency | 3 shards, scatter-gather router, 0.0% gap, 0.5 s timeout with partial results |
+| B2 | idempotent versioned upsert/delete, consistent indexes, a tested freshness guarantee | versions + tombstones + WAL; sync mode (searchable on the next query) and async mode (searchable within 1 s) |
+| B3 | zero-downtime model migration with cutover and rollback | dual-write + background backfill, `make migrate`, `make cutover`, `make rollback`; 2,045 queries, 0 failed |
+| C1 | 100 compound questions with half-tracked gold | `data/compound_dev.jsonl` + `data/build_compound.py` |
+| C2 | single agent, one search tool, ≤ 3 steps | `src/agent/single_agent.py` |
+| C3 | orchestrator + ≥ 2 sub-agent roles, shared slots, budgets, partial failure, skip when simple | `src/agent/orchestrator.py`: planner, workers, verifier |
+| C4 | compare baseline, single, multi on plain and compound sets; routing policy; ship calls | `scripts/agent_eval.py`, `results/agent_eval.json` |
 
-Single-node rows run in-process (no HTTP). Service rows are measured by the client end to end through
-the router's HTTP API. Fusion sweep (dev): RRF α ∈ {0.5…0.9} → 0.373…0.406; linear α ∈ {0.1…0.9} → 0.287…0.419,
-peaking at 0.7 (`results/ablation_fusion_minilm.json`; bge-small has the same shape, peak 0.416 at 0.7).
+**Non-functional**
 
-**Sharded vs single node (B1 requirement ≤ 1% relative):** BM25, dense and hybrid are **identical to 4 decimals**
-(0.0%). This held on the first try because the three correctness rules were built in from the start
-(docs/08): top-D per shard, global BM25 statistics (DFS phase), merge-then-fuse.
+| constraint | target | my chosen configuration |
+|---|---|---|
+| hardware | CPU only, at index and serve time | CPU only |
+| latency | p95 ≤ 50 ms through the router, after warmup | 40.5 ms |
+| memory | ≤ 2 GB RAM per shard process | 723 MB peak (compose also sets `mem_limit: 2g`) |
+| data hygiene | tune on dev, test once | test run once, recorded in `results/runs/FINAL-test-hybrid-linear-minilm.json` |
+| reproducibility | `docker compose up` brings up the service and eval | Dockerfile + compose; quality numbers are identical in Docker (nDCG@10 0.4190) |
+| code size | about 2,000 lines, excluding tests and data loaders | 2,004 logical lines in `src/` (`python scripts/count_loc.py`) |
 
-**Stratified Recall@10 (chosen config):** short queries (< 5 words) 0.385 (n = 13), medium 0.491 (n = 403),
-long (> 15) 0.510 (n = 84). Gold in the 10% longest docs: 0.464 (n = 185) vs the rest 0.508 (n = 315). Long answers are
-harder: truncation at 256 tokens for dense, and length normalisation for BM25. Short queries give both retrievers little to work with (small n).
+## 3. Guesstimates
 
-## 3. Cold vs warm latency
+Simple numbers I used to size the system before building it, next to what I later measured.
 
-Cold (first 20 queries of a fresh process) ≈ warm (500 dev queries after 100 train-query warmup):
-e.g. chosen config 29.5 / 33.0 ms cold vs 28.6 / 40.5 ms warm (p50 / p95). **The delta is near zero by design:**
-models load and run one warmup encode at process start (router `startup` hook, shard preload), vectors are copied
-into RAM at load time (no lazy mmap page faults on the hot path), and the HTTP client keeps connections alive.
-What warmup hides is measured in `results/microbench.json`: model load 1.5 s, and the first encode in a fresh process takes 19 ms vs 8 ms after that. Warm p95 is *higher* than cold p95 for several configs because 500
-samples catch more tail events (OS scheduling, GC, the slowest-of-3-shards effect) than 20 samples. p95 of 20
-samples is just the 19th value. Without the startup warmup, the first query would pay ~1.5 s.
+| quantity | quick math | measured |
+|---|---|---|
+| vectors per model | 57.6K passages x 384 dims x 4 bytes ≈ 88 MB | `emb_minilm.npy` 84 MiB on disk |
+| docs per shard | 57.6K / 3 ≈ 19.2K | 19,167 / 19,254 / 19,217 |
+| RAM per shard | model weights + Python (~650 MB) + vectors (~30 MB) + BM25 (~20 MB) + text (~15 MB) | 723 MB peak, so the model dominates |
+| query time | encode the query (~8 ms) + search a third of the corpus (a few ms) + two HTTP round trips | 28.6 ms p50 through 3 shards |
+| write cost | one embedding per passage (~25 ms) per maintained model | sync mode: 128 ms ack p50 under 8 concurrent writers |
+| agent cost | prompt = instructions + results so far; about 0.1K to 3.4K tokens per question | 130 (multi, plain) to 3,380 (single, compound) tokens |
 
-## 4. Architecture
+## 4. Infrastructure architecture
+
+Everything runs on one machine with `docker compose up -d`. One image (`fiqa-retrieval:latest`) runs every container.
 
 ```mermaid
 flowchart LR
-  subgraph clients
-    CLI[src/search.py]:::c
-    EV[src/eval.py]:::c
-    AG[agents: single / orchestrator]:::c
+  U["host: CLI, eval, agent scripts"] -->|"HTTP :8000"| R["router container"]
+  subgraph net["compose network"]
+    R -->|"http://shard0:8101"| S0["shard0 container<br/>mem_limit 2g"]
+    R -->|"http://shard1:8101"| S1["shard1 container<br/>mem_limit 2g"]
+    R -->|"http://shard2:8101"| S2["shard2 container<br/>mem_limit 2g"]
   end
-  CLI & EV & AG -->|HTTP /search, /upsert, /delete, /admin/*| R[Router :8000<br/>tokenize + embed query once<br/>DFS stats · merge · fuse · fetch<br/>active_model flag]
-  R -->|/stats, /search, /docs| S0["Shard 0 :8101<br/>BM25 + dense (minilm, + bge-small during migration)<br/>doc store · versions · WAL"]
-  R --> S1[Shard 1 :8102]
-  R --> S2[Shard 2 :8103]
-  IDX[src/index/build_index.py<br/>offline embedding cache] -.->|artifacts/emb_*.npy| S0 & S1 & S2
-  classDef c fill:#eef
+  V[("bind mounts:<br/>./data/raw and ./artifacts")]
+  S0 --- V
+  S1 --- V
+  S2 --- V
+  R --- V
+  T["one-shot containers (profile tools):<br/>indexer, eval, tools"] --- V
 ```
 
-**Query path:** router tokenises and embeds the query (in a thread, overlapped with phase 1) → phase 1 DFS:
-`/stats` on all shards → sum → phase 2: `/search` with terms + global stats + vector + model id; each shard
-returns BM25 top-100 and dense top-100 → router merges each list globally → linear fusion → top-k → optional
-`/docs` fetch for text. Every shard call has a 0.5 s timeout. Missing shards → `partial: true, missing_shards`.
+| container | command | notes |
+|---|---|---|
+| `shard0`, `shard1`, `shard2` | `python -m src.service.shard_server` | `SHARD_ID` 0 to 2, `N_SHARDS=3`, port 8101 inside the network, `APPLY_MODE` sync (default) or async, state in `artifacts/docker/shardN`, healthcheck on `/health`, `mem_limit: 2g` |
+| `router` | `python -m src.service.router` | published on port 8000, `SHARD_URLS` lists the three shards, `SHARD_TIMEOUT_S=0.5`, state in `artifacts/docker/router_state.json`, starts after all shards are healthy |
+| `indexer` | download FiQA, then `python -m src.index.build_index` | run once; writes the embedding caches to `artifacts/` |
+| `eval` | `python -m src.eval --mode service --url http://router:8000 ...` | dev eval through the router |
+| `tools` | any command, e.g. `python src/search.py --url http://router:8000 ...` | has `ROUTER_URL` set and `.env` mounted read-only for the agent eval |
 
-**Write path:** `/upsert {doc_id, version, text}` → router picks the owner `crc32(doc_id) % 3` → shard: version check
-(no-op if not newer) → embed with every maintained model (outside the lock) → write lock → re-check → WAL append + fsync
-→ apply to doc store, versions, BM25 delta segment and every dense index → unlock → ack. The router retries on
-timeout (safe: idempotent).
+Each service runs 4 torch threads. The same layout also runs as plain local processes (`python -m src.service.cluster
+--shards 3`: router on 8000, shards on 8101 to 8103), which I used for tests and benchmarks.
 
-## 5. Consistency and freshness
+## 5. Component architecture
 
-- **Idempotency:** `(doc_id, version)`; equal = replay = no-op; older = no-op; deletes leave tombstones
-  so a late older upsert cannot resurrect a doc. Tested in-process and through the router.
-- **Lexical/dense consistency:** a single RW lock per shard; readers never observe a half-applied write.
-- **Freshness guarantee: a write is searchable by the first query issued after its ack** (synchronous apply).
-  `tests/test_integration_service.py::test_freshness_write_searchable_immediately_after_ack` proves it across
-  3 shard processes over HTTP for all three strategies, with no sleeps or retries.
-- **Optional async mode** (`APPLY_MODE=async`, [ADR 0013](docs/adr/0013-async-apply-mode.md)): ack after the WAL fsync, apply in
-  the background (parallel embedding, one doc per call). Weaker guarantee: **searchable within 1 s** (enforced by back-pressure), proven by
-  `tests/test_integration_async.py`. Under heavy writes on the real corpus (`results/write_load.json`, 8 writers + 2 readers):
-  async acks **94 writes/s vs 58** for sync, ack p50 78 vs 128 ms, visible lag p95 466 ms / max 583 ms; searches under that
-  load are slower (p50 184 vs 131 ms) because the shards are busy embedding 63% more writes. Sync stays the default.
-- **What can go wrong and recovery:** crash before the WAL append = the write never happened (no ack; the client retries).
-  Crash after the append = applied on restart by WAL replay (at-least-once + idempotent). A torn final WAL line is truncated when the WAL is reopened
-  (it was never acked). An exception inside apply → the shard marks itself unhealthy (503 → the router reports it
-  missing) and is restarted (crash-only recovery: base corpus + WAL replay; vectors are stored in the WAL, so
-  replay needs no model). Tested by hard-killing a shard.
-- **Not provided:** replication (a dead shard's docs are unavailable until restart), multi-document transactions,
-  WAL truncation/snapshots, tombstone GC.
+```mermaid
+flowchart TB
+  CLI["CLI<br/>src/search.py"]
+  OPS["ops scripts<br/>migration, query_load, write_load,<br/>migration_demo, docker_check, docker_trace"]
+  EVAL["eval harness<br/>src/eval.py, scripts/bench.py, scripts/ablations.py"]
+  AE["agent eval<br/>scripts/agent_eval.py"]
+  subgraph AG["agent layer (library, src/agent)"]
+    SA["single agent"]
+    OR["orchestrator<br/>planner, workers, verifier"]
+    TOOL["search tool<br/>search(query, strategy)"]
+    LLMI["LLM client<br/>Budget + disk cache"]
+  end
+  LLMB["LLM backends<br/>Azure gpt-6-sol, Copilot CLI, fake"]
+  R["router<br/>src/service/router.py"]
+  subgraph SH["shard x3"]
+    SS["shard server<br/>shard_server.py"]
+    ST["shard store<br/>store.py, async_apply.py"]
+    WAL["WAL<br/>wal.py"]
+  end
+  LIB["retrieval library<br/>bm25, dense, hybrid, rerank, sharding"]
+  IDX["indexer<br/>download_data.py, build_index.py"]
+  ART[("artifacts/<br/>embedding caches, state")]
+  CLI --> R
+  OPS --> R
+  EVAL --> R
+  AE --> SA
+  AE --> OR
+  SA --> TOOL
+  OR --> TOOL
+  SA --> LLMI
+  OR --> LLMI
+  LLMI --> LLMB
+  TOOL --> R
+  R --> SS
+  SS --> ST
+  ST --> WAL
+  R --> LIB
+  ST --> LIB
+  IDX --> ART
+  ST --> ART
+  WAL --> ART
+  R --> ART
+```
 
-## 6. Migration and rollback (B3)
+| component | code | runs as | responsibility |
+|---|---|---|---|
+| CLI | `src/search.py` | command | sends one `/search` request, prints ranked passages with scores |
+| router | `src/service/router.py` | FastAPI service | embeds the query once, gathers global BM25 statistics, fans out, merges, fuses; routes writes to the owner shard; drives migration; keeps `active_model` |
+| shard server + store | `src/service/shard_server.py`, `store.py` | FastAPI service, one per shard | owns a slice of the corpus: BM25 index, one dense index per model, doc store, versions; applies writes under a read/write lock |
+| async applier | `src/service/async_apply.py` | thread inside a shard (async mode only) | queue, parallel embedding, back-pressure, background apply |
+| WAL | `src/service/wal.py` | file per shard | durable log of writes, replayed on restart |
+| retrieval library | `src/retrieval/bm25.py`, `dense.py`, `hybrid.py`, `rerank.py`, `src/index/sharding.py` | imported code | scoring, fusion, optional cross-encoder rerank, `crc32(doc_id) % N` ownership |
+| indexer | `scripts/download_data.py`, `src/index/build_index.py` | one-shot job | downloads FiQA, embeds the corpus once per model into `artifacts/emb_*.npy` |
+| eval harness | `src/eval.py`, `scripts/bench.py`, `scripts/ablations.py` | one-shot jobs | metrics, latency, memory, sweeps into `results/` |
+| agent layer | `src/agent/` | library run by `scripts/agent_eval.py` | single agent, orchestrator with planner, workers and verifier, the search tool, prompts |
+| LLM client and backends | `src/agent/llm.py` | library + external API | one `complete()` interface over fake, Copilot CLI and Azure; token budget; disk cache |
+| ops scripts | `scripts/migration.py`, `query_load.py`, `write_load.py`, `migration_demo.py`, `docker_check.py`, `docker_trace.py` | commands | migration steps, load during migration, write load, Docker checks |
 
-`make migrate` → every shard creates the bge-small index and **turns on dual-write in the same lock
-acquisition** as it snapshots the doc list, then backfills in throttled 256-doc batches (reusing cached vectors
-when the text hash matches; `--reencode` forces full re-embedding). The backfill skips docs whose version changed since the
-snapshot. `make cutover` flips the router's persisted `active_model` only if **every** shard reports the index ready, after
-warming the query encoder. A request reads the flag once, so in-flight requests finish on the model they started with.
-`make rollback` flips back instantly (the old index was kept current by dual-write). `make finalize` drops the old index.
+## 6. Deep dives
 
-Demo (`results/migration_demo.json`): 4 query threads + 1 writer for 77 s across migrate → backfill (17 s) → cutover →
-rollback: **2,045 queries, 0 failed**; 116 docs written during the run were found by both models; per-shard index
-sizes are equal for both models. Roll back on: a quality canary drop, a latency SLO breach (bge-small costs +12 ms/query
-on this CPU) or errors on the new path. Keep the old index until the new one survives a full traffic cycle.
+### 6.1 Retrieval (A1)
 
-## 7. Agent design and decision (Part C)
+BM25 scores a passage by how many rare query words it contains, with diminishing returns for repeats and a penalty for
+long passages. Dense retrieval embeds the query and every passage as 384-number vectors and ranks by cosine similarity,
+so it matches meaning ("betting against a stock" finds "short selling"). Hybrid combines both lists.
 
-**Systems compared** (all use the same search tool: hybrid linear α = 0.7 through the router API, top-10):
-- **baseline**: one non-agentic search of the full question.
-- **single agent** (`src/agent/single_agent.py`): starts from the baseline results (step 0, free), then ≤ 3 LLM steps. Each
-  step either issues one more `search(query, strategy)` or finishes with chosen doc ids. The final top-10 is the agent's
-  picks, then an RRF fill over everything it searched. JSON action protocol, budget 3 calls / 12K tokens.
-- **multi-agent** (`src/agent/orchestrator.py`): the orchestrator is **plain code, not an LLM**. It owns the budget, the
-  timeouts and the slots. **Planner** (LLM): simple vs compound, and up to 3 standalone sub-queries. It is skipped by a free
-  regex/length gate (`looks_simple`) for short single-clause questions. **Workers** (no LLM): one search per sub-query, plus the
-  full question, in parallel threads with a 10 s timeout each. **Verifier** (LLM, one batched call): looks at the top-5
-  snippets per sub-query and may rewrite a drifted sub-query once. **Slots:** round-robin interleave across sub-query lists
-  (≈ 5 + 5 for two halves) with dedupe, then fill from the full-question list. **Guardrails:** one shared `Budget` per user
-  query (3 calls, 8K tokens; reserve-before-spend). A planner/verifier error degrades to "simple" / "all relevant"; a
-  failed worker's list is dropped; if all fail, the system falls back to a direct search. Tested with a fake LLM in `tests/test_agents.py`.
+```mermaid
+flowchart LR
+  Q["query"] --> T["tokenize"]
+  Q --> E["encode with MiniLM"]
+  T --> B["BM25 top-100"]
+  E --> D["faiss exact top-100"]
+  B --> F["min-max normalise each list<br/>score = 0.7 dense + 0.3 BM25"]
+  D --> F
+  F --> K["top-10"]
+```
 
-**Dev results (free model, used while building).** GitHub Copilot CLI, `claude-haiku-4.5`, 100 plain dev queries (seed 42) + the 100
-compound queries (`results/agent_eval_dev_copilot.json`, table from `python scripts/render_agent_table.py <file>`):
+| I chose | because | alternative | why I didn't use it |
+|---|---|---|---|
+| my own BM25 on scipy sparse matrices (CSC for search, CSR for deletes, a delta segment for new docs, a tombstone mask) | I needed add/delete for live writes and per-term statistics for global IDF across shards | `rank_bm25`, Pyserini/Lucene | `rank_bm25` has no updates or stats API; Lucene would hide the sharding and update logic the assignment asks me to build |
+| all-MiniLM-L6-v2 as the primary dense model | 0.388 nDCG at 18.8 ms p50; leaves room under 50 ms after HTTP | bge-small-en-v1.5 | +0.010 nDCG dense but +12 ms per query, and the gain disappears in hybrid (0.4155 vs 0.4190) |
+| bge-small-en-v1.5 as the second model (migration target) | same 384 dimensions, a real "newer model" story; its query prefix lives in the model registry | all-mpnet-base-v2, bge-base | 768 dimensions and roughly 3x the encode cost on CPU |
+| faiss `IndexIDMap2(IndexFlatIP)` | exact search is allowed at this size; inner product on unit vectors is cosine; `remove_ids` supports deletes | HNSW, IVF | approximate search would cost recall for no needed speed (search is ~1 to 3 ms per shard) |
+| linear fusion, α = 0.7 on dense, min-max normalised, depth 100 | best dev nDCG of everything I tried (0.4190) | RRF (k = 60) | equal-weight RRF scored 0.3733, below dense alone, because BM25 is much weaker on FiQA |
+| no reranker in the chosen point | the cross-encoder made quality worse and cost 339 ms | cross-encoder rerank | see 6.3 |
 
-| set | system | R@10 | MRR@10 | Cov@10 | LLM calls/q | tokens/q | errors |
+Results (dev, single node, in-process):
+
+| strategy | nDCG@10 | R@10 | MRR@10 | p50 / p95 ms |
+|---|---|---|---|---|
+| BM25 | 0.2642 | 0.3135 | 0.3222 | 1.2 / 2.0 |
+| dense MiniLM | 0.3881 | 0.4665 | 0.4532 | 18.8 / 20.8 |
+| dense bge-small | 0.3981 | 0.4681 | 0.4773 | 30.6 / 34.2 |
+| hybrid RRF, MiniLM | 0.3733 | 0.4420 | 0.4485 | 22.1 / 39.9 |
+| hybrid linear α = 0.7, MiniLM (chosen) | 0.4190 | 0.4914 | 0.4872 | 20.7 / 24.5 |
+| hybrid linear α = 0.7, bge-small | 0.4155 | 0.4856 | 0.4953 | 35.3 / 40.3 |
+
+### 6.2 Evaluation harness (A2)
+
+`src/eval.py` runs a strategy over the 500 dev questions and records quality, latency and memory. `scripts/bench.py`
+runs every configuration in its own process, so the "cold" numbers are real.
+
+```mermaid
+flowchart LR
+  P["fresh process"] --> W1["first 20 dev queries<br/>timed as cold"]
+  W1 --> W2["100 train queries<br/>warmup, not timed"]
+  W2 --> M["500 dev queries<br/>timed as warm"]
+  M --> R["bench.json: nDCG, Recall, MRR,<br/>p50/p95 cold and warm, peak RSS,<br/>stratified recall"]
+```
+
+| I chose | because | alternative | why I didn't use it |
+|---|---|---|---|
+| my own metric code (`src/metrics.py`), unit-tested | I wanted to know exactly what each metric computes | pytrec_eval only | harder to read and debug; I compared against it instead |
+| warmup on train queries | no dev query is seen before it is timed | warmup on dev | the first 100 dev queries would be measured warm and cached |
+| nearest-rank p50/p95 | always a real measured value | interpolated percentiles | invents a value nobody measured |
+| peak RSS from the OS | that is what the 2 GB limit means | tracemalloc | misses torch and faiss native memory |
+
+Stratified Recall@10 for the chosen configuration (dev):
+
+| slice | n | Recall@10 |
+|---|---|---|
+| short queries (< 5 words) | 13 | 0.385 |
+| medium (5 to 15 words) | 403 | 0.491 |
+| long (> 15 words) | 84 | 0.510 |
+| a gold passage is in the 10% longest docs | 185 | 0.464 |
+| no gold passage in the 10% longest docs | 315 | 0.508 |
+
+Long gold passages are harder because the encoder reads only the first 256 tokens. The gap is 0.083 for dense MiniLM
+alone (0.414 vs 0.497), about zero for BM25 (0.310 vs 0.315) and 0.044 for hybrid.
+
+Cold vs warm: 29.5 / 33.0 ms cold vs 28.6 / 40.5 ms warm (p50 / p95) for the chosen configuration through 3 shards. The
+delta is near zero because the router and shards load the models and run one warmup encode at startup, the vectors are
+copied into RAM at load time, and the HTTP client keeps connections open. Startup is what the warmup hides: loading the
+model takes 1.5 s and the first encode in a fresh process takes 19 ms instead of 8 ms. Warm p95 can be higher than cold
+p95 because 500 samples catch more tail events than 20.
+
+### 6.3 Ablations (A3)
+
+I varied one thing at a time on dev and kept everything else at the chosen configuration.
+
+```mermaid
+flowchart LR
+  A["dense model<br/>MiniLM or bge-small"] --> F["fusion<br/>RRF or linear, α sweep"]
+  B["BM25 statistics<br/>global or shard-local"] --> F
+  F --> R["rerank depth<br/>off, 10, 20, 50"]
+  R --> T["top-10"]
+```
+
+Fusion method and weight (MiniLM, dev nDCG@10; α is the dense weight):
+
+| α | 0.1 | 0.3 | 0.5 | 0.6 | 0.7 | 0.8 | 0.9 |
 |---|---|---|---|---|---|---|---|
-| plain | baseline | 0.502 | 0.485 | - | 0 | 0 | 0 |
-| plain | single | 0.494 | 0.432 | - | 1.67 | 1,789 | 0 |
-| plain | multi | 0.476 | 0.472 | - | 0.53 | 138 | 0 |
-| compound | baseline | 0.204 | 0.365 | 0.10 | 0 | 0 | 0 |
-| compound | single | 0.327 | **0.513** | **0.29** | 2.24 | 2,681 | 0 |
-| compound | multi | **0.335** | 0.493 | 0.26 | 2.00 | 940 | 0 |
+| linear | 0.2871 | 0.3360 | 0.4022 | 0.4179 | **0.4190** | 0.4064 | 0.4005 |
+| RRF | | | 0.3733 | 0.3865 | 0.3953 | 0.4038 | 0.4062 |
 
-Coverage@10 = the fraction of compound queries whose top-10 has ≥ 1 gold passage for **both** halves.
-The scripted fake LLM (`results/agent_eval_dev_fake.json`) shows the same ordering (compound R@10: baseline 0.204 <
-single 0.288 < multi 0.354). Latency/cost columns from the Copilot run are **not meaningful**: each CLI call spends
-~30 s starting a process with its own ~26K-token harness prompt. Non-agentic latency is the Part B number (28.6 / 40.5 ms).
-Real latency and $/query come from the Azure run below.
+bge-small has the same shape (linear peaks at 0.4155 at α = 0.7; RRF tops out at 0.4082 at α = 0.9).
 
-**What the dev traces say** (per-query traces are in the JSON):
-- The planner decomposed **100 / 100** compound queries. On the plain set it correctly kept **91 / 100** simple
-  (56 by the free gate, so no LLM call; 35 by the LLM). The multi-agent's whole loss on plain comes from the **9 false
-  decompositions**: recall on those 9 fell from 0.696 (baseline) to 0.400. On the other 91, multi = baseline exactly.
-- The verifier rewrote a sub-query in 36 / 100 compound queries (3 / 100 plain).
-- The single agent lowers plain MRR (0.485 → 0.432): when it "finishes" with its own picks, it reorders a list the fused
-  ranker had already ordered well. On compound queries the same freedom helps (MRR 0.513).
-- Single vs multi on compound is close in quality. Multi uses **2.9× fewer tokens** (940 vs 2,681), because workers need
-  no LLM and the verifier is one batched call. Its p95 is also bounded: the workers are parallel and the call count is fixed
-  (≤ 2 sequential LLM calls), while the single agent's steps are sequential and vary from 0 to 3.
+Cross-encoder rerank (`cross-encoder/ms-marco-MiniLM-L-6-v2` on top of the chosen hybrid):
 
-*Dev-time conclusion (superseded by the Azure run below):* ship only the multi-agent path for compound questions, and
-don't ship the single agent, because with haiku it cost ~1.7 calls per plain query for slightly worse quality.
+| rerank depth | nDCG@10 | R@10 | MRR@10 | p50 / p95 ms |
+|---|---|---|---|---|
+| off | 0.4190 | 0.4914 | 0.4872 | 20.7 / 24.5 |
+| 10 | 0.4058 | 0.4914 | 0.4688 | 338.6 / 366.8 |
+| 20 | 0.3964 | 0.4829 | 0.4634 | 621.0 / 634.6 |
+| 50 | 0.3771 | 0.4633 | 0.4444 | 1246.3 / 1366.6 |
 
-**Final numbers on Azure AI Foundry `gpt-6-sol`** (`results/agent_eval.json`, run by the user). Responses API, reasoning
-effort `low`, no temperature parameter (reasoning models fix sampling). Search was `--search local`, i.e. the single-node
-router over the same indexes. Quality is identical to the 3-shard service (§3), and the search part of the latency is
-~30 ms either way, so it does not change the picture. Every response is cached on disk, so reruns are deterministic and free.
-0 errors, wall time 394 s for 600 system-query runs.
+BM25 statistics through 3 shards: global (DFS phase) 0.2642 at 10.7 ms p50; shard-local 0.2653 at 6.8 ms p50.
 
-| set | system | R@10 | MRR@10 | Cov@10 | LLM calls/q | tokens/q | $/q | p50 / p95 s |
+What I concluded:
+- Linear fusion beats RRF here because the two retrievers are far apart in quality (0.264 vs 0.388). RRF's equal vote
+  lets the weaker one drag the ranking down; a dense-heavy weight fixes it.
+- The reranker gets worse the deeper it goes. It was trained on short MS MARCO web snippets, FiQA answers are long
+  forum posts it truncates at 256 tokens, and the first stage is already decent. At ~30 ms per pair on this CPU it would
+  also break the latency budget.
+- bge-small is better alone and not better in hybrid, because BM25 already supplies the lexical signal it adds.
+- Shard-local IDF gives the same quality within noise and saves one round trip. I kept global statistics because they
+  make the sharded system exactly equal to single node and stay correct when shards are skewed.
+
+### 6.4 Failure analysis (A4)
+
+161 of the 500 dev queries have Recall@10 = 0 for the chosen configuration. I analysed three of them in `results/failures.md`
+(query text, top-5 with scores, gold rank and score, diagnosis, fix).
+
+| case | query | what went wrong | fix I would try |
+|---|---|---|---|
+| 1 (qid 4746) | "Personal finance in EFU and NAFA" | gold is BM25 #1 but absent from dense; with α = 0.7 its fused score caps at 0.300 | a query-adaptive α when a query has a very rare term; on dev it moved nDCG only 0.4190 → 0.4206, so I didn't adopt it |
+| 2 (qid 4029) | "Family suggests my first real estate. Advice?" | two gold passages are long; the encoder never reads the part that answers the question | index overlapping 150-word chunks and score a doc by its best chunk; cosine to the query rose 0.464 → 0.548 for one gold doc |
+| 3 (qid 7490) | "Clarify on some Stocks Terminology" | the query is a post title; the real question (trading volume) was in the post body | send title + body as the query, or let an agent ask a clarifying question; report this class separately |
+
+In 58 of the 161 failures neither retriever had any gold passage in its top 100, so fusion or reranking could not help.
+
+### 6.5 Router: sharding and scatter-gather (B1)
+
+The router owns the query path. Each shard holds one third of the corpus and answers for its slice only.
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant R as Router
+  participant S as Shards 0 to 2
+  C->>R: POST /search
+  par
+    R->>R: tokenize and embed the query once
+  and
+    R->>S: stats for the query terms (DFS phase)
+    S-->>R: df, doc count, total length per shard
+  end
+  R->>S: search with terms, global stats, vector, model, depth 100
+  S-->>R: BM25 top-100 and dense top-100 per shard, took_ms
+  R->>R: merge each list globally, then fuse, then top-k
+  R-->>C: results, partial, missing_shards, latency_ms, timings_ms
+```
+
+| I chose | because | alternative | why I didn't use it |
+|---|---|---|---|
+| `crc32(doc_id) % 3` | stable across processes and languages | Python `hash()` | salted per process, so writes and reads would disagree on the owner |
+| a DFS phase: the router sums df, doc count and length from all shards | BM25 then uses global IDF, so sharded scores equal single-node scores | shard-local statistics | 0.2653 vs 0.2642, same within noise but not exact, and wrong for skewed shards |
+| shards return top-100 per component, router merges globally, then fuses | min-max and RRF depend on the whole list, so fusing per shard crowns each shard's local winner | fuse on each shard, merge fused lists | changes the ranking depending on how docs are spread |
+| embed the query once at the router and send the vector | saves two extra encodes per query | each shard encodes | 3x the CPU for the most expensive step |
+| 0.5 s timeout per shard call, policy `partial` by default | an answer from 2 of 3 shards is more useful than an error for search | policy `fail` (also implemented) | a single slow shard would fail every query |
+
+How the caller knows an answer is partial: the response has `partial: true` and `missing_shards: [i]`. With
+`FAILURE_POLICY=fail` the router answers HTTP 503 with the missing shards instead.
+
+Results (dev, through the router):
+
+| configuration | nDCG@10 | p50 / p95 ms | peak RSS |
+|---|---|---|---|
+| single node, in-process | 0.4190 | 20.7 / 24.5 | 812 MB |
+| router + 1 shard | 0.4190 | 23.4 / 26.3 | 775 MB |
+| router + 3 shards | 0.4190 | 28.6 / 40.5 | 723 MB per shard |
+
+BM25, dense and hybrid all match single node to four decimals (0.0% difference). Every `/search` reply includes
+`timings_ms`; in a real-corpus run the parts were roughly: stats round trip ~15 ms, query-encode overhang 0 to 15 ms,
+slowest shard's own compute ~4 to 5 ms, network and queueing ~8 to 12 ms, merge and fuse under 1 ms.
+
+### 6.6 Shard write path (B2)
+
+Every write carries `(doc_id, version)`. A shard applies it only if the version is newer than what it has, so a replay
+or a late older write is a no-op, and a delete leaves a tombstone so an older upsert can't bring the doc back. The write
+goes to a write-ahead log before it is acknowledged. I built two modes, chosen per shard with `APPLY_MODE`.
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant R as Router
+  participant S as Owner shard
+  participant A as Async applier
+  C->>R: POST /upsert doc_id, version, text
+  R->>S: forward to crc32(doc_id) % 3, retry on timeout
+  alt sync mode (default)
+    S->>S: version check, embed with every model
+    S->>S: write lock, WAL append + fsync, apply to BM25 and dense
+    S-->>R: applied
+  else async mode
+    S->>S: validate, version check vs accepted writes, back-pressure
+    S->>S: WAL append (text only) + fsync, enqueue
+    S-->>R: applied, visible false
+    A->>A: embed with 8 workers, apply under a short lock
+  end
+  R-->>C: ack
+```
+
+| I chose | because | alternative | why I didn't use it |
+|---|---|---|---|
+| client-supplied versions, apply only if newer | makes retries and replays safe; the router can retry on timeout | last-writer-wins by arrival | a late older write would overwrite a newer one |
+| tombstones for deletes | a delayed older upsert can't resurrect a deleted doc | remove the entry | forgets that the doc was deleted at version v |
+| WAL with fsync before the ack; replay on restart | an acknowledged write survives a crash | in-memory only | a crash loses acked writes |
+| one read/write lock per shard over docs, versions, BM25 and every dense index | readers see a write fully or not at all | separate locks per index | a reader could see a doc in BM25 but not in dense |
+| embed outside the lock, re-check the version inside | embedding takes ~25 ms; inside the lock it would block every search | embed inside the lock | readers wait for every write |
+| sync as default | simplest guarantee: searchable on the next query | async only | 1.6x write throughput but a visible lag of up to ~0.6 s |
+| async with back-pressure | throughput for write-heavy feeds while keeping a bound | async without back-pressure | the queue grows and the lag has no bound under load |
+| crash-only recovery: an exception during apply marks the shard unhealthy; restart replays base + WAL | one simple, tested recovery path | try to repair in place | many partial states to reason about |
+
+What a reader sees if a write fails halfway: the old version. A crash before the WAL append means the write never
+happened and was never acked. A crash after the append is applied on restart by WAL replay. A torn last WAL line is
+truncated when the log reopens (it was never acked). An exception inside apply makes the shard answer 503, the router
+reports it in `missing_shards`, and a restart recovers it.
+
+Freshness guarantees and their tests:
+- sync: searchable by the first query issued after the ack.
+  `tests/test_integration_service.py::test_freshness_write_searchable_immediately_after_ack` runs 3 shard processes and
+  the router over HTTP, for every strategy, with no sleeps or retries.
+- async: searchable within 1 s of the ack. `tests/test_integration_async.py::test_acked_write_is_searchable_within_one_second`
+  polls until the doc is visible and asserts the lag. `POST /admin/flush` waits until every queued write is applied.
+
+Results under heavy writes (`results/write_load.json`: real corpus, 3 shards, 8 writers and 2 readers, 30 s):
+
+| | sync | async |
+|---|---|---|
+| writes acked per second | 57.8 | 94.2 |
+| ack p50 / p95 ms | 128 / 181 | 78 / 120 |
+| visible lag p95 / max ms | 0 / 0 | 466 / 583 |
+| search p50 under this load | 131 ms | 184 ms |
+
+### 6.7 Model migration (B3)
+
+I build the new model's index next to the old one, keep both up to date, switch reads with a flag, and keep the old one
+until I'm sure.
+
+```mermaid
+stateDiagram-v2
+  [*] --> ServingA
+  ServingA --> Migrating: make migrate (create B, dual-write on, backfill)
+  Migrating --> ReadyB: backfill done on every shard
+  ReadyB --> ServingB: make cutover
+  ServingB --> ServingA: make rollback
+  ServingB --> Finalized: make finalize (drop A)
+```
+
+| I chose | because | alternative | why I didn't use it |
+|---|---|---|---|
+| turn on dual-write in the same lock acquisition as the backfill snapshot | no write can fall between "snapshot taken" and "dual-write on" | start dual-write after the snapshot | writes in that gap would be missing from B |
+| backfill in 256-doc batches with an optional throttle, skipping docs whose version changed | searches keep running between batches; never overwrite a newer vector | one big rebuild under the lock | blocks searches for the whole build |
+| reuse cached vectors when the text hash matches (`--reencode` forces a full re-embed) | the cutover demo runs in seconds instead of ~18 minutes | always re-embed | the same work, much slower |
+| router-level `active_model` flag, read once per request, persisted to `router_state.json` | in-flight requests finish on the model they started with; restarts keep the decision | per-shard flags | shards could disagree mid-switch |
+| refuse cutover unless every shard reports the new index ready | never serve queries against a half-built index | trust the operator | one mistake means bad results |
+
+Demo (`results/migration_demo.json`): 4 query threads and 1 writer through migrate, backfill, cutover and rollback:
+**2,045 queries, 0 failed**. The 116 docs written during the run were found by both models, and per-shard index sizes
+matched for both models. I would roll back on a quality canary drop, a latency SLO breach (bge-small costs about 12 ms
+more per query here) or errors on the new path.
+
+### 6.8 Compound question set (C1)
+
+`data/build_compound.py` (seed 42) samples 200 dev questions, embeds them with MiniLM, and pairs each with a random
+unpaired partner whose cosine similarity is below 0.25, falling back to the least similar partner when none qualifies.
+The halves end up on different topics: mean pair cosine 0.088, maximum 0.346. Each pair was rewritten
+into one natural question by an LLM from the two question texts only. Gold labels are the union of both halves' qrels,
+each tagged with the half it belongs to. Ten questions are listed in `data/compound_review_sheet.md` for a manual
+check, which is still open.
+
+| I chose | because | alternative | why I didn't use it |
+|---|---|---|---|
+| a cosine threshold of 0.25 between halves | same-topic pairs would be answered by one search | random pairs | some pairs would be near-duplicates |
+| rewrite from the question texts only | no words from gold passages leak into the query | let the rewriter see the passages | inflates recall |
+| keep the half of every gold passage | needed for Coverage@10 | a flat gold list | can't tell if both halves were answered |
+
+### 6.9 Single agent (C2)
+
+```mermaid
+flowchart LR
+  Q["question"] --> S0["step 0: one hybrid search, free"]
+  S0 --> L["LLM step 1 to 3:<br/>search again or finish"]
+  L -->|"search(query, strategy)"| T["search tool"]
+  T --> L
+  L -->|"finish with doc ids"| F["final top-10:<br/>agent picks, then RRF fill"]
+```
+
+The agent starts from one hybrid search, then gets at most 3 LLM steps. Each step returns JSON: either another
+`search(query, strategy)` or `finish` with the doc ids it picks. The final list is its picks, then an RRF fill over
+everything it searched. Budget: 3 calls and 12K tokens. Results are passed as 200-character snippets.
+
+| I chose | because | alternative | why I didn't use it |
+|---|---|---|---|
+| a free step 0 | the first decision is grounded in real results | let the LLM write the first query | one more call for little gain |
+| my own loop with a JSON action protocol (native function tools on Azure) | the assignment forbids agent frameworks; one loop works for every backend | LangGraph and similar | not allowed |
+| 200-character snippets | keeps prompts small; tokens grow with every step | full passages | input tokens would explode |
+
+### 6.10 Multi-agent system (C3)
+
+```mermaid
+flowchart TB
+  Q["question"] --> G{"free gate:<br/>looks simple?"}
+  G -->|"yes"| B["one hybrid search"]
+  G -->|"no"| P["planner (LLM):<br/>simple, or up to 3 sub-queries"]
+  P -->|"simple"| B
+  P -->|"sub-queries"| W["workers (no LLM):<br/>one search per sub-query + full question,<br/>parallel, 10 s timeout each"]
+  W --> V["verifier (LLM, one batched call):<br/>top-5 snippets per sub-query,<br/>may rewrite one sub-query once"]
+  V --> I["interleave sub-query lists round-robin,<br/>dedupe, fill from the full question"]
+  I --> K["final top-10"]
+```
+
+The orchestrator is plain code. It owns one `Budget` per user question (3 LLM calls, 8K tokens, reserved before each
+call), the timeouts and the 10 slots.
+
+| I chose | because | alternative | why I didn't use it |
+|---|---|---|---|
+| planner role | splitting a question needs language understanding | regex splitting only | misses real compound questions |
+| workers without an LLM | the planner already wrote good sub-queries; search is free | one LLM agent per worker | more calls and tokens for no gain |
+| verifier role, one batched call | catches a sub-query that drifted off topic | no verifier | drifted sub-queries fill slots with junk |
+| orchestrator in code | budgets, timeouts and slots must be deterministic and testable | an LLM orchestrator | unpredictable call counts and cost |
+| round-robin slot interleave (about 5 + 5 for two halves) | scores from different sub-queries aren't comparable; interleaving guarantees both halves get slots | merge by score | one half can take all 10 slots |
+| a free word and punctuation gate before the planner | most plain questions never reach the LLM | always call the planner | an LLM call for every question |
+
+Partial failure: if a worker fails or times out, its list is dropped and the others fill the slots; a planner or
+verifier error falls back to "simple" or "all relevant"; if every worker fails, the orchestrator runs one direct search.
+`tests/test_agents.py::test_orchestrator_partial_failure_still_returns_results` shows it.
+
+### 6.11 Agent evaluation and routing (C4)
+
+I compared the non-agentic hybrid search (baseline), the single agent and the multi-agent system on 100 plain dev
+questions (seed 42) and the 100 compound questions, with Azure AI Foundry `gpt-6-sol`, reasoning effort low.
+
+```mermaid
+flowchart LR
+  Q["incoming question"] --> G{"free gate:<br/>simple?"}
+  G -->|"yes"| H["hybrid search<br/>about 30 ms"]
+  G -->|"no"| P{"planner:<br/>compound?"}
+  P -->|"no"| H
+  P -->|"yes, quality first"| S["single agent<br/>p95 9.3 s"]
+  P -->|"yes, latency or cost budget"| M["multi-agent<br/>p95 4.7 s"]
+  H -.->|"user opts in"| D["single agent as deep search"]
+```
+
+| set | system | R@10 | MRR@10 | Cov@10 | LLM calls / q | tokens / q | $ / q | p50 / p95 s |
 |---|---|---|---|---|---|---|---|---|
-| plain | baseline | 0.502 | 0.485 | – | 0.00 | 0 | 0 | 0.06 / 0.08 |
-| plain | single | **0.547** | **0.642** | – | 1.96 | 2,118 | 0.0025 | 4.09 / 7.27 |
-| plain | multi | 0.481 | 0.466 | – | 0.51 | 130 | 0.0002 | 0.03 / 3.59 |
-| compound | baseline | 0.204 | 0.365 | 0.10 | 0.00 | 0 | 0 | 0.08 / 0.10 |
-| compound | single | **0.400** | **0.609** | **0.40** | 2.70 | 3,380 | 0.0039 | 5.75 / 9.28 |
+| plain | baseline | 0.502 | 0.485 | - | 0 | 0 | 0 | 0.06 / 0.08 |
+| plain | single | 0.547 | 0.642 | - | 1.96 | 2,118 | 0.0025 | 4.09 / 7.27 |
+| plain | multi | 0.481 | 0.466 | - | 0.51 | 130 | 0.0002 | 0.03 / 3.59 |
+| compound | baseline | 0.204 | 0.365 | 0.10 | 0 | 0 | 0 | 0.08 / 0.10 |
+| compound | single | 0.400 | 0.609 | 0.40 | 2.70 | 3,380 | 0.0039 | 5.75 / 9.28 |
 | compound | multi | 0.355 | 0.518 | 0.32 | 2.00 | 925 | 0.0013 | 3.40 / 4.75 |
 
-**Spend:** ≈ 655K tokens in total (≈ 610K input, ≈ 45K output), **$0.79 at placeholder prices** ($1 / $4 per 1M tokens,
-`PRICE_PER_1M_INPUT` / `PRICE_PER_1M_OUTPUT` in `src/config.py`; the real gpt-6-sol rates were not known). The `--dry-run`
-estimate was $0.47 (`results/agent_eval_dryrun.json`). It under-estimated by ~40% because the dry run uses the fake policy,
-which makes fewer and shorter calls than the real model.
+Coverage@10 is the share of compound questions with at least one gold passage from each half in the top 10. Dollar
+figures use placeholder prices of $1 / $4 per 1M input / output tokens, because I didn't have the real gpt-6-sol rates.
 
-**What the Azure traces say** (comparisons are per query, against the baseline):
-- **Single agent, plain:** recall better on 7 queries, worse on 0. The first relevant hit moved up in 30 and down in 3. It
-  changed the top-1 in 55 / 100. It ended with its own picks in 100 / 100; steps used: 1 → 29, 2 → 46, 3 → 25.
-- **Single agent, compound:** recall better on 55, worse on 3; it used all 3 steps on 72%.
-- **Multi agent, plain:** the planner split 7 plain queries (56 kept by the free gate, 37 by the LLM). On those 7, recall fell
-  0.824 → 0.514. That is the whole plain loss; the other 93 equal the baseline exactly.
-- **Multi agent, compound:** decomposed 100 / 100; recall better on 50, worse on 5. The verifier rewrote a sub-query in 16 / 100
-  (36 with haiku).
-- **Single vs multi on compound, per query:** single minus multi is R@10 +0.045 (bootstrap 95% CI [+0.007, +0.085]; 30
-  wins / 17 losses, sign test p ≈ 0.08) and Cov@10 +0.08 (CI [+0.01, +0.15]; 11 / 3, p ≈ 0.06). The difference is real
-  but small, at n = 100.
+What the traces showed:
+- The single agent's last step is effectively an LLM rerank of what it has seen. With gpt-6-sol that helped: on plain
+  questions recall improved on 7 and got worse on 0, and the first relevant hit moved up on 30 (down on 3).
+- With the free dev model (claude-haiku-4.5 through the Copilot CLI) the same step hurt (plain MRR 0.485 → 0.432), and
+  single and multi tied on compound (R@10 0.327 vs 0.335). The best architecture changed with the model.
+- The multi-agent's whole plain-set loss comes from 7 questions the planner split by mistake (their recall fell
+  0.824 → 0.514); the other 93 equal the baseline exactly. Its LLM never ranks, so a stronger model barely helps it.
+- Single minus multi on compound, per question: R@10 +0.045 (bootstrap 95% CI +0.007 to +0.085), Coverage +0.08 (CI
+  +0.01 to +0.15). Real, but small at n = 100.
 
-**Why the conclusion flipped vs dev.** The single agent's final step is an *LLM rerank over 200-char snippets*. haiku did
-it badly (plain MRR 0.485 → 0.432), and gpt-6-sol does it well (0.485 → 0.642, with 0 recall losses). The multi-agent's LLM
-never ranks: it only splits and checks, and workers/interleave do the ordering. So a stronger model barely helps it
-(compound R@10 0.335 → 0.355). **Lesson: which architecture wins depends on the model; re-run the eval when the model changes.**
+| path | ship? | why |
+|---|---|---|
+| non-agentic hybrid | yes, the default for plain questions | ~30 ms, free, and agents don't beat it by enough to justify 4 s |
+| single agent | yes: for compound questions when quality matters, and as an opt-in "deep search" for plain ones | best recall and coverage (R@10 0.400, Cov 0.40), at p95 9.3 s and 3,380 tokens |
+| multi-agent | yes: for compound questions under a latency or cost budget | R@10 0.355, Cov 0.32 at p95 4.7 s and about a quarter of the tokens |
 
-**Decision (routing policy, final).**
-1. Free gate says simple → **non-agentic** search (no LLM, ~30 ms p50 through the router). This stays the default for
-   plain traffic. The single agent adds +0.045 R@10 / +0.157 MRR, but at ~4 s p50 and ~2K tokens per query. Offer it as an
-   **opt-in "deep search"** for users who accept that latency.
-2. Otherwise one planner call. If it says simple → non-agentic results.
-3. Compound → the **single agent** when quality matters (R@10 0.400, Cov@10 0.40, p95 9.3 s, 3,380 tokens/q).
-   Fall back to the **multi-agent** path when the latency or cost budget is tight (p95 4.7 s, ~¼ of the tokens, R@10 0.355,
-   Cov@10 0.32). Both beat one search by a wide margin (R@10 0.204, Cov@10 0.10).
+## 7. API design
 
-**Next fixes:** (a) the 7 false plain decompositions: require two *independent information needs*, and require ≥ 2
-sub-queries whose top-10 lists overlap < 50% before trusting a split. (b) A hybrid: multi-agent retrieval followed by one
-single-agent-style rerank call, which may get the single agent's ordering at multi's latency. **Known limitation:** when
-a worker fails, the surviving sub-query list fills every slot. Reserving ~3 slots for the full-question list would
-protect the failed half's coverage.
+### Router (`src/service/router.py`, port 8000)
 
-## 8. One counterintuitive finding: sharding made latency *worse*
+| endpoint | method | called by | request | response | errors |
+|---|---|---|---|---|---|
+| `/search` | POST | CLI, eval, agent tool, load scripts | `query`, `k` (10), `strategy` (`bm25`, `dense`, `hybrid`), `fusion`, `alpha`, `include_text`, `rerank_k` (0) | `results` [`doc_id`, `score`, `text` if requested], `partial`, `missing_shards`, `model`, `strategy`, `latency_ms`, `timings_ms` | 503 with `missing_shards` when shards fail under the `fail` policy; 409 for an unknown strategy |
+| `/upsert` | POST | writers, ingestion scripts | `doc_id`, `version`, `text` | owner shard's reply: `applied`, `doc_id`, `version`, `shard` (async mode adds `visible: false`, `mode`), plus `attempts`; or `applied: false, reason: stale_or_duplicate, current_version` | 422 if `text` is empty; 503 if the owner shard fails after retries |
+| `/delete` | POST | writers | `doc_id`, `version` | same shape as `/upsert` | 503 as above |
+| `/health` | GET | compose healthcheck, cluster.py | none | `ok`, `active_model`, `n_shards` (router process only) | none |
+| `/admin/status` | GET | ops, migration script | none | `active_model`, `previous_model`, per-shard health, `missing_shards` | none |
+| `/admin/flush` | POST | tests, load scripts | `timeout` (10 s) | `drained`, `missing_shards` (instant in sync mode) | none |
+| `/admin/migrate` | POST | `make migrate` | `model`, `reencode`, `throttle_s` | `target`, per-shard start status | 503 / 409 |
+| `/admin/cutover` | POST | `make cutover` | `model` | `active_model`, `previous_model` | 409 if the model isn't ready on every shard |
+| `/admin/rollback` | POST | `make rollback` | none | `active_model`, `previous_model` | 409 if there is nothing to roll back to |
+| `/admin/finalize` | POST | `make finalize` | `model` | `dropped`, per-shard result, `missing_shards` | 409 if asked to drop the active model |
 
-**Expected:** splitting the corpus 3 ways would cut per-query latency (each shard scans a third). **Observed:**
-1 shard p50/p95 23.4 / 26.3 ms vs 3 shards 28.6 / 40.5 ms, same quality. **Hypothesis (supported by the
-per-strategy numbers):** per-shard compute at 19K docs is ~1–3 ms (BM25 single-node p50 is 1.2 ms for all 57K docs), so there is little to
-parallelise. Sharding adds a second fan-out round trip (DFS), 3× the HTTP calls per phase on one Windows host, and the
-router must wait for the *slowest* of three shards, which shows up mostly in p95 (tail amplification). Sharding here
-buys capacity (memory, write throughput, failure isolation), not latency. A close second: **textbook RRF hurt**
-(0.373 < dense 0.388) because it gives a much weaker retriever an equal vote.
+Shard readiness and progress per model are visible in `/admin/status` through each shard's health.
 
-## 9. Approaches that didn't pan out
+### Shard (`src/service/shard_server.py`, port 8101 in Docker, 8101 to 8103 locally)
 
-1. **Cross-encoder reranking (ms-marco-MiniLM-L-6-v2).** *Expected* +2–5 nDCG on top of hybrid. *Observed*
-   0.406 (k=10), 0.396 (k=20) and 0.377 (k=50) vs 0.419 without: monotonically worse with depth, at 339 ms p50 for k=10. *Why:* domain shift (MS MARCO web snippets
-   vs long forum answers), 256-token truncation of long FiQA answers (the stratified metrics show long gold passages are already hard),
-   and a strong first stage leaving little to fix. It is also ~30 ms per pair on our CPU, 7× the budget at k=10.
-2. **Standard RRF for hybrid.** *Expected* the usual "free" hybrid gain. *Observed* −0.015 nDCG vs dense.
-   *Why:* equal votes for a retriever that's 12 points worse. Weighted RRF (α=0.9 → 0.406) and especially linear fusion fix it.
-3. **Upgrading the dense model to bge-small.** *Expected* the better MTEB model to win. *Observed* +0.010 dense but −0.003 in
-   hybrid, at +12 ms. *Why:* BM25 already supplies the lexical signal bge-small adds over MiniLM; the extra latency isn't worth it.
-4. **Skipping the DFS round trip (local IDF).** Quality was the same (0.2653 vs 0.2642) and it was 4 ms faster. We *kept* DFS for exact
-   single-node equivalence, so this "worked", but it's a trade-off we chose against, not a free win.
+The router is the only caller. Besides `GET /health`, every call is `POST /{op}`:
 
-## 10. Scaling to 100M passages (arithmetic in docs/15_scaling_to_100M.md)
+| op | request | response |
+|---|---|---|
+| `stats` | `terms` | this shard's `n_docs`, `total_len`, `df` per term |
+| `search` | `terms`, `k`, optional global `stats`, `vector`, `model` | `bm25` and `dense` lists of [doc_id, score], `shard`, `took_ms` |
+| `docs` | `ids` | {doc_id: text} for the ids this shard owns |
+| `upsert` / `delete` | `doc_id`, `version`, `text` | `applied` true or false with a reason |
+| `flush` | `timeout` | `drained` |
+| `build_model` | `model`, `reencode`, `throttle_s` | `status`, `n_docs` or `ready` |
+| `drop_model` | `model` | `dropped` |
+| `health` | none | `shard_id`, `healthy`, `n_docs`, per-model `ready` / `progress` / `n`, `counters`, `apply_mode`, async stats, RSS |
 
-- **Vectors:** 100M × 384 × 4 B = **153.6 GB** flat → would need ≥ 77 shards of 2 GB for vectors alone. **IVF-PQ** (48-byte codes)
-  = **4.8 GB** + ids/centroids; re-rank the top-100 with full vectors fetched from disk.
-- **Index type:** IVF-PQ (nlist ≈ 65K, nprobe tuned for recall ≥ 0.95) or HNSW on bigger-memory nodes (~180 GB incl. graph).
-- **BM25:** ~6.5B postings ≈ 52 GB uncompressed → compressed postings (Lucene-style) ~10–17 GB, scored with WAND/block-max
-  instead of our dense O(N) score array.
-- **Text:** ~77 GB (measured mean 768 B/passage in FiQA) → object store / disk, fetch only the final top-k.
-- **Embedding:** 57,638 passages took 567 s (MiniLM) on 32 CPU cores → 100M ≈ **11 days** on this box; ~3–6 h on one A100,
-  < 1 h on 8 GPUs. A model migration means a full re-embed, so dual-write must last hours to days.
-- **Cost (order of magnitude):** ~8–16 memory-optimised nodes incl. 2× replication ≈ $3–6K/month; a re-embed run on 8 GPUs ≈ $30–100.
-- **Breaks first in our design:** (1) flat float32 vectors per shard (memory, then latency); (2) Python BM25 with an O(N) score array;
-  (3) router fan-out tail latency with 50+ shards; (4) WAL replay without snapshots; (5) modulo sharding (resharding moves ~all docs).
+### Internal interfaces
 
-## 11. Production concerns
+| interface | where | contract |
+|---|---|---|
+| agent search tool | `src/agent/tools.py` | `search(query, strategy)` returns the top-10 hits with `doc_id`, `score` and a 200-character `text` snippet; an unknown strategy falls back to `hybrid` |
+| LLM client | `src/agent/llm.py` | `complete(system, user, max_output_tokens, ...)` returns the text, input and output tokens, latency and whether it was cached; when a `Budget` is passed it reserves the worst case before calling; responses are cached on disk by prompt hash |
 
-- **Availability:** ≥ 2 replicas per shard behind the router; the router load-balances and *hedges* slow reads (Tail at Scale);
-  a write goes to the primary and is replicated from the WAL. Today, one dead shard means partial results until restart.
-- **Caching:** a router-side LRU on (query, strategy, model) for popular queries (invalidated on writes to returned docs); a query-embedding
-  cache; a global-df cache (replaces the DFS round trip, ~4 ms).
-- **Cost:** the query encoder is the largest single CPU cost (8 ms/query; faiss 1.4 ms/shard, BM25 1 ms). Batch concurrent queries into one forward pass, use ONNX/int8 quantisation, and
-  route agentic paths only to queries that need them (§7).
-- **Monitoring:** p50/p95/p99 per phase (embed, DFS, search, merge), `partial` rate per shard, WAL lag/size, index sizes per model (must
-  match during migration), an offline nDCG canary on a fixed query set after every deploy/migration, LLM tokens/$ per query.
-- **Security:** the agents' only tool is read-only search, which limits prompt-injection blast radius; secrets only in `.env`/a secret store.
+## 8. Database design
+
+I didn't use a database. Each shard keeps its data in memory and persists only what it needs to recover.
+
+| data | how it is stored today | where |
+|---|---|---|
+| passage text | Python dict doc_id → text | shard memory, loaded from `data/raw` |
+| versions and tombstones | dict doc_id → (version, deleted) | shard memory, rebuilt from the WAL |
+| BM25 index | scipy CSC matrix (term columns, for search) and CSR (doc rows, for deletes) for the base corpus, a dict delta segment for new docs, an `alive` mask for deletes | shard memory |
+| dense index | one faiss `IndexIDMap2(IndexFlatIP)` per model, float32 unit vectors | shard memory |
+| embedding cache | `emb_<model>.npy` (57,638 x 384 float32) + `.meta.json` (model, max_seq_length, dim, doc id per row, text hash per row) | `artifacts/` |
+| write log | `wal.jsonl`: one JSON line per write (`op`, `doc_id`, `version`, `text`, vectors per model in base64 in sync mode) | per-shard state dir |
+| maintained models | `models.json`, e.g. ["bge-small", "minilm"] | per-shard state dir |
+| router state | `router_state.json`: `active_model`, `previous_model` | `artifacts/` |
+
+If I moved this to a real database (not built), I'd keep the same logical model:
+
+| table / collection | fields | notes |
+|---|---|---|
+| `passages` | doc_id (key), version, deleted, text, updated_at | the source of truth; version check as a conditional update |
+| `embeddings_<model>` | doc_id, version, vector(384) | one collection per model makes blue/green migration a matter of building a second collection |
+| lexical index | inverted index on `passages.text` (search engine or full-text index) | needs global term statistics across partitions |
+| `router_state` | active_model, previous_model | small replicated config |
+
+The database's own log and replication would replace my WAL and crash recovery. Partitioning by `crc32(doc_id)` would
+stay. I'd still want the database to expose per-term statistics and per-partition top-k lists, or the merge-then-fuse
+and global-IDF guarantees would be lost.
+
+## 9. Scaling to the next 100M passages
+
+| layer | change | why the current approach won't scale |
+|---|---|---|
+| vector index | IVF-PQ (48-byte codes, nlist around 65K) or HNSW on large-memory nodes; re-score the top candidates with full vectors | flat float32 is 100M x 384 x 4 B = 153.6 GB, at least 77 shards of 2 GB for vectors alone; IVF-PQ is about 4.8 GB |
+| lexical index | compressed postings and WAND / block-max scoring | ~6.5B postings ≈ 52 GB uncompressed, and my BM25 builds an O(N) score array per query |
+| passage text | object store or disk, fetch only the final top-k | ~77 GB of text (768 bytes per passage on average) |
+| embedding | GPUs for indexing | 57,638 passages took 567 s on 32 CPU cores, so 100M would take about 11 days |
+| sharding | consistent hashing or range partitions, more shards | `% N` moves almost every doc when N changes |
+| router | replicas, hedged requests, a cached global-df table | waiting for the slowest of 50+ shards dominates p95; the DFS round trip grows with N |
+| writes and storage | WAL snapshots and truncation, tombstone cleanup, group commit | replay time grows without bound; tombstones are never removed |
+| model migration | dual-write lasting hours or days, throttled re-embedding | a full re-embed of 100M is a long job |
+| agents | route only compound questions to agents, cache LLM calls | per-question cost and latency scale with traffic |
+
+## 10. Pitfalls in the current design
+
+| where it fails | effect today |
+|---|---|
+| one router, no replicas | the router is a single point of failure; a dead shard means partial results until it restarts |
+| every shard loads the embedding model | most of each shard's 723 MB is the model, not the data |
+| WAL is never truncated, tombstones are never removed | restart time and memory grow with the write history |
+| BM25 delta segment is never compacted | new docs are scored one posting at a time |
+| client-supplied versions | correctness depends on clients sending increasing versions |
+| async mode | a search can return the previous version for up to about 0.6 s after the ack; overload slows writers |
+| modulo sharding | changing the shard count needs a full re-shard |
+| dense encoder truncates at 256 tokens | long gold passages are found less often (0.464 vs 0.508 Recall@10) |
+| planner splits some plain questions | those 7 lost recall (0.824 → 0.514) |
+| a failed worker's half loses its slots | the surviving sub-query fills all 10 slots |
+| agent quality depends on the model | the haiku and gpt-6-sol runs led to different routing decisions |
+
+## 11. Results
+
+### Benchmark table (dev, 500 questions)
+
+| configuration | mode | nDCG@10 | R@10 | MRR@10 | warm p50 / p95 ms | cold p50 / p95 ms | peak RSS MB |
+|---|---|---|---|---|---|---|---|
+| BM25 | single node | 0.2642 | 0.3135 | 0.3222 | 1.2 / 2.0 | 1.2 / 1.9 | 511 |
+| dense all-MiniLM-L6-v2 | single node | 0.3881 | 0.4665 | 0.4532 | 18.8 / 20.8 | 19.1 / 21.2 | 806 |
+| dense bge-small-en-v1.5 | single node | 0.3981 | 0.4681 | 0.4773 | 30.6 / 34.2 | 30.2 / 34.2 | 851 |
+| hybrid RRF, MiniLM | single node | 0.3733 | 0.4420 | 0.4485 | 22.1 / 39.9 | 21.7 / 24.3 | 812 |
+| hybrid linear α = 0.7, MiniLM | single node | 0.4190 | 0.4914 | 0.4872 | 20.7 / 24.5 | 20.1 / 23.3 | 812 |
+| hybrid linear α = 0.7, bge-small | single node | 0.4155 | 0.4856 | 0.4953 | 35.3 / 40.3 | 36.3 / 42.0 | 854 |
+| + cross-encoder rerank@10 | single node | 0.4058 | 0.4914 | 0.4688 | 338.6 / 366.8 | | |
+| BM25 | router + 3 shards | 0.2642 | 0.3135 | 0.3222 | 10.7 / 11.5 | 10.9 / 12.1 | 722 per shard |
+| BM25, shard-local IDF | router + 3 shards | 0.2653 | 0.3142 | 0.3226 | 6.8 / 7.4 | 7.1 / 8.1 | 722 per shard |
+| dense MiniLM | router + 3 shards | 0.3881 | 0.4665 | 0.4532 | 22.2 / 27.0 | 22.8 / 24.3 | 723 per shard |
+| **hybrid linear α = 0.7 (chosen)** | **router + 3 shards** | **0.4190** | **0.4914** | **0.4872** | **28.6 / 40.5** | 29.5 / 33.0 | **723 per shard** |
+| hybrid linear α = 0.7 in Docker | router + 3 shards | 0.4190 | 0.4914 | 0.4872 | 30.4 / 34.1 | 30.5 / 34.2 | about 505 MiB per container |
+| hybrid linear α = 0.7 | router + 1 shard | 0.4190 | 0.4914 | 0.4872 | 23.4 / 26.3 | 22.9 / 25.1 | 775 |
+
+Single-node rows run in-process; service rows are measured by the client end to end through the router's HTTP API.
+
+### Test split (run once)
+
+| configuration | nDCG@10 | R@10 | MRR@10 | p50 / p95 ms |
+|---|---|---|---|---|
+| hybrid linear α = 0.7, MiniLM, 648 test questions | 0.3968 | 0.4658 | 0.4788 | 21.5 / 24.9 |
+
+nDCG drops from 0.419 on dev to 0.397 on test, which is the expected optimism from tuning α on dev. The stratified
+pattern is the same as on dev: gold in the longest docs 0.443 (n = 246) vs 0.480 for the rest.
+
+### Other results
+
+| what | result |
+|---|---|
+| sharded vs single node | identical to four decimals for BM25, dense and hybrid |
+| live writes | sync 57.8 writes/s with lag 0; async 94.2 writes/s with lag p95 466 ms, max 583 ms |
+| migration under load | 2,045 queries, 0 failed; 116 writes during the run found by both models |
+| agents (gpt-6-sol) | compound R@10: baseline 0.204, single 0.400, multi 0.355 |
+| LLM spend | about 655K tokens for the whole agent eval, $0.79 at placeholder prices; the dry-run estimate was $0.47 because it replays a simpler scripted policy |
+
+### Counterintuitive finding: sharding made latency worse
+
+I expected three shards to be faster, since each searches a third of the corpus. I measured 1 shard at 23.4 / 26.3 ms and
+3 shards at 28.6 / 40.5 ms (p50 / p95), with the same quality. At 19K docs per shard the actual search takes 1 to 3 ms
+(BM25 over all 57K docs is 1.2 ms), so there is little to parallelise. Sharding adds a second round trip (the DFS phase),
+three HTTP calls per phase, and a wait for the slowest of three shards, which shows up mostly in p95. At this size
+sharding buys capacity and failure isolation, not speed.
+
+### Approaches that didn't pan out
+
+| approach | expected | observed | why I think it failed |
+|---|---|---|---|
+| cross-encoder rerank | +2 to 5 nDCG | 0.406 (k = 10), 0.396 (k = 20), 0.377 (k = 50) vs 0.419; 339 ms p50 at k = 10 | trained on short web snippets; FiQA answers are long and get truncated; the first stage leaves little to fix |
+| standard RRF | the usual hybrid gain | 0.373, below dense alone (0.388) | it gives a much weaker retriever an equal vote |
+| bge-small as the dense model | the better benchmark model wins | +0.010 dense, -0.0035 in hybrid, +12 ms per query | BM25 already supplies what bge-small adds |
+| first async write mode | faster than sync | 47 writes/s vs 58, lag up to 1.3 s | one applier thread embedded serially, and batching doesn't save time on CPU (25.6 ms per doc alone vs 31.5 ms in batches of 8); fixed with 8 parallel single-doc workers |
+
+## 12. Answers to the assignment's questions
+
+| question | answer |
+|---|---|
+| Chosen operating point, and why | hybrid linear fusion, α = 0.7, BM25 + all-MiniLM-L6-v2, depth 100, no reranker, router + 3 shards: best dev nDCG (0.4190) that meets every constraint (p95 40.5 ms, 723 MB per shard, CPU only) |
+| Benchmark table | section 11: 13 configurations plus the single test run |
+| Cold vs warm delta | near zero (29.5 / 33.0 vs 28.6 / 40.5 ms) because models load and warm up at startup; the hidden costs are 1.5 s model load and a 19 ms first encode |
+| Stratified metrics | short 0.385, medium 0.491, long 0.510; gold in the 10% longest docs 0.464 vs 0.508 |
+| Ablation and its deltas | fusion sweep (linear peaks at α = 0.7; RRF 0.373 to 0.406); rerank depth (every depth worse, 339 to 1,246 ms); bge-small vs MiniLM; local vs global IDF |
+| Three failures | qid 4746 (rare acronyms, fusion weight), 4029 (long passages truncated), 7490 (title-only query); details in `results/failures.md` |
+| Does sharding match single node within 1%? | yes, 0.0% for every strategy, on the first run, because of global IDF, top-100 per shard and merge-then-fuse |
+| What happens when a shard is slow or down? | 0.5 s timeout; default `partial` returns the other shards' results with `partial: true` and `missing_shards`; `fail` returns 503 |
+| 1 vs N shard latency | 23.4 / 26.3 ms vs 28.6 / 40.5 ms (p50 / p95) |
+| Idempotency | `(doc_id, version)`, apply only if newer; deletes leave tombstones; replays and older writes are no-ops |
+| What can a reader see if a write fails halfway, and recovery | the old version, never a half-applied write (one lock over both indexes); WAL replay on restart, torn tail truncated, crash-only restart on apply errors |
+| Freshness guarantee and its test | sync: searchable by the first query after the ack (`test_freshness_write_searchable_immediately_after_ack`); async: within 1 s (`test_acked_write_is_searchable_within_one_second`) |
+| How migration works | dual-write + throttled backfill, cutover by a router flag only when every shard is ready, instant rollback, finalize drops the old index; `make migrate`, `make cutover`, `make rollback` |
+| Failed queries during migration | 0 of 2,045 |
+| When I would roll back | quality canary drop, latency SLO breach, or errors on the new path |
+| Sub-agent roles and why | planner (splitting needs language understanding), workers without an LLM (search is free), verifier (catches drifted sub-queries); orchestrator in code for deterministic budgets |
+| How sub-agents share 10 slots | round-robin interleave across sub-query lists with dedupe, then fill from the full question |
+| Guardrails | one budget per question: 3 LLM calls and 8K tokens (multi), 3 calls and 12K tokens (single), reserved before each call |
+| Partial failure | a failed worker's list is dropped, errors fall back to a direct search; covered by a test |
+| Skipping decomposition | a free gate plus the planner kept 93 of 100 plain questions on one search |
+| Agent quality, cost and latency | section 6.11 table |
+| Routing policy | simple → hybrid search; compound → single agent for quality, multi-agent under a latency or cost budget; single agent as opt-in deep search |
+| Ship / don't ship | ship all three paths, each for its own traffic (section 6.11) |
+| LLM, temperature and spend | Azure AI Foundry `gpt-6-sol`, reasoning effort low (no temperature parameter on this reasoning model), about 655K tokens, $0.79 at placeholder prices |
+| Counterintuitive finding | sharding made latency worse (section 11) |
+| Approaches that didn't pan out | cross-encoder rerank, standard RRF, bge-small, first async version (section 11) |
+| Scaling to 100M | section 9 |
+| Production concerns | replicas with hedged reads; caches for query embeddings, global df and popular queries; batching and quantising the encoder; per-phase latency, partial rate, WAL size and an nDCG canary as monitoring |
+| Test split | run once for the chosen configuration: nDCG@10 0.3968, R@10 0.4658, MRR 0.4788 |
+| Measuring machine | in the README, section "Measured on" |
+| Code size | 2,004 logical lines in `src/` excluding the data loader |
+
+## 13. Next steps
+
+1. Replicas per shard with hedged reads, so one slow or dead shard doesn't hurt p95 or completeness.
+2. A cached global-df table at the router to drop the DFS round trip (about 4 ms).
+3. WAL snapshots with truncation, tombstone cleanup and BM25 compaction.
+4. Chunked passage indexing with best-chunk scoring for long answers.
+5. Stop false planner splits: require two independent information needs and sub-query results that overlap by less than half.
+6. Multi-agent retrieval followed by one rerank call by the strong model, to get the single agent's ordering at the multi-agent's latency.
+7. Reserve about 3 slots for the full question when a worker fails.
+8. Fine-tune the dense model on FiQA train, and batch or quantise the query encoder.
 
 ---
-**LLM / spend disclosure:** dev runs used a free backend (GitHub Copilot CLI, claude-haiku-4.5) and the scripted fake LLM.
-Final agent numbers: Azure AI Foundry deployment `gpt-6-sol`, reasoning effort `low`, ≈ 655K tokens in total,
-$0.79 at placeholder prices of $1 / $4 per 1M input / output tokens (see §7).
-Compound-query rewrites were written in-session by GitHub Copilot from the two query texts only (no gold passages);
-10 were selected for human hand-check (`data/compound_review_sheet.md`). Code volume (`python scripts/count_loc.py`): **1,686 logical code lines** in `src/` excluding the data loader (2,881 physical lines; 41% are docstrings/comments, by design: this repo doubles as a study guide). Scripts, tests, toys and docs are extra.
+Reproducibility: quality metrics come from `results/bench.json`, `results/ablation_*.json`, `results/write_load.json`,
+`results/migration_demo.json` and `results/agent_eval.json`, and Docker reproduces the chosen configuration's quality
+exactly. Agent results depend on the LLM; every response is cached on disk, so a rerun with the same cache is identical.
+
+AI and LLM use: the agent results use Azure AI Foundry `gpt-6-sol` (spend above), development runs used
+claude-haiku-4.5 through the GitHub Copilot CLI and a scripted fake LLM, the compound questions were rewritten by an LLM
+from the two question texts, and I used an AI coding assistant while building the project, as the assignment allows.

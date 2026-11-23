@@ -2,7 +2,9 @@
 
 [DESIGN.md](../../DESIGN.md) describes what I built and what it measured. This page is my list of what I'd add next,
 grouped by the part of the system it touches. Unless a line says otherwise (items 2 and 15 are built), nothing here is built yet; the numbers
-quoted are the ones DESIGN.md measured, and each item says how I'd check it.
+quoted are the ones DESIGN.md measured, and each item says how I'd check it. Security and LLM guardrails (tenant
+identity, authorisation, tenant filtering, PII redaction, audit log, harmful-intent, injection, scope and rate-limit
+guards) are built and have their own page: [SECURITY.md](SECURITY.md).
 
 ## Contents
 

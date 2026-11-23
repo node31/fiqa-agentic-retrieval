@@ -66,6 +66,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
+from src.security.tenants import default_tenant
 from src.util import percentile
 
 log = logging.getLogger(__name__)
@@ -87,11 +88,14 @@ class AsyncApplier:
         # Latest ACCEPTED version per doc written since start (may be ahead of store.versions,
         # which only moves when the applier applies). See point 1 in the module docstring.
         self.accepted: dict[str, int] = {}
+        # {doc_id: owner} for writes accepted but not applied yet (popped once applied, when
+        # store.owner has it). Read BEFORE store.owner so a concurrent pop can never hide both.
+        self.pending_owner: dict[str, str] = {}
         # Serialises "check version -> WAL append -> enqueue", so queue order == WAL order.
         self._accept_lock = threading.Lock()
         # Guards the queue; writers and the applier wait/notify on it.
         self._cond = threading.Condition()
-        # Items: (t_enqueued, op, doc_id, version, text). t_enqueued ~ the ack time.
+        # Items: (t_enqueued, op, doc_id, version, text, owner). t_enqueued ~ the ack time.
         self._queue: collections.deque = collections.deque()
         # Enqueue time of the oldest write in the batch being applied right now (None = idle).
         # The back-pressure check must count it: those writes are acked but not visible yet.
@@ -140,8 +144,14 @@ class AsyncApplier:
         cur = self.latest_version(doc_id)
         return cur is None or version > cur
 
-    def submit(self, op: str, doc_id: str, version: int, text: str | None) -> dict:
-        """Accept one write: validate, wait for capacity, WAL + fsync, enqueue, ack."""
+    def submit(self, op: str, doc_id: str, version: int, text: str | None, tenant: str | None = None,
+               enforce_tenant: str | None = None) -> dict:
+        """Accept one write: validate, wait for capacity, WAL + fsync, enqueue, ack.
+
+        ``tenant``/``enforce_tenant``: as in ShardStore.upsert. The ownership check must also see writes
+        that are accepted but not applied yet (``pending_owner``), or two tenants could both claim a
+        brand-new id inside the same 1 s window.
+        """
         self.store._check()
         # Point 3: reject bad input BEFORE the ack. After the ack it would be too late.
         if op == "upsert" and (not isinstance(text, str) or not text.strip()):
@@ -149,18 +159,26 @@ class AsyncApplier:
         # Cheap early exit for retries (no waiting, no lock), like step 1 of the sync path.
         if not self._is_newer(doc_id, version):
             return self._noop(doc_id)
+        if (no := self.store.forbidden(doc_id, enforce_tenant, self.pending_owner.get(doc_id))):
+            return no
         self._wait_for_capacity()
         with self._accept_lock:
             # Re-check under the lock: another writer may have accepted a newer version meanwhile.
             if not self._is_newer(doc_id, version):
                 return self._noop(doc_id)
+            if (no := self.store.forbidden(doc_id, enforce_tenant, self.pending_owner.get(doc_id))):
+                return no
+            owner = (self.pending_owner.get(doc_id) or self.store.owner.get(doc_id)
+                     or (tenant if tenant not in (None, "*") else default_tenant(doc_id)))
+            self.pending_owner.setdefault(doc_id, owner)
             # Durable BEFORE the ack. Text only: the vectors don't exist yet (the applier makes
             # them), so a replay after a crash re-embeds (ShardStore._apply handles that).
             if self.store.wal:
-                self.store.wal.append({"op": op, "doc_id": doc_id, "version": version, "text": text, "vecs": {}})
+                self.store.wal.append({"op": op, "doc_id": doc_id, "version": version, "text": text,
+                                       "tenant": owner, "vecs": {}})
             self.accepted[doc_id] = version
             with self._cond:
-                self._queue.append((time.perf_counter(), op, doc_id, version, text))
+                self._queue.append((time.perf_counter(), op, doc_id, version, text, owner))
                 self.counters["accepted"] += 1
                 self._cond.notify_all()
         # "applied": True keeps the reply shape of sync mode for the router and clients; here it
@@ -301,14 +319,15 @@ class AsyncApplier:
         applied = superseded = 0
         with store.lock.write():
             t2 = time.perf_counter()
-            for i, (_, op, doc_id, version, text) in enumerate(batch):
+            for i, (_, op, doc_id, version, text, owner) in enumerate(batch):
                 # Same rule as sync: only a strictly newer version changes state. A queued v1 followed
                 # by v2 in the same batch applies both, in order; the end state is v2.
                 if not store._is_newer(doc_id, version):
                     superseded += 1
                     continue
                 v = {m: vecs[m][row_of[i]] for m in vecs} if op == "upsert" else {}
-                store._apply(op, doc_id, version, text, v)  # missing model (migration) -> embeds there
+                store._apply(op, doc_id, version, text, v, owner)  # missing model (migration) -> embeds there
+                self.pending_owner.pop(doc_id, None)
                 applied += 1
         now = time.perf_counter()
         self.batch_log.append((len(batch), t1 - t0, t2 - t1, now - t2))

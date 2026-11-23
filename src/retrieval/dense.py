@@ -55,7 +55,7 @@ from __future__ import annotations
 import hashlib
 import os
 import threading
-from typing import Sequence
+from typing import Iterable, Sequence
 
 import faiss
 import numpy as np
@@ -212,17 +212,32 @@ class DenseIndex:
         self.index.remove_ids(np.array([i], dtype=np.int64))
         return True
 
-    def search(self, qvec: np.ndarray, k: int = 10) -> list[tuple[str, float]]:
+    def selector(self, doc_ids: Iterable[str]):
+        """A faiss filter that lets only ``doc_ids`` through. Returns (selector, how many ids it allows).
+
+        WHY a faiss selector and not "search, then drop other tenants' hits": dropping afterwards returns
+        fewer than k results (or none) when the other tenant's docs happen to be closer. The selector is
+        checked INSIDE the scan, so the top-k is the true top-k among the allowed docs.
+        """
+        ints = np.array([self._int_of[d] for d in doc_ids if d in self._int_of], dtype=np.int64)
+        return faiss.IDSelectorBatch(ints), len(ints)
+
+    def search(self, qvec: np.ndarray, k: int = 10, selector=None, n_allowed: int | None = None) -> list[tuple[str, float]]:
         # Returns up to k (doc_id, cosine score) pairs, best first. Scores are in
         # [-1, 1]; for these models scores typically sit around 0.2-0.8 (see hybrid.py).
-        if len(self) == 0:
+        # selector/n_allowed (from selector()): search only those docs, e.g. one tenant's.
+        if len(self) == 0 or n_allowed == 0:
             return []
         # faiss searches a BATCH of queries, so turn a (dim,) vector into a (1, dim)
         # matrix of float32. reshape(1, -1): "1 row, as many columns as needed".
         q = np.ascontiguousarray(np.asarray(qvec, dtype=np.float32).reshape(1, -1))
         # scores and ids both have shape (1, k'): row 0 belongs to our single query.
         # WHY min(k, len): never ask for more results than stored vectors.
-        scores, ids = self.index.search(q, min(k, len(self)))
+        if selector is None:
+            scores, ids = self.index.search(q, min(k, len(self)))
+        else:
+            scores, ids = self.index.search(q, min(k, n_allowed or len(self)),
+                                            params=faiss.SearchParameters(sel=selector))
         # faiss pads missing results with id -1, so skip those; map ints back to strings.
         out = [(self._str_of[i], float(s)) for s, i in zip(scores[0], ids[0]) if i != -1]
         out.sort(key=lambda x: (-x[1], x[0]))  # deterministic tie-break, as in BM25

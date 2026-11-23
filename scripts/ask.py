@@ -5,6 +5,7 @@
     python scripts/ask.py "what is a roth ira?" --url http://localhost:8000       # through the router
     python scripts/ask.py "roth ira and mortgage offset?" --strategy single --backend azure --confirm-spend
     python scripts/ask.py "roth ira and mortgage offset?" --strategy multi  --backend azure --confirm-spend
+    python scripts/ask.py "what is a roth ira?" --url http://localhost:8000 --token $(python -m scripts.mint_token alice)
 
 WHERE THE SEARCH RUNS
     default   in-process, NOT sharded: ``single_node_router()`` loads the whole corpus (BM25 + the
@@ -20,6 +21,12 @@ WHAT IT PRINTS
     multi                   the planner's split (or "simple"), the verifier's rewrites, the final top-k,
                             LLM calls, tokens and the estimated cost.
 
+SECURITY (docs/design/SECURITY.md)
+    With --url, ``--token`` (or env FIQA_TOKEN) makes every search run as that user: once an admin turns on
+    identity and tenant_filter, the agent only sees that tenant's passages. Before an agent's LLM sees the
+    question, the router's guardrails check it (POST /guardrails/check): a refused question is never sent
+    to the model and costs no tokens. A refusal prints the rule that fired and exits with code 3.
+
 COST
     The agents need an LLM. ``--backend azure`` (gpt-6-sol, key in .env) costs money and needs
     ``--confirm-spend``; one question is roughly 0.1K to 3.4K tokens (well under a cent at the
@@ -30,6 +37,7 @@ COST
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import textwrap
 import time
@@ -38,13 +46,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.agent.tools import SearchTool, http_search_fn, local_search_fn  # noqa: E402
+from src.agent.tools import SearchTool, http_guardrail_check, http_search_fn, local_search_fn  # noqa: E402
 
 
-def make_search_fn(url: str | None):
+def make_search_fn(url: str | None, token: str | None = None):
     """(query, strategy, k) -> hits with text: the router at ``url``, or an in-process single node."""
     if url:
-        return http_search_fn(url)
+        return http_search_fn(url, token)
     from src.service.router import single_node_router
 
     print("loading the corpus, indexes and encoder in-process (single node, ~30 s) ...", flush=True)
@@ -70,6 +78,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("-k", type=int, default=10)
     ap.add_argument("--backend", choices=["azure", "copilot", "fake"], default="azure", help="LLM for single / multi")
     ap.add_argument("--confirm-spend", action="store_true", help="required for --backend azure (it costs money)")
+    ap.add_argument("--token", default=os.environ.get("FIQA_TOKEN"),
+                    help="bearer token for --url (scripts/mint_token.py); default env FIQA_TOKEN")
     a = ap.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")   # a cp1252 console would choke on some passage text
@@ -82,7 +92,15 @@ def main(argv: list[str] | None = None) -> int:
 
         llm = get_llm(a.backend, confirm_spend=a.confirm_spend)
 
-    raw = make_search_fn(a.url)
+    if a.url and llm is not None:
+        verdict = http_guardrail_check(a.url, a.token)(a.question)
+        if not verdict["allowed"]:
+            rules = ", ".join(f.get("category") or f["rule"] for f in verdict["findings"])
+            print(f"refused by the router's guardrails ({rules}); the question was not sent to the LLM")
+            return 3
+        for f in verdict["findings"]:
+            print(f"guardrail flagged (log mode, not blocked): {f.get('category') or f['rule']}")
+    raw = make_search_fn(a.url, a.token)
     texts: dict[str, str] = {}
 
     def recording(query: str, strategy: str, k: int) -> list[dict]:
@@ -94,7 +112,14 @@ def main(argv: list[str] | None = None) -> int:
     print(f"\nquestion: {a.question!r}   strategy: {a.strategy}   search: {a.url or 'in-process single node'}")
     t0 = time.perf_counter()
     if llm is None:
-        hits = recording(a.question, a.strategy, a.k)
+        try:
+            hits = recording(a.question, a.strategy, a.k)
+        except Exception as e:  # httpx.HTTPStatusError: show the router's reason, not a traceback
+            resp = getattr(e, "response", None)
+            if resp is None or resp.status_code not in (401, 403, 429):
+                raise
+            print(f"HTTP {resp.status_code}: {resp.json().get('detail')}")
+            return 3
         ms = (time.perf_counter() - t0) * 1e3
         print(f"{len(hits)} hits in {ms:.1f} ms\n")
         show_hits([h["doc_id"] for h in hits], texts, {h["doc_id"]: h["score"] for h in hits})

@@ -7,8 +7,9 @@ WHAT
     to judge relevance (docs/topics/14_agent_evaluation_cost.md does the arithmetic).
 
 BACKENDS
-    http_search_fn(url)       the running router (what production agents would use)
-    local_search_fn(router)   in-process single-node router (fast evals, no servers)
+    http_search_fn(url, token)       the running router (what production agents would use)
+    local_search_fn(router)          in-process single-node router (fast evals, no servers)
+    http_guardrail_check(url, token) the router's question guardrails, run before the LLM sees a question
 
 PITFALL
     The model may hallucinate a strategy name. We validate and fall back to "hybrid"
@@ -33,11 +34,17 @@ STRATEGIES = ("bm25", "dense", "hybrid")
 SearchFn = Callable[[str, str, int], list[dict]]
 
 
-def http_search_fn(url: str) -> SearchFn:
-    """SearchFn that POSTs to a running search service (router) at ``url``."""
+def http_search_fn(url: str, token: str | None = None) -> SearchFn:
+    """SearchFn that POSTs to a running search service (router) at ``url``.
+
+    ``token``: a bearer token (scripts/mint_token.py), needed once the admin turns identity on. The agent
+    then searches AS that user: with tenant_filter on it only ever sees that tenant's passages, and with
+    pii_redaction on the snippets its LLM reads are already redacted (docs/design/SECURITY.md).
+    """
     import httpx
 
-    client = httpx.Client(base_url=url, timeout=10)  # one keep-alive client, shared by threads
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    client = httpx.Client(base_url=url, timeout=10, headers=headers)  # one keep-alive client, shared by threads
 
     def fn(query: str, strategy: str, k: int) -> list[dict]:
         # include_text=True: we need passage text to build the snippets the model reads.
@@ -48,6 +55,27 @@ def http_search_fn(url: str) -> SearchFn:
         return r.json()["results"]
 
     return fn
+
+
+def http_guardrail_check(url: str, token: str | None = None) -> Callable[[str], dict]:
+    """(text) -> {"allowed": bool, "findings": [...]}: the router's question guardrails, without a search.
+
+    An agent runs this BEFORE its LLM sees the question: a refused question costs no tokens and never
+    reaches the model. 403 = refused (block mode); 200 with findings = flagged (log mode).
+    """
+    import httpx
+
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+
+    def check(text: str) -> dict:
+        r = httpx.post(f"{url.rstrip('/')}/guardrails/check", json={"text": text}, headers=headers, timeout=10)
+        if r.status_code == 403:
+            detail = r.json().get("detail", {})
+            return {"allowed": False, "findings": detail.get("findings", []) if isinstance(detail, dict) else []}
+        r.raise_for_status()
+        return r.json()
+
+    return check
 
 
 def local_search_fn(router) -> SearchFn:

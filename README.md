@@ -8,7 +8,9 @@ orchestrator on top, evaluated on plain and compound questions.
 The tasks and constraints are in [FIQA_RETRIEVAL_TASKS.md](FIQA_RETRIEVAL_TASKS.md). Design, results and trade-offs are
 in [DESIGN.md](DESIGN.md), also as a [Word document](docs/design/DESIGN.docx) and
 [slides](docs/design/DESIGN.pptx). What I'd add next, task by task, as the engineering lead is in
-[docs/design/EXTENSIONS.md](docs/design/EXTENSIONS.md).
+[docs/design/EXTENSIONS.md](docs/design/EXTENSIONS.md). Security (tenant identity, authorisation, tenant filtering inside
+the shards, PII redaction, an audit log) and LLM guardrails (harmful intent, prompt injection, topic scope, rate
+limit), each behind its own runtime toggle and all off by default, are in [docs/design/SECURITY.md](docs/design/SECURITY.md).
 
 ![Scenario 7 replay: reads and writes keep flowing while the cluster migrates from MiniLM to bge-small and rolls back](docs/assets/gifs/migrate_cutover_rollback.gif)
 
@@ -222,16 +224,18 @@ src/            search.py (CLI) · eval.py · metrics.py · config.py · beir_da
   index/        build_index.py (embedding cache) · sharding.py
   service/      router.py · shard_server.py · store.py · async_apply.py (async write mode) · wal.py · cluster.py
   agent/        llm.py · tools.py · prompts.py · single_agent.py · orchestrator.py · fake_policies.py
-data/           build_compound.py · compound_dev.jsonl · compound_rewrites.json · compound_review_sheet.md
+  security/     tenants.py · tokens.py · pii.py · audit.py · guardrails.py · ratelimit.py · config.py (toggles) · policy.py
+data/           build_compound.py · compound_dev.jsonl · compound_rewrites.json · compound_review_sheet.md · guardrails_redteam.jsonl · guardrails_heldout.jsonl
 scripts/        ask.py (one question) · api_docs.py (API page with examples) · bench.py · ablations.py · failure_cases.py · migration.py · query_load.py · migration_demo.py · agent_eval.py · scenario.py (+ replay_html.py, run_simple_scenarios.py)
                 write_load.py (sync vs async) · docker_check.py · docker_trace.py · bootstrap.sh / bootstrap.ps1
+                mint_token.py · security_demo.py · guardrails_eval.py (security, docs/design/SECURITY.md)
 scenarios/      SimpleScenarios/ (8 CSV stories + template + recorded results) · ComplexScenarios/ (JSONL: freshness, migration, shard failure, ...)
 tests/          unit, in-process and multi-process integration tests
 results/        bench.json · runs/ (incl. the one TEST run) · ablation_*.json · migration_demo.json · write_load.json · agent_eval*.json · failures.md
 examples/       small standalone scripts
 FIQA_RETRIEVAL_TASKS.md  the task spec: parts A-C, constraints, deliverables
 AGENTS.md       how to set up, test and work in the repo (for coding agents)
-docs/           topics/ (00-17, one concept each) · from_zero/ (the whole system from scratch) · walkthroughs/ (eval, Part A/B results) · guides/ (scenarios, manual tests) · faq/ (concepts, this project) · design/ (DESIGN.docx, DESIGN.pptx, EXTENSIONS.md) · assets/
+docs/           topics/ (00-17, one concept each) · from_zero/ (the whole system from scratch) · walkthroughs/ (eval, Part A/B results) · guides/ (scenarios, manual tests) · faq/ (concepts, this project) · design/ (DESIGN.docx, DESIGN.pptx, EXTENSIONS.md, SECURITY.md) · assets/
 ```
 
 ## Measured on

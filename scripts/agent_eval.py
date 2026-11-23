@@ -124,6 +124,7 @@ def main():
     ap.add_argument("--search", choices=["local", "service"], default="local",
                     help="local = single in-process node (NOT sharded, default); service = the sharded router at --url")
     ap.add_argument("--url", default="http://127.0.0.1:8000")
+    ap.add_argument("--token", default=os.environ.get("FIQA_TOKEN"), help="bearer token for --search service")
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--max-usd", type=float, default=2.0)
     ap.add_argument("--out", type=Path)
@@ -135,7 +136,7 @@ def main():
 
         tool = SearchTool(local_search_fn(single_node_router()))
     else:
-        tool = SearchTool(http_search_fn(a.url))
+        tool = SearchTool(http_search_fn(a.url, a.token))
     orch = Orchestrator(llm, tool)
     spend = Spend(a.max_usd)
     sets = load_sets(a.limit)

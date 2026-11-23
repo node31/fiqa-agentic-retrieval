@@ -68,6 +68,12 @@ services:
       SHARD_TIMEOUT_S: "0.5"
       TORCH_THREADS: "4"
       OMP_NUM_THREADS: "4"
+      # Security (docs/design/SECURITY.md). Every toggle starts off; an admin flips them at runtime via
+      # POST /admin/security, and the choice is saved in SECURITY_STATE. AUTH_SECRET signs the tokens
+      # (scripts/mint_token.py on the host uses the same default); set your own outside a laptop demo.
+      AUTH_SECRET: ${AUTH_SECRET:-dev-only-secret-change-me}
+      SECURITY_STATE: /app/artifacts/docker/security_state.json
+      AUDIT_LOG: /app/artifacts/docker/audit.jsonl
     depends_on:
       shard0: { condition: service_healthy }
       shard1: { condition: service_healthy }
@@ -98,5 +104,5 @@ services:
   tools:
     image: fiqa-retrieval:latest
     profiles: ["tools"]
-    environment: { ROUTER_URL: "http://router:8000" }
+    environment: { ROUTER_URL: "http://router:8000", AUTH_SECRET: "${AUTH_SECRET:-dev-only-secret-change-me}" }
     volumes: ["./data/raw:/app/data/raw", "./artifacts:/app/artifacts", "./results:/app/results", "./.env:/app/.env:ro"]

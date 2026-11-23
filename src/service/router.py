@@ -86,6 +86,8 @@ from src.config import (ARTIFACTS_DIR, CANDIDATE_DEPTH, DEFAULT_ALPHA, DEFAULT_F
 from src.index.sharding import shard_of
 from src.retrieval.bm25 import CorpusStats, tokenize
 from src.retrieval.hybrid import fuse, merge_shard_lists
+from fastapi import Body, Depends, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 log = logging.getLogger("router")
@@ -107,31 +109,32 @@ def dispatch(store, op: str, p: dict) -> dict:
 
     Response shapes (all plain JSON-able dicts):
         stats        {"n_docs", "total_len", "df": {term: count}}   this shard's LOCAL stats
-        search       {"bm25": [[doc_id, score], ...], "dense": [[doc_id, score], ...], "shard": i}
+        search       {"bm25": [[doc_id, score], ...], "dense": [[doc_id, score], ...], "owners": {doc_id: tenant}, "shard": i}
                      each list is this shard's top-k, best first ((id, score) tuples in-process)
         docs         {doc_id: text} for the requested ids this shard owns
-        upsert/delete {"applied": True, ...} or {"applied": False, "reason": "stale_or_duplicate", ...}
+        upsert/delete {"applied": True, ...} or {"applied": False, "reason": "stale_or_duplicate" | "forbidden_tenant", ...}
         build_model  {"status": ..., "ready": bool}   starts a background backfill
         health       {"shard_id", "healthy", "n_docs", "models": {m: {"ready", "progress", "n"}}, ...}
     """
     # WHY one shared function: the HTTP shard server and LocalShardClient both call it,
     # so the in-process tests exercise exactly the same op -> method mapping as production.
     if op == "stats":
-        return store.stats(p["terms"])
+        return store.stats(p["terms"], p.get("tenant"))
     if op == "search":
         # stats/vector/model are optional: no stats -> shard uses its LOCAL BM25 stats,
         # no vector -> dense list comes back empty (BM25-only query).
         # took_ms = this shard's own compute time; the router subtracts it from the round-trip
         # time to estimate network + queueing (the per-query time split in Router.search).
         t = time.perf_counter()
-        out = store.search(p["terms"], p["k"], p.get("stats"), p.get("vector"), p.get("model"))
+        # tenant (optional): search only that tenant's docs (docs/design/SECURITY.md, tenant_filter).
+        out = store.search(p["terms"], p["k"], p.get("stats"), p.get("vector"), p.get("model"), p.get("tenant"))
         return {**out, "took_ms": round((time.perf_counter() - t) * 1e3, 2)}
     if op == "docs":
         return store.get_docs(p["ids"])
     if op == "upsert":
-        return store.upsert(p["doc_id"], int(p["version"]), p["text"])
+        return store.upsert(p["doc_id"], int(p["version"]), p["text"], p.get("tenant"), p.get("enforce_tenant"))
     if op == "delete":
-        return store.delete(p["doc_id"], int(p["version"]))
+        return store.delete(p["doc_id"], int(p["version"]), p.get("tenant"), p.get("enforce_tenant"))
     if op == "flush":
         # Wait until every acked write is searchable (a no-op in sync mode). Load tests use it.
         return {"drained": store.flush(float(p.get("timeout", 10)))}
@@ -276,7 +279,7 @@ class Router:
     # ------------------------------------------------------------------ search
     async def search(self, query: str, k: int = 10, strategy: str = "hybrid", fusion: str = DEFAULT_FUSION,
                      alpha: float = DEFAULT_ALPHA, include_text: bool = False, rerank_k: int = 0,
-                     depth: int = CANDIDATE_DEPTH) -> dict:
+                     depth: int = CANDIDATE_DEPTH, tenant: str | None = None, with_owners: bool = False) -> dict:
         """Run one query across all shards (phases 0-5 in the module docstring).
 
         Args:
@@ -285,6 +288,10 @@ class Router:
             include_text: also return each hit's passage text (extra fetch round-trip).
             rerank_k: if > 0, rerank the top ``rerank_k`` with a cross-encoder.
             depth: how many candidates EACH shard returns per list (default 100).
+            tenant: search only this tenant's documents (None = all). Passed to the shards, which
+                apply it BEFORE their top-k, in both the BM25 statistics and the search.
+            with_owners: add each hit's owning ``tenant`` and the best dense score (``top_dense``) to
+                the response, for the security post-checks (authz, topic scope).
 
         Returns:
             {"results": [{"doc_id", "score", ("text")}...], "partial": bool,
@@ -329,7 +336,7 @@ class Router:
         # single shard (whose local stats ARE the global stats).
         if terms and self.bm25_stats == "global" and len(self.shards) > 1:  # phase 1: DFS
             t = time.perf_counter()
-            ok, miss = await self._fan("stats", self._all({"terms": terms}))
+            ok, miss = await self._fan("stats", self._all({"terms": terms, "tenant": tenant}))
             tm["stats"] = ms(t, time.perf_counter())
             # A shard that misses this phase is flagged even if it answers phase 2: its docs
             # were then scored with stats that leave out its own counts (slightly off).
@@ -350,7 +357,7 @@ class Router:
         # query vector, and returns {"bm25": top-depth, "dense": top-depth}.
         t = time.perf_counter()
         ok, miss = await self._fan("search", self._all(  # phase 2: query
-            {"terms": terms, "k": depth, "stats": stats, "vector": vec, "model": model}))
+            {"terms": terms, "k": depth, "stats": stats, "vector": vec, "model": model, "tenant": tenant}))
         tm["scatter"] = ms(t, time.perf_counter())
         # Split the round-trip: the slowest shard's own compute vs the rest (network, HTTP,
         # JSON, waiting for a worker thread). WHY the slowest: gather waits for the last shard.
@@ -369,6 +376,7 @@ class Router:
         t = time.perf_counter()
         bm = merge_shard_lists([r["bm25"] for r in ok.values()], depth)  # phase 3: merge
         dn = merge_shard_lists([r["dense"] for r in ok.values()], depth)
+        owners = {d: o for r in ok.values() for d, o in r.get("owners", {}).items()}
         tm["merge"] = ms(t, time.perf_counter())
         # Phase 4: fuse the two GLOBAL lists. WHY not fuse on each shard: RRF uses ranks
         # and linear fusion normalises scores per list, so both depend on the whole list;
@@ -394,13 +402,15 @@ class Router:
             tm["rerank"] = ms(t, time.perf_counter())
             ranked = head + ranked[rerank_k:]
         # Response: "partial" + "missing_shards" make a degraded answer visible to the caller.
-        results = [{"doc_id": d, "score": round(float(s), 6), **({"text": texts.get(d, "")} if include_text else {})}
+        results = [{"doc_id": d, "score": round(float(s), 6), **({"text": texts.get(d, "")} if include_text else {}),
+                    **({"tenant": owners.get(d)} if with_owners else {})}
                    for d, s in ranked[:k]]
         total = ms(t0, time.perf_counter())
         sequential = sum(tm[x] for x in ("stats", "embed_wait", "scatter", "merge", "fuse", "fetch", "rerank"))
         tm["other"] = round(max(0.0, total - sequential), 2)
         return {"results": results, "partial": bool(missing), "missing_shards": sorted(missing),
-                "model": model, "strategy": strategy, "latency_ms": total, "timings_ms": tm}
+                "model": model, "strategy": strategy, "latency_ms": total, "timings_ms": tm,
+                **({"top_dense": round(float(dn[0][1]), 6) if dn else None} if with_owners else {})}
 
     async def fetch(self, ids: Sequence[str]) -> dict[str, str]:
         """Fetch phase: get passage text for ``ids``. Returns {doc_id: text}.
@@ -419,7 +429,8 @@ class Router:
         return {d: t for r in ok.values() for d, t in r.items()}
 
     # ------------------------------------------------------------------ writes
-    async def write(self, op: str, doc_id: str, version: int, text: str | None = None, retries: int = 2) -> dict:
+    async def write(self, op: str, doc_id: str, version: int, text: str | None = None, retries: int = 2,
+                    tenant: str | None = None, enforce_tenant: str | None = None) -> dict:
         """Route an upsert/delete to its owner shard, retrying (safe: writes are idempotent).
 
         ``version`` is chosen by the CALLER and must increase per doc_id. The shard keeps the
@@ -428,10 +439,13 @@ class Router:
         WHY that matters for retries: if attempt 1 actually succeeded but its reply was lost
         (timeout), attempt 2 must not apply the write twice or overwrite something newer.
         Returns the shard's reply plus ``attempts``; raises ShardFailure after the last retry.
+        ``tenant`` owns a NEW doc; ``enforce_tenant`` makes the shard refuse another tenant's doc
+        (reply reason "forbidden_tenant"; checked under the shard's write lock).
         """
         # Exactly one owner shard: no fan-out for writes (no replicas in this project).
         i = shard_of(doc_id, len(self.shards))
-        payload = {"doc_id": doc_id, "version": version, **({"text": text} if op == "upsert" else {})}
+        payload = {"doc_id": doc_id, "version": version, **({"text": text} if op == "upsert" else {}),
+                   **({"tenant": tenant} if tenant else {}), **({"enforce_tenant": enforce_tenant} if enforce_tenant else {})}
         for attempt in range(retries + 1):
             # _fan with a single-entry payload map = "call shard i with a timeout, never raise".
             ok, _ = await self._fan(op, {i: payload}, timeout=self.write_timeout)
@@ -563,6 +577,17 @@ class WriteReq(BaseModel):
     text: str | None = None
 
 
+class GuardReq(BaseModel):
+    """Body of POST /guardrails/check: ``text`` = a question (or a passage) to check."""
+    text: str
+
+
+# The "Authorize" button in Swagger (/docs): paste a token from scripts/mint_token.py. auto_error=False
+# because whether a token is REQUIRED depends on the identity toggle, decided per request by Policy.
+bearer = HTTPBearer(auto_error=False, description="Token from scripts/mint_token.py (needed when identity is on)")
+Cred = HTTPAuthorizationCredentials | None
+
+
 class ModelReq(BaseModel):
     """Body of the /admin/* model endpoints (``reencode``/``throttle_s`` used by migrate only)."""
     model: str
@@ -576,6 +601,9 @@ def create_app():
     Env vars: SHARD_URLS (comma list, in shard-id order), ACTIVE_MODEL (ignored if
     ROUTER_STATE already exists), FAILURE_POLICY, BM25_STATS, ROUTER_STATE (JSON path),
     SHARD_TIMEOUT_S (read by src.config). cluster.py / docker-compose set them.
+    Security (docs/design/SECURITY.md): SECURITY_STATE (toggle file, default next to ROUTER_STATE),
+    AUDIT_LOG (default audit.jsonl next to it), AUTH_SECRET (token key), SECURITY_<FEATURE> (starting
+    toggle values), RATE_LIMIT_PER_MIN / RATE_LIMIT_BURST, GUARD_SCOPE_MIN.
 
     PITFALL: the request models above live at MODULE level. With
     ``from __future__ import annotations``, FastAPI cannot resolve models defined
@@ -585,18 +613,31 @@ def create_app():
 
     import httpx
     from fastapi import FastAPI, HTTPException
+
+    from src.security.audit import AuditLog
+    from src.security.config import SecurityConfig
+    from src.security.policy import Caller, Denied, Policy, Verdict
+    from src.security.ratelimit import TokenBuckets
+
     urls = [u for u in os.environ.get("SHARD_URLS", "").split(",") if u]
     # ONE shared async HTTP client (connection pool) for all shards and all requests, so
     # connections stay open between queries (keep-alive). Limits cap open sockets per router.
     client = httpx.AsyncClient(limits=httpx.Limits(max_keepalive_connections=64, max_connections=128))
+    state_path = Path(os.environ.get("ROUTER_STATE", ARTIFACTS_DIR / "router_state.json"))
     router = Router([HttpShardClient(u, client) for u in urls],
                     active_model=os.environ.get("ACTIVE_MODEL", PRIMARY_MODEL),
                     failure_policy=os.environ.get("FAILURE_POLICY", "partial"),
                     bm25_stats=os.environ.get("BM25_STATS", "global"),
-                    state_path=Path(os.environ.get("ROUTER_STATE", ARTIFACTS_DIR / "router_state.json")))
+                    state_path=state_path)
+    scope_min = os.environ.get("GUARD_SCOPE_MIN")
+    policy = Policy(SecurityConfig(Path(os.environ.get("SECURITY_STATE", state_path.parent / "security_state.json"))),
+                    AuditLog(Path(os.environ.get("AUDIT_LOG", state_path.parent / "audit.jsonl"))),
+                    TokenBuckets(float(os.environ.get("RATE_LIMIT_PER_MIN", 120)),
+                                 int(os.environ.get("RATE_LIMIT_BURST", 20))),
+                    float(scope_min) if scope_min else None)
     app = FastAPI(title="FiQA router")
-    # Exposed so tests/tools holding the app can reach the Router object directly.
-    app.state.router = router
+    # Exposed so tests/tools holding the app can reach the Router / Policy objects directly.
+    app.state.router, app.state.policy = router, policy
 
     # Translate Router exceptions into HTTP status codes in one place:
     #   ShardFailure            -> 503 Service Unavailable (+ which shards are missing)
@@ -610,6 +651,40 @@ def create_app():
         except (RuntimeError, ValueError) as e:
             raise HTTPException(409, str(e))
 
+    # ---- security plumbing (src/security/policy.py does the deciding) ------------------------
+    def header(cred: Cred) -> str | None:
+        return f"Bearer {cred.credentials}" if cred else None
+
+    def ip_of(request: Request) -> str:
+        return request.client.host if request.client else ""
+
+    async def secured(action: str, request: Request, cred: Cred, work, *, admin: str = "no", **details):
+        """Identify -> (admin check) -> rate limit -> ``work(caller, verdict)`` -> audit, for every endpoint.
+
+        admin: "no" = any caller; "if_authz" = admin role needed while authz is on (the migration
+        endpoints, open by default so existing tools keep working); "always" = admin token required
+        no matter what (the security endpoints themselves; otherwise anyone could switch it all off).
+        """
+        t0, v, caller = time.perf_counter(), Verdict(), None
+        try:
+            caller = policy.identify(header(cred), ip_of(request), must_be_valid=admin == "always")
+            if admin == "always" or (admin == "if_authz" and policy.config.on("authz")):
+                policy.require_admin(caller)
+            policy.check_rate(caller, v)
+            out = await work(caller, v)
+        except Denied as e:
+            policy.audit(caller or Caller("unknown", None, "user", ip_of(request)), action, "deny", e.status, t0,
+                         findings=v.findings, reason=e.detail if isinstance(e.detail, str) else e.detail.get("error"),
+                         **details)
+            raise HTTPException(e.status, e.detail) from None
+        except HTTPException as e:
+            policy.audit(caller, action, "error", e.status_code, t0, findings=v.findings, **details)
+            raise
+        decision = "blocked" if v.blocked else "flagged" if v.findings else "allow"
+        extra = {"results": [r["doc_id"] for r in out["results"]]} if isinstance(out, dict) and "results" in out else {}
+        policy.audit(caller, action, decision, 200, t0, findings=v.findings, **details, **extra)
+        return out
+
     # WHY warm at startup: the first query would otherwise pay the multi-second encoder load.
     # cluster.py waits for /health, which only answers after startup hooks finish.
     @app.on_event("startup")
@@ -617,58 +692,129 @@ def create_app():
         await asyncio.to_thread(router.query_embed, router.active_model, "warmup")
 
     @app.post("/search")
-    async def search(req: SearchReq):
-        # model_dump() -> dict of the body fields -> keyword args of Router.search.
-        return await guard(router.search(**req.model_dump()))
+    async def search(req: SearchReq, request: Request, cred: Cred = Depends(bearer)):
+        async def work(caller, v):
+            policy.check_question(req.query, v)
+            if not policy.active():
+                # Every toggle off: exactly the pre-security behaviour and response shape.
+                return await guard(router.search(**req.model_dump()))
+            # model_dump() -> dict of the body fields -> keyword args of Router.search.
+            out = await guard(router.search(**req.model_dump(), tenant=policy.search_tenant(caller), with_owners=True))
+            return policy.post_search(caller, out, v)
+        return await secured("search", request, cred, work, query=req.query, strategy=req.strategy, k=req.k)
+
+    async def write(op: str, req: WriteReq, request: Request, cred: Cred):
+        async def work(caller, v):
+            owner, enforce = policy.write_scope(caller)
+            out = await guard(router.write(op, req.doc_id, req.version, req.text if op == "upsert" else None,
+                                           tenant=owner, enforce_tenant=enforce))
+            if out.get("reason") == "forbidden_tenant":
+                raise Denied(403, {"error": f"doc {req.doc_id} belongs to another tenant", "doc_id": req.doc_id})
+            return out
+        return await secured(op, request, cred, work, doc_id=req.doc_id, version=req.version)
 
     @app.post("/upsert")
-    async def upsert(req: WriteReq):
+    async def upsert(req: WriteReq, request: Request, cred: Cred = Depends(bearer)):
         # Validate HERE, before routing: a shard would answer 400, which _fan counts as "shard
         # missing", so the router would retry a request that can never succeed and then report
         # a misleading "503 shards unavailable" (seen in scripts/write_load.py: FiQA has 38 empty
         # passages).
         if req.text is None or not req.text.strip():
             raise HTTPException(422, "text required (non-empty)")
-        return await guard(router.write("upsert", req.doc_id, req.version, req.text))
+        return await write("upsert", req, request, cred)
 
     @app.post("/delete")
-    async def delete(req: WriteReq):
-        return await guard(router.write("delete", req.doc_id, req.version))
+    async def delete(req: WriteReq, request: Request, cred: Cred = Depends(bearer)):
+        return await write("delete", req, request, cred)
+
+    @app.post("/guardrails/check")
+    async def guardrails_check(req: GuardReq, request: Request, cred: Cred = Depends(bearer)):
+        """Run the question guardrails without searching. An agent calls this BEFORE its LLM sees the
+        question (scripts/ask.py). Refused -> 403 with the findings, same as /search."""
+        async def work(caller, v):
+            policy.check_question(req.text, v)
+            return {"allowed": True, "findings": v.findings}
+        return await secured("guardrails_check", request, cred, work, query=req.text)
 
     @app.get("/health")
     async def health():
         # Liveness of the ROUTER process only (cheap, no shard calls). Use /admin/status
-        # to see per-shard health.
+        # to see per-shard health. Never behind auth: orchestrators must be able to probe it.
         return {"ok": True, "active_model": router.active_model, "n_shards": len(router.shards)}
 
     # Admin endpoints drive the blue/green model migration (see module docstring).
+    # They need an admin token while authz is on.
+    def admin(action: str, request: Request, cred: Cred, coro_fn, **details):
+        async def work(caller, v):
+            return await guard(coro_fn())
+        return secured(action, request, cred, work, admin="if_authz", **details)
+
     @app.get("/admin/status")
-    async def status():
-        return await router.status()
+    async def status(request: Request, cred: Cred = Depends(bearer)):
+        return await admin("admin_status", request, cred, router.status)
 
     # Wait until every shard has applied every acked write (async apply mode).
     @app.post("/admin/flush")
-    async def flush(timeout: float = 10.0):
-        return await router.flush(timeout)
+    async def flush(request: Request, timeout: float = 10.0, cred: Cred = Depends(bearer)):
+        return await admin("admin_flush", request, cred, lambda: router.flush(timeout))
 
     @app.post("/admin/migrate")
-    async def migrate(req: ModelReq):
-        return await guard(router.migrate(req.model, req.reencode, req.throttle_s))
+    async def migrate(req: ModelReq, request: Request, cred: Cred = Depends(bearer)):
+        return await admin("admin_migrate", request, cred,
+                           lambda: router.migrate(req.model, req.reencode, req.throttle_s), model=req.model)
 
     @app.post("/admin/cutover")
-    async def cutover(req: ModelReq):
-        return await guard(router.cutover(req.model))
+    async def cutover(req: ModelReq, request: Request, cred: Cred = Depends(bearer)):
+        return await admin("admin_cutover", request, cred, lambda: router.cutover(req.model), model=req.model)
 
     @app.post("/admin/rollback")
-    async def rollback():
-        return await guard(router.rollback())
+    async def rollback(request: Request, cred: Cred = Depends(bearer)):
+        return await admin("admin_rollback", request, cred, router.rollback)
 
     @app.post("/admin/finalize")
-    async def finalize(req: ModelReq):
-        return await guard(router.finalize(req.model))
+    async def finalize(req: ModelReq, request: Request, cred: Cred = Depends(bearer)):
+        return await admin("admin_finalize", request, cred, lambda: router.finalize(req.model), model=req.model)
+
+    # ---- the security toggles and the audit log: ALWAYS admin-only --------------------------------
+    @app.get("/admin/security")
+    async def security_get(request: Request, cred: Cred = Depends(bearer)):
+        async def work(caller, v):
+            return policy.config.describe()
+        return await secured("security_get", request, cred, work, admin="always")
+
+    @app.post("/admin/security")
+    async def security_set(request: Request, changes: dict[str, str] = Body(
+            ..., examples=[{"identity": "on", "tenant_filter": "on", "guard_harmful": "block"}]),
+            cred: Cred = Depends(bearer)):
+        """Flip toggles, e.g. {"tenant_filter": "on"}. Takes effect on the next request. Every change is
+        written to the audit log even when audit is off (who switched a protection off is never optional)."""
+        t0 = time.perf_counter()
+
+        async def work(caller, v):
+            try:
+                diff = policy.config.set(changes)
+            except ValueError as e:
+                raise Denied(400, str(e)) from None
+            policy.audit(caller, "security_set", "allow", 200, t0, always=True,
+                         changes={k: {"from": a, "to": b} for k, (a, b) in diff.items()})
+            return {"changed": {k: {"from": a, "to": b} for k, (a, b) in diff.items()},
+                    "now": policy.config.describe()}
+        return await secured("security_set_request", request, cred, work, admin="always")
+
+    @app.get("/admin/audit")
+    async def audit_tail(request: Request, limit: int = 50, cred: Cred = Depends(bearer)):
+        async def work(caller, v):
+            return {"events": policy.audit_log.tail(limit)}
+        return await secured("audit_read", request, cred, work, admin="always")
+
+    @app.get("/admin/audit/verify")
+    async def audit_verify(request: Request, cred: Cred = Depends(bearer)):
+        """Recompute the hash chain: any edited, deleted or reordered line breaks it."""
+        async def work(caller, v):
+            return policy.audit_log.verify()
+        return await secured("audit_verify", request, cred, work, admin="always")
 
     return app
-
 
 if __name__ == "__main__":
     # Started as ``python -m src.service.router`` by cluster.py / docker-compose.

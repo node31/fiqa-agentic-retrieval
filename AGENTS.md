@@ -42,8 +42,13 @@ cached, and on Windows `PYTHONIOENCODING=utf-8`.
 | dev eval | `python -m src.eval --strategy hybrid --fusion linear --alpha 0.7 --name <name> --out <scratch file>` |
 | Docker tour (guide section 3, checked; restores the stack) | `.\scripts\docker_tour.ps1` / `./scripts/docker_tour.sh` (needs a running stack) |
 | a scenario | `python scripts/scenario.py scenarios/SimpleScenarios/2_SimpleReadAfterWrite.csv --start-cluster --tiny` |
+| security tests | `python -m pytest -q tests/test_security.py src/security` (fast) and `tests/test_security_service.py` (toggle matrix, starts a cluster) |
+| security on the live stack | `python scripts/security_demo.py` (every toggle on and off, then restored); tokens: `python -m scripts.mint_token admin` |
 
 Test clusters use their own ports (18000+, 19000+), so they can run while the dev cluster or Docker holds 8000.
+
+Security toggles ([docs/design/SECURITY.md](docs/design/SECURITY.md)) are all off by default and must be off for the
+eval numbers and the Docker tour; `GET /admin/security` with an admin token shows them.
 
 ## Rules
 

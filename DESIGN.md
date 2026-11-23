@@ -580,8 +580,16 @@ MiniLM and were not re-run.
 | `/admin/cutover` | POST | `make cutover` | `model` | `active_model`, `previous_model` | 409 if the model isn't ready on every shard |
 | `/admin/rollback` | POST | `make rollback` | none | `active_model`, `previous_model` | 409 if there is nothing to roll back to |
 | `/admin/finalize` | POST | `make finalize` | `model` | `dropped`, per-shard result, `missing_shards` | 409 if asked to drop the active model |
+| `/admin/security` | GET, POST | admin | POST: the toggles to change, e.g. `{"tenant_filter": "on"}` | every toggle's value and whether it is in effect; POST adds what changed | 401 / 403 without an admin token, always; 400 for an unknown toggle or value |
+| `/admin/audit`, `/admin/audit/verify` | GET | admin | `limit` (50) | the last audit events; whether the hash chain is intact | 401 / 403 as above |
+| `/guardrails/check` | POST | agents, before their LLM sees a question | `text` | `allowed`, `findings` | 403 when a guardrail in block mode refuses it |
 
 Shard readiness and progress per model are visible in `/admin/status` through each shard's health.
+
+Every endpoint accepts `Authorization: Bearer <token>` ([scripts/mint_token.py](scripts/mint_token.py)). What the token is
+needed for, and what each security toggle adds to the requests and responses above (401, 403 and 429, a `security`
+block and a `tenant` per hit), is in [docs/design/SECURITY.md](docs/design/SECURITY.md). With every toggle off, the
+default, the API is exactly as in this table.
 
 ### Shard (`src/service/shard_server.py`, port 8101 in Docker, 8101 to 8103 locally)
 
@@ -589,10 +597,10 @@ The router is the only caller. Besides `GET /health`, every call is `POST /{op}`
 
 | op | request | response |
 |---|---|---|
-| `stats` | `terms` | this shard's `n_docs`, `total_len`, `df` per term |
-| `search` | `terms`, `k`, optional global `stats`, `vector`, `model` | `bm25` and `dense` lists of [doc_id, score], `shard`, `took_ms` |
+| `stats` | `terms`, optional `tenant` | this shard's `n_docs`, `total_len`, `df` per term (that tenant's docs only, if given) |
+| `search` | `terms`, `k`, optional global `stats`, `vector`, `model`, `tenant` | `bm25` and `dense` lists of [doc_id, score], `owners`, `shard`, `took_ms` |
 | `docs` | `ids` | {doc_id: text} for the ids this shard owns |
-| `upsert` / `delete` | `doc_id`, `version`, `text` | `applied` true or false with a reason |
+| `upsert` / `delete` | `doc_id`, `version`, `text`, optional `tenant`, `enforce_tenant` | `applied` true or false with a reason (`stale_or_duplicate`, `forbidden_tenant`) |
 | `flush` | `timeout` | `drained` |
 | `build_model` | `model`, `reencode`, `throttle_s` | `status`, `n_docs` or `ready` |
 | `drop_model` | `model` | `dropped` |
@@ -613,18 +621,20 @@ I didn't use a database. Each shard keeps its data in memory and persists only w
 |---|---|---|
 | passage text | Python dict doc_id → text | shard memory, loaded from `data/raw` |
 | versions and tombstones | dict doc_id → (version, deleted) | shard memory, rebuilt from the WAL |
+| document owners | dict doc_id → tenant (kept for tombstones), plus per-tenant BM25 masks and faiss selectors cached until the next write | shard memory, rebuilt from the corpus rule and the WAL |
 | BM25 index | scipy CSC matrix (term columns, for search) and CSR (doc rows, for deletes) for the base corpus, a dict delta segment for new docs, an `alive` mask for deletes | shard memory |
 | dense index | one faiss `IndexIDMap2(IndexFlatIP)` per model, float32 unit vectors | shard memory |
 | embedding cache | `emb_<model>.npy` (57,638 x 384 float32) + `.meta.json` (model, max_seq_length, dim, doc id per row, text hash per row) | `artifacts/` |
-| write log | `wal.jsonl`: one JSON line per write (`op`, `doc_id`, `version`, `text`, vectors per model in base64 in sync mode) | per-shard state dir |
+| write log | `wal.jsonl`: one JSON line per write (`op`, `doc_id`, `version`, `text`, `tenant`, vectors per model in base64 in sync mode) | per-shard state dir |
 | maintained models | `models.json`, e.g. ["bge-small", "minilm"] | per-shard state dir |
 | router state | `router_state.json`: `active_model`, `previous_model` | `artifacts/` |
+| security toggles, audit log | `security_state.json` (one value per toggle); `audit.jsonl` (one hash-chained line per request) | next to the router state |
 
 If I moved this to a real database (not built), I'd keep the same logical model:
 
 | table / collection | fields | notes |
 |---|---|---|
-| `passages` | doc_id (key), version, deleted, text, updated_at | the source of truth; version check as a conditional update |
+| `passages` | doc_id (key), tenant, version, deleted, text, updated_at | the source of truth; version check (and, with authz, the tenant check) as one conditional update |
 | `embeddings_<model>` | doc_id, version, vector(384) | one collection per model makes blue/green migration a matter of building a second collection |
 | lexical index | inverted index on `passages.text` (search engine or full-text index) | needs global term statistics across partitions |
 | `router_state` | active_model, previous_model | small replicated config |
@@ -662,6 +672,7 @@ and global-IDF guarantees would be lost.
 | planner splits some plain questions | those 7 lost recall (0.824 → 0.514) |
 | a failed worker's half loses its slots | the surviving sub-query fills all 10 slots |
 | agent quality depends on the model | the haiku and gpt-6-sol runs led to different routing decisions |
+| shards trust the router | with security on, anything inside the Docker network can still call a shard directly ([SECURITY.md](docs/design/SECURITY.md) section 7) |
 
 ## 11. Results
 
@@ -781,6 +792,10 @@ scaling, writes and agents), is in [docs/design/EXTENSIONS.md](docs/design/EXTEN
 7. Reserve about 3 slots for the full question when a worker fails.
 8. Batch or quantise the query encoder. (Fine-tuning the dense model on FiQA train, the other half of this item, is
    done: section 6.12.)
+
+Security and LLM guardrails are built, each behind its own runtime toggle and off by default:
+[docs/design/SECURITY.md](docs/design/SECURITY.md) has the threat model, how each piece works, how it is checked, and
+its own list of next steps.
 
 ---
 Reproducibility: quality metrics come from `results/bench.json`, `results/ablation_*.json`, `results/write_load.json`,

@@ -37,6 +37,15 @@ CRASH-ONLY RECOVERY
     down (partial results), and a restart rebuilds state from base corpus +
     WAL replay. Restart is the ONE recovery path, so it is the tested path.
 
+TENANTS (docs/design/SECURITY.md)
+    owner     {doc_id: tenant}                 who owns each doc; KEPT after a delete (with the tombstone)
+    Base-corpus docs belong to ``default_tenant(doc_id)`` (odd id -> acme, even -> globex). A new doc
+    belongs to the tenant that first wrote it, and ownership never moves. The WAL record carries the
+    owner, so a restart restores it. ``stats``/``search`` take an optional ``tenant``: when given, only
+    that tenant's docs are scored and counted (BM25 row mask + a faiss ID selector, both applied
+    BEFORE the top-k). ``enforce_tenant`` on a write makes the shard refuse to touch another tenant's
+    doc; the check runs under the write lock, so there is no check-then-write race.
+
 MIGRATION (Part B3), docs/topics/10_model_migration.md
     ``start_build(model)`` adds an empty index for the new model. From that
     instant every write is DUAL-WRITTEN to both models. A background thread
@@ -92,6 +101,7 @@ from src.config import MODELS
 from src.index.build_index import load_cache, text_hash
 from src.retrieval.bm25 import BM25Index, CorpusStats
 from src.retrieval.dense import DenseIndex, get_embedder
+from src.security.tenants import ALL, default_tenant
 from src.service.wal import WAL, RWLock, decode_vec, encode_vec
 
 # Signature of an embedding function: (model_key, texts) -> float32 matrix of shape (len(texts), dim).
@@ -120,6 +130,13 @@ class ShardStore:
         #   (version, deleted). deleted=True is a TOMBSTONE: "99" is gone from docs and every
         #   index, but we remember version 3 so an older upsert (version <= 3) is rejected.
         self.versions: dict[str, tuple[int, bool]] = {}
+        # owner layout: {"42": "globex", "99": "acme"}. Kept for tombstones too, so a deleted doc id
+        # cannot be "re-created" by another tenant and taken over.
+        self.owner: dict[str, str] = {}
+        # Bumped by every applied write. The per-tenant filters below are cached against it, so a
+        # read-only workload builds each tenant's filter once and every write invalidates them all.
+        self._gen = 0
+        self._filters: dict[tuple, tuple] = {}  # (tenant, "bm25" | model) -> (gen, filter, n_allowed)
         self.bm25 = BM25Index()
         # One DenseIndex per embedding model key, e.g. {"minilm": ..., "bge-small": ...}.
         self.dense: dict[str, DenseIndex] = {}
@@ -162,6 +179,7 @@ class ShardStore:
         models = self._persisted_models() or list(models)
         self.docs = dict(corpus)
         self.versions = {d: (0, False) for d in corpus}  # base corpus = version 0
+        self.owner = {d: default_tenant(d) for d in corpus}
         self.bm25.build(list(corpus), list(corpus.values()))
         for m in models:
             idx = DenseIndex(MODELS[m].dim)
@@ -185,7 +203,9 @@ class ShardStore:
                     # WHY vectors are stored in the WAL: replay does not have to re-run the
                     # embedding model (slow), and it reproduces the exact acked vectors.
                     vecs = {m: decode_vec(s) for m, s in rec.get("vecs", {}).items()}
-                    self._apply(rec["op"], rec["doc_id"], rec["version"], rec.get("text"), vecs)
+                    # rec["tenant"] is absent in WALs written before tenants existed: default owner.
+                    self._apply(rec["op"], rec["doc_id"], rec["version"], rec.get("text"), vecs,
+                                rec.get("tenant"))
                     self.counters["replayed"] += 1
         if self.apply_mode == "async" and self._applier is None:
             from src.service.async_apply import AsyncApplier
@@ -233,24 +253,31 @@ class ShardStore:
     # ------------------------------------------------------------------ reads
     # Every read holds the SHARED lock: many reads run in parallel, but none can overlap a
     # write, so a reader never sees a doc in BM25 whose dense vector is not there yet.
-    def stats(self, terms: Sequence[str]) -> dict:
+    def stats(self, terms: Sequence[str], tenant: str | None = None) -> dict:
         """This shard's BM25 statistics (doc count, total length, df per term) for ``terms``.
 
         The router sums these over all shards to get GLOBAL statistics, then passes them
         back into ``search`` so every shard scores with the same IDF (comparable scores).
+        ``tenant``: count only that tenant's docs (per-tenant IDF; see BM25Index.local_stats).
         """
         self._check()
         with self.lock.read():
-            return self.bm25.local_stats(terms).to_dict()
+            return self.bm25.local_stats(terms, self._row_mask(tenant)).to_dict()
 
     def search(self, terms: Sequence[str], k: int, stats: dict | None = None,
-               vector: Sequence[float] | None = None, model: str | None = None) -> dict:
-        """Return this shard's top-k for BM25 (if terms) and dense (if vector)."""
+               vector: Sequence[float] | None = None, model: str | None = None,
+               tenant: str | None = None) -> dict:
+        """Return this shard's top-k for BM25 (if terms) and dense (if vector).
+
+        ``tenant`` (None or "*" = everyone): search only that tenant's docs. ``owners`` in the reply
+        maps every returned doc id to its tenant, so the router can double-check before answering.
+        """
         self._check()
         with self.lock.read():
+            mask = self._row_mask(tenant)
             # `stats` = global BM25 statistics from the router; None = use this shard's own
             # (only correct when there is a single shard).
-            bm = self.bm25.search(terms, k, CorpusStats.from_dict(stats) if stats else None) if terms else []
+            bm = self.bm25.search(terms, k, CorpusStats.from_dict(stats) if stats else None, mask) if terms else []
             dn = []
             if vector is not None:
                 # The caller embedded the query with `model`; searching another model's index
@@ -259,8 +286,39 @@ class ShardStore:
                 # searched here; it just returns results from the docs added so far.
                 if model not in self.dense:
                     raise KeyError(f"shard {self.shard_id} has no index for model {model!r}")
-                dn = self.dense[model].search(np.asarray(vector, dtype=np.float32), k)
-        return {"bm25": bm, "dense": dn, "shard": self.shard_id}
+                sel, n = self._selector(tenant, model)
+                dn = self.dense[model].search(np.asarray(vector, dtype=np.float32), k, sel, n)
+            owners = {d: self.owner.get(d) for d, _ in bm + dn}
+        return {"bm25": bm, "dense": dn, "owners": owners, "shard": self.shard_id}
+
+    # ---- per-tenant filters (built lazily, cached until the next write) ----------------------
+    # Called under the read lock, so the store cannot change while a filter is built. Two readers
+    # may build the same filter at once; both results are identical, so the race is harmless.
+    def _cached(self, key: tuple, build: Callable[[], tuple]) -> tuple:
+        hit = self._filters.get(key)
+        if hit is not None and hit[0] == self._gen:
+            return hit[1], hit[2]
+        filt, n = build()
+        self._filters[key] = (self._gen, filt, n)
+        return filt, n
+
+    def _row_mask(self, tenant: str | None) -> np.ndarray | None:
+        """One bool per BM25 row: True if that row's doc belongs to ``tenant``. None = no filter."""
+        if tenant in (None, ALL):
+            return None
+
+        def build():
+            m = np.fromiter((self.owner.get(d) == tenant for d in self.bm25.doc_ids), dtype=bool,
+                            count=len(self.bm25.doc_ids))
+            return m, int(m.sum())
+        return self._cached((tenant, "bm25"), build)[0]
+
+    def _selector(self, tenant: str | None, model: str) -> tuple:
+        """(faiss selector, n allowed) for ``tenant``'s live docs, or (None, None) for no filter."""
+        if tenant in (None, ALL):
+            return None, None
+        return self._cached((tenant, model), lambda: self.dense[model].selector(
+            d for d in self.docs if self.owner.get(d) == tenant))
 
     def get_docs(self, ids: Sequence[str]) -> dict[str, str]:
         # Ids this shard does not own (or that were deleted) are silently left out.
@@ -281,15 +339,32 @@ class ShardStore:
     # Public write API. The version comes from the CLIENT (the router just forwards it, like
     # Elasticsearch "external" versions), which is what lets the shard tell a retry (same
     # version) from a genuinely new write.
-    def upsert(self, doc_id: str, version: int, text: str) -> dict:
+    def upsert(self, doc_id: str, version: int, text: str, tenant: str | None = None,
+               enforce_tenant: str | None = None) -> dict:
+        """``tenant`` = who is writing (owner of a NEW doc). ``enforce_tenant`` = refuse unless the doc
+        is new or already owned by this tenant (authz on). Admin passes neither."""
         if self._applier:  # async mode: WAL -> ack, applied later (async_apply.py)
-            return self._applier.submit("upsert", doc_id, version, text)
-        return self._write("upsert", doc_id, version, text)
+            return self._applier.submit("upsert", doc_id, version, text, tenant, enforce_tenant)
+        return self._write("upsert", doc_id, version, text, tenant, enforce_tenant)
 
-    def delete(self, doc_id: str, version: int) -> dict:
+    def delete(self, doc_id: str, version: int, tenant: str | None = None,
+               enforce_tenant: str | None = None) -> dict:
         if self._applier:
-            return self._applier.submit("delete", doc_id, version, None)
-        return self._write("delete", doc_id, version, None)
+            return self._applier.submit("delete", doc_id, version, None, tenant, enforce_tenant)
+        return self._write("delete", doc_id, version, None, tenant, enforce_tenant)
+
+    def forbidden(self, doc_id: str, enforce_tenant: str | None, pending_owner: str | None = None) -> dict | None:
+        """The refusal reply if ``enforce_tenant`` may not write ``doc_id``, else None.
+
+        A doc nobody owns yet (new id) is allowed: the writer becomes its owner. ``pending_owner``
+        is for async mode, where an accepted-but-not-applied write may already have claimed the id.
+        """
+        if enforce_tenant in (None, ALL):
+            return None
+        owner = self.owner.get(doc_id) or pending_owner
+        if owner is not None and owner != enforce_tenant:
+            return {"applied": False, "reason": "forbidden_tenant", "doc_id": doc_id}
+        return None
 
     def flush(self, timeout: float = 10.0) -> bool:
         """Wait until every acked write is searchable. Always True at once in sync mode."""
@@ -302,12 +377,16 @@ class ShardStore:
         if self.wal:
             self.wal.close()
 
-    def _write(self, op: str, doc_id: str, version: int, text: str | None) -> dict:
+    def _write(self, op: str, doc_id: str, version: int, text: str | None, tenant: str | None = None,
+               enforce_tenant: str | None = None) -> dict:
         """The write path from the module docstring (steps 1-4). Returns the ack dict."""
         self._check()
         # Same input rule as async mode (async_apply.submit), so both modes accept the same writes.
         if op == "upsert" and (not isinstance(text, str) or not text.strip()):
             raise ValueError("upsert needs a non-empty text")
+        # Cheap early refusal (no embedding work for a forbidden write); re-checked under the lock.
+        if (no := self.forbidden(doc_id, enforce_tenant)):
+            return no
         # Step 1 runs WITHOUT the lock: a cheap early exit for retries, so a duplicate never
         # pays for embedding. It may race with another writer; step 3 re-checks under the lock.
         if not self._is_newer(doc_id, version):  # step 1: cheap idempotency check
@@ -321,6 +400,11 @@ class ShardStore:
             if not self._is_newer(doc_id, version):  # WHY re-check: a concurrent writer may have won
                 self.counters["noop"] += 1
                 return {"applied": False, "reason": "stale_or_duplicate", "current_version": self.versions[doc_id][0]}
+            # The authoritative ownership check: under the write lock nobody can claim the id between
+            # this check and the write (no time-of-check-to-time-of-use gap).
+            if (no := self.forbidden(doc_id, enforce_tenant)):
+                return no
+            owner = self.owner.get(doc_id) or (tenant if tenant not in (None, ALL) else default_tenant(doc_id))
             # PITFALL: this rare catch-up embeds while HOLDING the write lock (slow); it is
             # accepted because it only happens if start_build() ran in the gap.
             for m in self.dense:  # a migration may have started between steps 2 and 3
@@ -330,15 +414,21 @@ class ShardStore:
             # the write survives a crash even if _apply below never runs (replay redoes it).
             # Vectors are base64 strings because JSON has no binary type (see wal.encode_vec).
             if self.wal:
-                self.wal.append({"op": op, "doc_id": doc_id, "version": version, "text": text,
+                self.wal.append({"op": op, "doc_id": doc_id, "version": version, "text": text, "tenant": owner,
                                  "vecs": {m: encode_vec(v) for m, v in vecs.items()}})
-            self._apply(op, doc_id, version, text, vecs)
+            self._apply(op, doc_id, version, text, vecs, owner)
             self.counters["applied"] += 1
         # Step 4: the lock is released, so the write is already visible to the next search.
         return {"applied": True, "doc_id": doc_id, "version": version, "shard": self.shard_id}
 
-    def _apply(self, op: str, doc_id: str, version: int, text: str | None, vecs: dict) -> None:
-        """Mutate every index. Caller holds the write lock (or is single-threaded at load)."""
+    def _apply(self, op: str, doc_id: str, version: int, text: str | None, vecs: dict,
+               owner: str | None = None) -> None:
+        """Mutate every index. Caller holds the write lock (or is single-threaded at load).
+
+        ``owner`` is only used if the doc has none yet (ownership never moves); None = default tenant.
+        """
+        self._gen += 1  # invalidates every cached tenant filter
+        self.owner.setdefault(doc_id, owner if owner not in (None, ALL) else default_tenant(doc_id))
         try:
             if op == "upsert":
                 # Insert-or-replace in every structure. BM25Index.add and DenseIndex.add both
@@ -392,6 +482,7 @@ class ShardStore:
             if model in self.dense:
                 return {"status": "exists", "ready": self.ready[model]}
             self.dense[model] = DenseIndex(MODELS[model].dim)
+            self._gen += 1
             self.ready[model], self.progress[model] = False, 0.0
             # snapshot = [(doc_id, version_at_snapshot, text), ...]; tombstoned docs are not in
             # self.docs, so they are naturally excluded.
@@ -430,6 +521,7 @@ class ShardStore:
                         if d not in idx and self.versions.get(d) == (v, False)]
                 if keep:
                     idx.add([chunk[j][0] for j in keep], vecs[keep])
+                    self._gen += 1  # the tenant selectors must now include these docs
             # Progress = fraction of the snapshot processed (skipped docs count as done).
             self.progress[model] = (i + len(chunk)) / max(len(snapshot), 1)
             if throttle_s:
@@ -442,6 +534,7 @@ class ShardStore:
         """Stop maintaining ``model`` (end of a migration or a rollback); frees its index."""
         with self.lock.write():
             existed = self.dense.pop(model, None) is not None
+            self._gen += 1
             self.ready.pop(model, None)
             self.progress.pop(model, None)
         self._persist_models()

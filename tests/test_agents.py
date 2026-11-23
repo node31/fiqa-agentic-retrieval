@@ -121,7 +121,7 @@ def _load_ask():
 def test_ask_cli_prints_every_strategy(strategy, monkeypatch, capsys):
     """scripts/ask.py end to end with the fake search and the fake LLM (heuristic policy)."""
     ask = _load_ask()
-    monkeypatch.setattr(ask, "make_search_fn", lambda url: fake_search)
+    monkeypatch.setattr(ask, "make_search_fn", lambda url, token=None: fake_search)
     assert ask.main([COMPOUND, "--strategy", strategy, "--backend", "fake", "-k", "5"]) == 0
     out = capsys.readouterr().out
     assert "1. " in out and "passage about" in out

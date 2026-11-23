@@ -326,15 +326,33 @@ class BM25Index:
     def __len__(self) -> int:
         return len(self.row_of)
 
-    def local_stats(self, terms: Iterable[str]) -> CorpusStats:
-        """This index's N, total length and df for just the requested terms."""
+    def local_stats(self, terms: Iterable[str], row_mask: np.ndarray | None = None) -> CorpusStats:
+        """This index's N, total length and df for just the requested terms.
+
+        ``row_mask`` (one bool per internal row) restricts the statistics to a subset of docs, e.g. one
+        tenant's: N, total length and df then count only those docs. WHY a tenant needs its own
+        statistics: df summed over everyone would let one tenant's documents change another tenant's
+        scores, and a careful attacker could probe how common a term is in someone else's documents.
+        """
         # WHY only the requested terms: the router calls this once per query on
         # every shard; sending df for the whole ~100K-term vocabulary would be waste.
-        return CorpusStats(len(self.row_of), self.total_len, {t: self.df.get(t, 0) for t in terms})
+        if row_mask is None:
+            return CorpusStats(len(self.row_of), self.total_len, {t: self.df.get(t, 0) for t in terms})
+        live = self.alive & row_mask
+        df = {}
+        for t in terms:
+            n = 0
+            j = self.vocab.get(t)
+            if self._base_csc is not None and j is not None:
+                csc = self._base_csc
+                n += int(live[csc.indices[csc.indptr[j]:csc.indptr[j + 1]]].sum())
+            n += sum(1 for row, _ in self._delta.get(t, ()) if live[row])
+            df[t] = n
+        return CorpusStats(int(live.sum()), float(self.doc_len[live].sum()), df)
 
     # ---- search ----------------------------------------------------------------
     def search(self, terms: Sequence[str], k: int = 10,
-               stats: CorpusStats | None = None) -> list[tuple[str, float]]:
+               stats: CorpusStats | None = None, row_mask: np.ndarray | None = None) -> list[tuple[str, float]]:
         """Score docs for pre-tokenised, de-duplicated ``terms`` and return the top-k.
 
         Args:
@@ -342,6 +360,8 @@ class BM25Index:
             k: number of results.
             stats: GLOBAL statistics from the router. ``None`` = use local stats
                 (correct only for a single-node index).
+            row_mask: one bool per internal row; rows that are False never score (a tenant filter).
+                Applied BEFORE the top-k, so the caller still gets k results from its own docs.
 
         Complexity: O(Σ_t df(t)) to accumulate + O(N) to pick the top-k.
         """
@@ -350,7 +370,7 @@ class BM25Index:
         # WHY global stats matter: IDF and avgdl must come from the WHOLE corpus
         # (all shards). Only tf and |d| are truly per-doc, and those are local.
         # stats=None means "single node": fall back to this index's own numbers.
-        stats = stats or self.local_stats(terms)
+        stats = stats or self.local_stats(terms, row_mask)
         k1, b = self.k1, self.b
         # Length normalisation for EVERY doc, computed once per query (vectorised).
         # norm[i] = k1·(1 - b + b·|d_i|/avgdl): the denominator part that does not
@@ -389,6 +409,8 @@ class BM25Index:
         # Apply tombstones: deleted rows may have collected a score from their
         # leftover postings; zeroing them makes _top_k skip them (it keeps only > 0).
         scores[~self.alive] = 0.0
+        if row_mask is not None:
+            scores[~row_mask] = 0.0  # other tenants' docs: filtered BEFORE the top-k
         return _top_k(scores, self.doc_ids, k)
 
 

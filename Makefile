@@ -4,8 +4,10 @@ PY ?= $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python)
 ROUTER_URL ?= http://127.0.0.1:8000
 NEW_MODEL ?= bge-small
 OLD_MODEL ?= minilm
+# The chosen configuration's model: MiniLM fine-tuned on FiQA train (make finetune).
+FINAL_MODEL ?= minilm-ft
 
-.PHONY: help data index package-index cluster up down eval bench ablations failures \
+.PHONY: help data index package-index finetune package-finetune cluster up down eval bench ablations failures \
         migrate cutover rollback finalize load migration-demo compound agent-eval agent-dry-run \
         test toys test-final
 
@@ -19,6 +21,10 @@ index: data
 	$(PY) -m src.index.build_index --models minilm bge-small
 package-index:
 	$(PY) -m src.index.build_index --package
+finetune:           ## offline: fine-tune MiniLM on FiQA train (CPU, a few hours), then embed the corpus with it
+	$(PY) -m scripts.finetune && $(PY) -m src.index.build_index --models minilm-ft
+package-finetune:
+	$(PY) -m src.index.build_index --package-local minilm-ft
 
 # ---- service ----------------------------------------------------------------
 cluster:            ## local processes, no docker
@@ -69,4 +75,4 @@ test:
 toys:
 	for f in examples/[0-9]*.py; do $(PY) $$f || exit 1; done
 test-final:         ## the ONE test-split run of the chosen configuration
-	$(PY) -m src.eval --mode local --split test --final-test-run --strategy hybrid --fusion linear --alpha 0.7 --name FINAL-test-hybrid-linear-minilm
+	$(PY) -m src.eval --mode local --split test --final-test-run --strategy hybrid --model $(FINAL_MODEL) --fusion linear --alpha 0.7 --name FINAL-test-hybrid-linear-$(FINAL_MODEL)

@@ -104,9 +104,17 @@ flowchart TB
 |---|---|---|---|---|---|
 | BM25 | 0.264 | 0.314 | 0.322 | 10.7 / 11.5 ms | 722 MB |
 | dense MiniLM | 0.388 | 0.467 | 0.453 | 22.2 / 27.0 ms | 723 MB |
-| hybrid linear α=0.7 (chosen) | 0.419 | 0.491 | 0.487 | 28.6 / 40.5 ms | 723 MB |
+| hybrid linear α=0.7, MiniLM | 0.419 | 0.491 | 0.487 | 28.6 / 40.5 ms | 723 MB |
+| **hybrid linear α=0.7, MiniLM fine-tuned on FiQA train (chosen)** | **0.447** | **0.514** | **0.521** | 37.4 / 46.5 ms* | same model size |
 
 The sharded service gives exactly the single-node quality (0.0% difference) for every strategy.
+
+Fine-tuning MiniLM on the 5,500 FiQA train questions (`make finetune`, about 2.7 h on CPU) raised hybrid nDCG@10 by
++0.028 on dev (95% CI +0.016 to +0.040) and by +0.039 on the test split, run once: 0.3968 → **0.4358**. The running
+cluster switched to it with the zero-downtime migration (426 queries during the switch, 0 failed). How it works and
+every number: [docs/topics/17_fine_tuning.md](docs/topics/17_fine_tuning.md).
+\* Measured on a busier day than the rows above: MiniLM through the same 3-shard setup measured 35.6 / 49.6 ms in the
+same session. Only the weights differ, so the encode cost is the same.
 
 Live writes have two modes (`APPLY_MODE`), measured on the real corpus with 8 writers and 2 readers
 (`results/write_load.json`). In sync mode (the default) a write is searchable on the very next query, at 58 writes/s.
@@ -127,6 +135,18 @@ hand, step by step with the numbers to expect, follow [docs/guides/manual_tests_
 [docs/guides/manual_tests_mac.md](docs/guides/manual_tests_mac.md). Their whole Docker section also runs as one command,
 `.\scripts\docker_tour.ps1` or `./scripts/docker_tour.sh`: it checks every step, writes a report with a replay per step,
 and puts the stack back exactly as it found it.
+
+### Switching the running stack to the fine-tuned model
+
+Bootstrap starts the stack on plain MiniLM. To serve the fine-tuned model, get its weights and vectors (download
+`minilm_ft_artifacts.zip` from the `index-artifacts-v1` release and unzip it at the repo root, or run `make finetune`),
+then migrate with no downtime:
+
+```bash
+docker compose run --rm tools python scripts/migration.py migrate  --model minilm-ft --wait --url http://router:8000
+docker compose run --rm tools python scripts/migration.py cutover  --model minilm-ft --url http://router:8000
+docker compose run --rm tools python scripts/migration.py finalize --model minilm    --url http://router:8000
+```
 
 ### Docker by hand (no local Python)
 
@@ -211,7 +231,7 @@ results/        bench.json · runs/ (incl. the one TEST run) · ablation_*.json 
 examples/       small standalone scripts
 FIQA_RETRIEVAL_TASKS.md  the task spec: parts A-C, constraints, deliverables
 AGENTS.md       how to set up, test and work in the repo (for coding agents)
-docs/           topics/ (00-16, one concept each) · from_zero/ (the whole system from scratch) · walkthroughs/ (eval, Part A/B results) · guides/ (scenarios, manual tests) · faq/ (concepts, this project) · design/ (DESIGN.docx, DESIGN.pptx, EXTENSIONS.md) · assets/
+docs/           topics/ (00-17, one concept each) · from_zero/ (the whole system from scratch) · walkthroughs/ (eval, Part A/B results) · guides/ (scenarios, manual tests) · faq/ (concepts, this project) · design/ (DESIGN.docx, DESIGN.pptx, EXTENSIONS.md) · assets/
 ```
 
 ## Measured on

@@ -89,3 +89,10 @@ def test_report_renders_records_and_the_shape_table(tmp_path):
     page = write_report(tmp_path).read_text(encoding="utf-8")
     assert "Upsert &lt;b&gt;" in page and "writes/replay.html" in page and "stop" in page
     assert "NOT back in its original shape" in page and "shard 0: live docs" in page
+
+
+def test_expected_model_sequences_follow_the_starting_model():
+    from scripts.docker_tour import for_model
+
+    assert for_model("minilm×3 → bge-small×2 → minilm×2", "minilm-ft") == "minilm-ft×3 → bge-small×2 → minilm-ft×2"
+    assert for_model("minilm×7", "minilm") == "minilm×7"

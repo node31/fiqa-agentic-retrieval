@@ -1,0 +1,22 @@
+{
+ "total": 426,
+ "failed": 0,
+ "failures": [],
+ "served_by_model": {
+  "minilm": 218,
+  "minilm-ft": 208
+ },
+ "model_switches": [
+  {
+   "t": 0.792,
+   "model": "minilm"
+  },
+  {
+   "t": 12.521,
+   "model": "minilm-ft"
+  }
+ ],
+ "p50_ms": 195.99,
+ "p95_ms": 262.18,
+ "duration_s": 22.8
+}

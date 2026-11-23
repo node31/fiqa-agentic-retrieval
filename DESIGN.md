@@ -11,7 +11,9 @@ questions, each labelled with the passages that answer it. The system has three 
 - Part C: a single LLM agent and a multi-agent system that use the search service as a tool, and a measured decision
   on when each one is worth its cost.
 
-I tuned everything on dev and ran the test split once, at the end, for the configuration I chose.
+I tuned everything on dev and ran the test split once, at the end, for the configuration I chose. After the tasks I
+fine-tuned MiniLM on the FiQA train split; it beat the original on dev, became the chosen model, and the test split was
+run once for it too (section 6.12).
 
 ## 2. Requirements
 
@@ -182,8 +184,10 @@ Results (dev, single node, in-process):
 | dense MiniLM | 0.3881 | 0.4665 | 0.4532 | 18.8 / 20.8 |
 | dense bge-small | 0.3981 | 0.4681 | 0.4773 | 30.6 / 34.2 |
 | hybrid RRF, MiniLM | 0.3733 | 0.4420 | 0.4485 | 22.1 / 39.9 |
-| hybrid linear α = 0.7, MiniLM (chosen) | 0.4190 | 0.4914 | 0.4872 | 20.7 / 24.5 |
+| hybrid linear α = 0.7, MiniLM (chosen for the tasks) | 0.4190 | 0.4914 | 0.4872 | 20.7 / 24.5 |
 | hybrid linear α = 0.7, bge-small | 0.4155 | 0.4856 | 0.4953 | 35.3 / 40.3 |
+| dense MiniLM fine-tuned on FiQA train (section 6.12) | 0.4280 | 0.5044 | 0.5017 | 22.5 / 28.8 |
+| **hybrid linear α = 0.7, fine-tuned MiniLM (chosen now)** | **0.4469** | **0.5141** | **0.5212** | 26.1 / 41.8 |
 
 ### 6.2 Evaluation harness (A2)
 
@@ -521,6 +525,45 @@ What the traces showed:
 | single agent | yes: for compound questions when quality matters, and as an opt-in "deep search" for plain ones | best recall and coverage (R@10 0.400, Cov 0.40), at p95 9.3 s and 3,380 tokens |
 | multi-agent | yes: for compound questions under a latency or cost budget | R@10 0.355, Cov 0.32 at p95 4.7 s and about a quarter of the tokens |
 
+### 6.12 Fine-tuned MiniLM (after the tasks)
+
+FiQA's 5,500 train questions have labelled answers that nothing used. I fine-tuned all-MiniLM-L6-v2 on them
+(`scripts/finetune.py`, `make finetune`) and registered the result as a third model, `minilm-ft`. Training is the
+offline path; putting it into service is the B3 migration (6.7) with no new serving code. The full walkthrough, with a
+toy example of the loss, is [docs/topics/17_fine_tuning.md](docs/topics/17_fine_tuning.md).
+
+```mermaid
+flowchart LR
+  T["5,000 train questions<br/>(500 more held out)"] --> N["hard negatives:<br/>hybrid ranks 10-30"]
+  N --> L["in-batch negatives loss<br/>batch 64, lr 2e-5, CPU"]
+  L --> P["epoch picked on the<br/>held-out train questions"]
+  P --> E["embed the corpus"] --> M["migrate → cutover → finalize<br/>on the live cluster"]
+```
+
+| I chose | because | alternative | why I didn't use it |
+|---|---|---|---|
+| hard negatives from hybrid ranks 10 to 30 | top-ranked non-gold hits are often unlabelled real answers | ranks 1 to 9, or random passages | false negatives, or negatives too easy to teach anything |
+| never a dev or test gold passage as a negative; never a dev or test question | the evaluation must not see training signal | use all passages | leakage |
+| pick the epoch on 500 held-out train questions | dev stays clean for the go/no-go | pick on dev | tunes on dev twice |
+| a plain PyTorch loop with the loss written out | readable, and no new dependencies (`datasets`, `accelerate`) | `SentenceTransformer.fit` | needs those packages in v3+ |
+| a hash of the weights in the embedding cache's metadata | a retrained model keeps its name, so name checks can't spot stale vectors | name + max_seq_length only | old vectors would load silently |
+
+Training: 12,818 triples, 2.7 h on 32 CPU cores. Held-out nDCG@10 (dense) 0.4680 → 0.4964 after epoch 1 and 0.4936
+after epoch 2 (loss still falling), so the epoch-1 model was kept. The α sweep stays peaked at 0.7 (0.4469; 0.4419 at
+0.6, 0.4434 at 0.8; `results/ablation_fusion_minilm-ft.json`).
+
+| dev (500) | MiniLM | fine-tuned | Δ (paired bootstrap 95% CI) |
+|---|---|---|---|
+| dense nDCG@10 | 0.3881 | 0.4280 | +0.040 (+0.025 to +0.055) |
+| hybrid nDCG@10 | 0.4190 | 0.4469 | +0.028 (+0.016 to +0.040); 152 questions better, 79 worse |
+| hybrid R@10, gold in the 10% longest docs | 0.464 | 0.496 | |
+| hybrid nDCG@10 through the router + 3 shards, and in Docker | 0.4190 | 0.4469 | identical to single node |
+| **test (648, run once) hybrid nDCG@10** | 0.3968 | **0.4358** | **+0.039 (+0.028 to +0.051)** |
+
+Online switch on the Docker stack: migrate, cutover and finalize under 4 query threads; 426 queries, 0 failed
+(`results/migration_minilm_ft_load.json`); the backfill took 6 s because it reused the offline vectors. The stack now
+serves only `minilm-ft`, and the Docker tour passes against it. The agent results (6.11) were measured with plain
+MiniLM and were not re-run.
 ## 7. API design
 
 ### Router (`src/service/router.py`, port 8000)
@@ -636,20 +679,30 @@ and global-IDF guarantees would be lost.
 | BM25 | router + 3 shards | 0.2642 | 0.3135 | 0.3222 | 10.7 / 11.5 | 10.9 / 12.1 | 722 per shard |
 | BM25, shard-local IDF | router + 3 shards | 0.2653 | 0.3142 | 0.3226 | 6.8 / 7.4 | 7.1 / 8.1 | 722 per shard |
 | dense MiniLM | router + 3 shards | 0.3881 | 0.4665 | 0.4532 | 22.2 / 27.0 | 22.8 / 24.3 | 723 per shard |
-| **hybrid linear α = 0.7 (chosen)** | **router + 3 shards** | **0.4190** | **0.4914** | **0.4872** | **28.6 / 40.5** | 29.5 / 33.0 | **723 per shard** |
+| hybrid linear α = 0.7 (chosen for the tasks) | router + 3 shards | 0.4190 | 0.4914 | 0.4872 | 28.6 / 40.5 | 29.5 / 33.0 | 723 per shard |
 | hybrid linear α = 0.7 in Docker | router + 3 shards | 0.4190 | 0.4914 | 0.4872 | 30.4 / 34.1 | 30.5 / 34.2 | about 505 MiB per container |
 | hybrid linear α = 0.7 | router + 1 shard | 0.4190 | 0.4914 | 0.4872 | 23.4 / 26.3 | 22.9 / 25.1 | 775 |
+| dense, fine-tuned MiniLM | single node | 0.4280 | 0.5044 | 0.5017 | 22.5 / 28.8 ¹ | 23.1 / 26.4 | 885 |
+| hybrid linear α = 0.7, fine-tuned MiniLM | single node | 0.4469 | 0.5141 | 0.5212 | 26.1 / 41.8 ¹ | 25.1 / 71.7 | 891 |
+| **hybrid linear α = 0.7, fine-tuned MiniLM (chosen now)** | **router + 3 shards** | **0.4469** | **0.5141** | **0.5212** | **37.4 / 46.5** ¹ | 33.9 / 41.1 | **716 per shard** |
+| hybrid linear α = 0.7, fine-tuned MiniLM in Docker | router + 3 shards | 0.4469 | 0.5141 | 0.5212 | 33.2 / 38.5 | 34.1 / 44.7 | about 610 MiB per container |
 
 Single-node rows run in-process; service rows are measured by the client end to end through the router's HTTP API.
+¹ The fine-tuned rows were measured on a busier day. Controls with plain MiniLM in the same session: 23.9 / 28.9 ms
+single node (fine-tuned: 24.1 / 29.3 ms in the repeat run) and 35.6 / 49.6 ms through 3 shards. Only the weights differ,
+so the encode cost is the same; compare latencies within a session, not across days.
 
 ### Test split (run once)
 
 | configuration | nDCG@10 | R@10 | MRR@10 | p50 / p95 ms |
 |---|---|---|---|---|
 | hybrid linear α = 0.7, MiniLM, 648 test questions | 0.3968 | 0.4658 | 0.4788 | 21.5 / 24.9 |
+| **hybrid linear α = 0.7, fine-tuned MiniLM, 648 test questions** | **0.4358** | **0.5013** | **0.5163** | 25.0 / 34.5 |
 
 nDCG drops from 0.419 on dev to 0.397 on test, which is the expected optimism from tuning α on dev. The stratified
-pattern is the same as on dev: gold in the longest docs 0.443 (n = 246) vs 0.480 for the rest.
+pattern is the same as on dev: gold in the longest docs 0.443 (n = 246) vs 0.480 for the rest. The fine-tuned model
+was chosen on dev before its one test run; on test it gains +0.039 nDCG@10 (paired bootstrap 95% CI +0.028 to +0.051),
+and the long-doc slice rises to 0.483 vs 0.513 for the rest.
 
 ### Other results
 
@@ -682,8 +735,8 @@ sharding buys capacity and failure isolation, not speed.
 
 | question | answer |
 |---|---|
-| Chosen operating point, and why | hybrid linear fusion, α = 0.7, BM25 + all-MiniLM-L6-v2, depth 100, no reranker, router + 3 shards: best dev nDCG (0.4190) that meets every constraint (p95 40.5 ms, 723 MB per shard, CPU only) |
-| Benchmark table | section 11: 13 configurations plus the single test run |
+| Chosen operating point, and why | for the tasks: hybrid linear fusion, α = 0.7, BM25 + all-MiniLM-L6-v2, depth 100, no reranker, router + 3 shards: best dev nDCG (0.4190) that meets every constraint (p95 40.5 ms, 723 MB per shard, CPU only). Since then: the same with MiniLM fine-tuned on FiQA train, dev nDCG 0.4469, same latency and memory (section 6.12) |
+| Benchmark table | section 11: 17 configurations plus two test runs (one per chosen model) |
 | Cold vs warm delta | near zero (29.5 / 33.0 vs 28.6 / 40.5 ms) because models load and warm up at startup; the hidden costs are 1.5 s model load and a 19 ms first encode |
 | Stratified metrics | short 0.385, medium 0.491, long 0.510; gold in the 10% longest docs 0.464 vs 0.508 |
 | Ablation and its deltas | fusion sweep (linear peaks at α = 0.7; RRF 0.373 to 0.406); rerank depth (every depth worse, 339 to 1,246 ms); bge-small vs MiniLM; local vs global IDF |
@@ -710,7 +763,7 @@ sharding buys capacity and failure isolation, not speed.
 | Approaches that didn't pan out | cross-encoder rerank, standard RRF, bge-small, first async version (section 11) |
 | Scaling to 100M | section 9 |
 | Production concerns | replicas with hedged reads; caches for query embeddings, global df and popular queries; batching and quantising the encoder; per-phase latency, partial rate, WAL size and an nDCG canary as monitoring |
-| Test split | run once for the chosen configuration: nDCG@10 0.3968, R@10 0.4658, MRR 0.4788 |
+| Test split | run once for the configuration chosen for the tasks: nDCG@10 0.3968, R@10 0.4658, MRR 0.4788; run once for the fine-tuned model: 0.4358, 0.5013, 0.5163 |
 | Measuring machine | in the README, section "Measured on" |
 | Code size | 2,004 logical lines in `src/` excluding the data loader |
 
@@ -726,11 +779,12 @@ scaling, writes and agents), is in [docs/design/EXTENSIONS.md](docs/design/EXTEN
 5. Stop false planner splits: require two independent information needs and sub-query results that overlap by less than half.
 6. Multi-agent retrieval followed by one rerank call by the strong model, to get the single agent's ordering at the multi-agent's latency.
 7. Reserve about 3 slots for the full question when a worker fails.
-8. Fine-tune the dense model on FiQA train, and batch or quantise the query encoder.
+8. Batch or quantise the query encoder. (Fine-tuning the dense model on FiQA train, the other half of this item, is
+   done: section 6.12.)
 
 ---
 Reproducibility: quality metrics come from `results/bench.json`, `results/ablation_*.json`, `results/write_load.json`,
-`results/migration_demo.json` and `results/agent_eval.json`, and Docker reproduces the chosen configuration's quality
+`results/migration_demo.json`, `results/agent_eval.json` and `results/compare_*.json`, and Docker reproduces the chosen configuration's quality
 exactly. Agent results depend on the LLM; every response is cached on disk, so a rerun with the same cache is identical.
 
 AI and LLM use: the agent results use Azure AI Foundry `gpt-6-sol` (spend above), development runs used

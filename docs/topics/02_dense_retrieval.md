@@ -27,10 +27,11 @@ flowchart LR
 |---|---|---|---|---|---|
 | all-MiniLM-L6-v2 (primary) | 22M, 6 layers | none | 0.3881 | 0.4665 | 18.8 ms |
 | bge-small-en-v1.5 (migration target) | 33M, 12 layers | "Represent this sentence for searching relevant passages: " | 0.3981 | 0.4681 | 30.6 ms |
+| MiniLM fine-tuned on FiQA train (`minilm-ft`, chosen since) | 22M, 6 layers | none | 0.4280 | 0.5044 | same as MiniLM |
 
 I made MiniLM primary although bge-small is +0.010 nDCG: its 12 layers make query encoding 30.6 vs 18.8 ms, which eats
 most of the 50 ms budget once the router's fan-out is added, and in hybrid the gap disappears (0.419 vs 0.416). See
-[16](16_ablations.md).
+[16](16_ablations.md). Later, fine-tuning MiniLM on the train split beat both, at MiniLM's cost: [17](17_fine_tuning.md).
 
 ## How I implemented it
 

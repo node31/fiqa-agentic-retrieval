@@ -45,7 +45,11 @@ if str(ROOT) not in sys.path:
 from src.index.sharding import shard_of  # noqa: E402
 
 URL = os.environ.get("ROUTER_URL", "http://localhost:8000")
-PRIMARY = "minilm"
+# The model the stack serves when the tour starts (saved in snapshot_before.json). The tour's expectations
+# are written for "minilm" and follow whatever the stack starts on, e.g. "minilm-ft" after `make finetune`
+# and an online migration. Dev numbers per model, for the eval step (DESIGN.md §11):
+EVAL_REFERENCE = {"minilm": (0.4190, 0.4914), "minilm-ft": (0.4469, 0.5141), "bge-small": (0.4155, 0.4856)}
+MIGRATION_TARGET = "bge-small"   # the model the migration steps build, cut over to, roll back from and drop
 TOUR_DIR = ROOT / "scenarios" / "DockerTour"
 SIMPLE_DIR = ROOT / "scenarios" / "SimpleScenarios"
 PROBES = [(q, s) for q in ("what is a roth ira?", "should I pay off my mortgage early?")
@@ -256,23 +260,23 @@ STEPS: list[dict] = [
           "ask.py 'what is a roth ira?' --strategy hybrid and search.py 'what is short selling?' against the router",
           "both exit 0; ask.py lists 553031", kind="cli"),
     _step("eval", "3b", "Dev set (500 questions) through the router",
-          "src.eval --mode service, hybrid linear α 0.7, MiniLM",
-          "nDCG@10 0.4190 and R@10 0.4914, the single-process numbers (pass within 1%: your own docs in the stack "
-          "can shift them slightly)", kind="eval"),
+          "src.eval --mode service, hybrid linear α 0.7, on the model the stack serves",
+          "the single-process numbers for that model, e.g. nDCG@10 0.4190 and R@10 0.4914 for minilm, 0.4469 and "
+          "0.5141 for minilm-ft (pass within 1%: your own docs in the stack can shift them slightly)", kind="eval"),
     _step("writes", "3c", "Upsert, search, delete, stale write",
           "owl writes a doc, fox searches, owl deletes it, then a late version 1 arrives",
           "found at #1 right after the upsert (sync); gone after the delete; the late v1 is a no-op "
           "(stale_or_duplicate)", kind="scenario", file=TOUR_DIR / "2_writes.jsonl", mode="sync"),
     _step("migration", "3d", "Migrate, cut over, roll back, finalize under live queries",
-          "cutover refused first; bge-small built next to minilm, cut over, rolled back, dropped; probe-bot searches "
-          "throughout", "cutover refused (409); elephant's searches answered by minilm → bge-small → minilm; "
-          "probe-bot: 0 failed queries; ends on minilm", kind="scenario", file=TOUR_DIR / "3_migration.jsonl",
+          "cutover refused first; bge-small built next to the starting model, cut over, rolled back, dropped; "
+          "probe-bot searches throughout", "cutover refused (409); elephant's searches answered by the starting model → "
+          "bge-small → the starting model; probe-bot: 0 failed queries; ends on the starting model", kind="scenario", file=TOUR_DIR / "3_migration.jsonl",
           migrates=True),
     _step("agents", "3e", "Single agent and multi-agent through the router (Azure)",
           "ask.py --strategy single on a compound question; agent_eval.py single,multi on 10 compound questions",
           "both finish; the agents' searches go to the cluster", kind="agents"),
     *[_step(f"simple{name[0]}", "3f", name, f"scenarios/SimpleScenarios/{name}.csv against the Docker stack",
-            f"PASS; searches answered by {SIMPLE_EXPECTED[name]}", kind="scenario",
+            f"PASS; searches answered by {SIMPLE_EXPECTED[name]} (minilm = the starting model)", kind="scenario",
             file=SIMPLE_DIR / f"{name}.csv", models=SIMPLE_EXPECTED[name], migrates=name in MIGRATES)
       for name in SIMPLE_EXPECTED],
     _step("shard_before", "3g", "Before the outage: a doc on shard 1 and one on shard 0",
@@ -328,7 +332,16 @@ def run_cmd(cmd: list[str], log: Path, timeout: int = 3600) -> tuple[int, str]:
     return p.returncode, out
 
 
-def extra_checks(step: dict, events: list[dict]) -> list[tuple[str, bool | None, str]]:
+def for_model(expected: str, primary: str) -> str:
+    """SimpleScenarios' expected sequences are written for minilm; rename it to the model the stack started on.
+
+    >>> for_model("minilm×3 → bge-small×2 → minilm×2", "minilm-ft")
+    'minilm-ft×3 → bge-small×2 → minilm-ft×2'
+    """
+    return re.sub(r"\bminilm(?=×)", primary, expected)
+
+
+def extra_checks(step: dict, events: list[dict], primary: str = "minilm") -> list[tuple[str, bool | None, str]]:
     """Checks the scenario format can't express, read from the recorded events. ok=None is information only."""
     out = []
     ops = ops_of(events)
@@ -347,21 +360,21 @@ def extra_checks(step: dict, events: list[dict]) -> list[tuple[str, bool | None,
         out.append(("the late v1 is rejected as stale", reason == "stale_or_duplicate", f"reason {reason}"))
     if step["key"] == "migration":
         seq = search_models(events, "elephant")
-        out.append(("elephant's searches answered by", seq == ["minilm", "bge-small", "minilm"], " → ".join(seq)))
+        out.append(("elephant's searches answered by", seq == [primary, MIGRATION_TARGET, primary], " → ".join(seq)))
         bot = [e for s, e in ops if e.get("op") == "search" and (s.get("lane") or "").lower() == "probe-bot"]
         failed = sum(1 for e in bot if not e.get("ok"))
         out.append(("probe-bot queries during the migration", failed == 0 and bool(bot),
                     f"{len(bot)} queries, {failed} failed"))
     if "models" in step:
         seq = compress(search_models(events))
-        out.append(("searches answered by", seq == step["models"], seq))
+        out.append(("searches answered by", seq == for_model(step["models"], primary), seq))
     if step["key"] == "shard_down":
         lat = [e.get("latency_ms", 0) for s, e in searches]
         out.append(("partial search latency", None, ", ".join(f"{x:.0f} ms" for x in lat)))
     return out
 
 
-def run_scenario_step(step: dict, d: Path, tag: str, n_shards: int) -> dict:
+def run_scenario_step(step: dict, d: Path, tag: str, n_shards: int, primary: str = "minilm") -> dict:
     t0 = time.time()
     rec = base_record(step, t0)
     out = d / step["key"]
@@ -375,7 +388,7 @@ def run_scenario_step(step: dict, d: Path, tag: str, n_shards: int) -> dict:
                      "--no-color"], out / "console.txt")
     events = read_events(out / "events.jsonl")
     s = summary_of(events)
-    details = extra_checks(step, events)
+    details = extra_checks(step, events, primary)
     ok = rc == 0 and bool(s.get("passed")) and all(x[1] is not False for x in details)
     checks_total = s.get("checks_passed", 0) + s.get("checks_failed", 0)
     soft_total = s.get("soft_found", 0) + s.get("soft_missed", 0)
@@ -407,7 +420,7 @@ def run_cli_step(step: dict, d: Path) -> dict:
         "got": "both answered" if ok else "see the logs", "links": {"ask.py": "cli/ask.txt", "search.py": "cli/search.txt"}})
 
 
-def run_eval_step(step: dict, d: Path) -> dict:
+def run_eval_step(step: dict, d: Path, primary: str = "minilm") -> dict:
     t0 = time.time()
     out = d / "eval"
     res_file = out / "dev_hybrid.json"
@@ -421,8 +434,12 @@ def run_eval_step(step: dict, d: Path) -> dict:
     o, warm = res["overall"], res["latency"]["warm"]
     ndcg, r10 = o.get("ndcg@10"), o.get("recall@10")
     close = lambda got, want: got is not None and abs(got - want) / want <= 0.01  # noqa: E731
-    details = [("nDCG@10 vs 0.4190", close(ndcg, 0.4190), "exact" if ndcg == 0.4190 else f"{ndcg}"),
-               ("R@10 vs 0.4914", close(r10, 0.4914), "exact" if r10 == 0.4914 else f"{r10}")]
+    if primary not in EVAL_REFERENCE:
+        details = [(f"no reference numbers for {primary}", None, f"nDCG@10 {ndcg}, R@10 {r10}")]
+    else:
+        want_n, want_r = EVAL_REFERENCE[primary]
+        details = [(f"nDCG@10 vs {want_n:.4f} ({primary})", close(ndcg, want_n), "exact" if ndcg == want_n else f"{ndcg}"),
+                   (f"R@10 vs {want_r:.4f} ({primary})", close(r10, want_r), "exact" if r10 == want_r else f"{r10}")]
     return record(d, rec | {
         "status": "pass" if all(x[1] for x in details) else "fail", "seconds": time.time() - t0,
         "details": details, "links": rec["links"] | {"results": "eval/dev_hybrid.json"},
@@ -456,8 +473,8 @@ def run_step(key: str, d: Path, azure: bool) -> dict:
     t0 = time.time()
     if step.get("migrates") and not snap.get("migration_ok"):
         return record(d, base_record(step, t0) | {"status": "skip", "seconds": 0, "got":
-                      "skipped: before the tour the stack had a model other than minilm built or active, and this "
-                      "step would change that"})
+                      "skipped: before the tour the stack had more than one model built or active (or served "
+                      f"{MIGRATION_TARGET}), and this step would change that"})
     if step.get("mode"):
         with http() as c:
             modes = {sh.get("apply_mode") for sh in status(c).get("shards", {}).values()}
@@ -465,11 +482,11 @@ def run_step(key: str, d: Path, azure: bool) -> dict:
             return record(d, base_record(step, t0) | {"status": "fail", "seconds": 0,
                           "got": f"needs the shards in {step['mode']} mode, found {sorted(map(str, modes))}"})
     if step["kind"] == "scenario":
-        rec = run_scenario_step(step, d, d.name, len(snap["shape"]["shards"]) or 3)
+        rec = run_scenario_step(step, d, d.name, len(snap["shape"]["shards"]) or 3, primary_of(snap))
     elif step["kind"] == "cli":
         rec = run_cli_step(step, d)
     elif step["kind"] == "eval":
-        rec = run_eval_step(step, d)
+        rec = run_eval_step(step, d, primary_of(snap))
     else:
         rec = run_agents_step(step, d, azure)
     if step.get("migrates"):                  # every migration step ends back on the starting models
@@ -478,6 +495,11 @@ def run_step(key: str, d: Path, azure: bool) -> dict:
 
 
 # ----------------------------------------------------------------------------- preflight / restore / verify
+def primary_of(snap: dict) -> str:
+    """The model the stack served when the tour started."""
+    return snap.get("shape", {}).get("active_model") or "minilm"
+
+
 def preflight(d: Path) -> int:
     d.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
@@ -495,8 +517,9 @@ def preflight(d: Path) -> int:
     shards = shape["shards"]
     modes = sorted({str(s["apply_mode"]) for s in shards.values()})
     snap["apply_mode"] = modes[0] if len(modes) == 1 else "mixed"
-    snap["migration_ok"] = (shape["active_model"] == PRIMARY and not shape["previous_model"]
-                            and all(s["models"] == [PRIMARY] and not s["building"] for s in shards.values()))
+    primary = shape["active_model"]
+    snap["migration_ok"] = (bool(primary) and primary != MIGRATION_TARGET and not shape["previous_model"]
+                            and all(s["models"] == [primary] and not s["building"] for s in shards.values()))
     (d / "snapshot_before.json").write_text(json.dumps(snap, indent=1), encoding="utf-8")
     (d / "original_mode.txt").write_text(snap["apply_mode"], encoding="utf-8")
     healthy = len(shards) == 3 and all(s["healthy"] for s in shards.values()) and not shape["missing_shards"]
@@ -519,22 +542,23 @@ def preflight(d: Path) -> int:
 
 
 def restore_models(d: Path, quiet: bool = False) -> list[str]:
-    """Put the router and shards back on the models they had before the tour (only when that was minilm only)."""
+    """Put the router and shards back on the one model they had before the tour (only when there was one)."""
     snap = json.loads((d / "snapshot_before.json").read_text(encoding="utf-8"))
     if not snap.get("migration_ok"):
         return []
+    primary = primary_of(snap)
     actions = []
     with http() as c:
         st = shape_of(status(c))
-        if st["active_model"] != PRIMARY:
-            if st["previous_model"] == PRIMARY:
+        if st["active_model"] != primary:
+            if st["previous_model"] == primary:
                 c.post("/admin/rollback", json={}).raise_for_status()
-                actions.append("rollback to minilm")
+                actions.append(f"rollback to {primary}")
             else:
-                c.post("/admin/cutover", json={"model": PRIMARY}).raise_for_status()
-                actions.append("cutover to minilm")
+                c.post("/admin/cutover", json={"model": primary}).raise_for_status()
+                actions.append(f"cutover to {primary}")
         st = shape_of(status(c))
-        extra = sorted({m for s in st["shards"].values() for m in s["models"] + s["building"]} - {PRIMARY})
+        extra = sorted({m for s in st["shards"].values() for m in s["models"] + s["building"]} - {primary})
         for m in extra:
             c.post("/admin/finalize", json={"model": m}).raise_for_status()
             actions.append(f"finalize {m}")
@@ -568,7 +592,7 @@ def finish(d: Path) -> int:
     actions = restore_models(d, quiet=True)
     record(d, {"key": "cleanup", "section": "end", "title": "Delete the tour's docs, restore the models",
                "what": "every doc the tour wrote is found in the recorded events and deleted with a newer version",
-               "expected": "no tour doc left; minilm only", "t": t0, "status": "pass", "seconds": time.time() - t0,
+               "expected": "no tour doc left; only the starting model", "t": t0, "status": "pass", "seconds": time.time() - t0,
                "got": f"{total} docs written, {deleted} still live and now deleted; models: "
                       f"{', '.join(actions) or 'nothing to restore'}", "links": {}, "details": []})
     t1 = time.time()

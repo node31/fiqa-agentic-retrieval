@@ -60,7 +60,7 @@ from typing import Sequence
 import faiss
 import numpy as np
 
-from src.config import MODELS, ModelSpec
+from src.config import MODELS, ModelSpec, model_path
 
 
 class Embedder:
@@ -75,7 +75,7 @@ class Embedder:
         # Weights are downloaded from the Hugging Face hub on first use and then
         # cached on disk (HF_HUB_OFFLINE=1 forces use of the cache). device="cpu":
         # this project assumes no GPU.
-        self.model = SentenceTransformer(spec.hf_name, device="cpu")
+        self.model = SentenceTransformer(model_path(spec), device="cpu")
         # Passages longer than this many model tokens (word pieces, not words) are
         # cut off; only the beginning of a long passage influences its vector.
         self.model.max_seq_length = spec.max_seq_length

@@ -1,7 +1,7 @@
 # What else I'd add, as the engineering lead
 
 [DESIGN.md](../../DESIGN.md) describes what I built and what it measured. This page is my list of what I'd add next,
-grouped by the part of the system it touches. Unless a line says otherwise, nothing here is built yet; the numbers
+grouped by the part of the system it touches. Unless a line says otherwise (items 2 and 15 are built), nothing here is built yet; the numbers
 quoted are the ones DESIGN.md measured, and each item says how I'd check it.
 
 ## Contents
@@ -18,7 +18,7 @@ quoted are the ones DESIGN.md measured, and each item says how I'd check it.
 | # | idea | why | how I'd check it |
 |---|---|---|---|
 | 1 | **Tune the parameters: α, and BM25's k1 and b** | α = 0.7 was swept on dev (0.4190 nDCG@10); k1 = 1.2 and b = 0.75 are textbook defaults I never tuned, and FiQA's long forum answers may want a different length penalty `b` | grid on dev, one test run at the end |
-| 2 | **Fine-tune the embedding model** on the 5,500 FiQA train questions | in-domain training is usually the biggest single gain, and the train labels are unused today | dev nDCG with a bootstrap CI against 0.4190; α re-tuned for the new model |
+| 2 | **Fine-tune the embedding model** on the 5,500 FiQA train questions (**done**) | in-domain training is usually the biggest single gain, and the train labels were unused | done: dev hybrid nDCG@10 0.4190 → 0.4469 (95% CI of the gain +0.016 to +0.040), test 0.3968 → 0.4358; α stayed at 0.7. See [17_fine_tuning.md](../topics/17_fine_tuning.md) |
 | 3 | **Try different datasets** | to show the choices aren't FiQA-specific: other BEIR sets, finance QA sets, multi-hop sets for Part C | the same harness on each dataset |
 | 4 | **Pick models from the MTEB leaderboard** | MTEB is the standard leaderboard for embedding models; it's where I'd shortlist a replacement for MiniLM | shortlist by MTEB retrieval score and size, then run our own dev eval, because leaderboard rank doesn't always carry over to one domain |
 | 5 | **Chunk the passages** | the encoder reads only the first 256 tokens, so long gold passages are found less often (Recall@10 0.464 vs 0.508) | index overlapping chunks, score a doc by its best chunk; check the long-passage slice |

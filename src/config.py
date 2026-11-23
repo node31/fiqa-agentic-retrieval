@@ -66,8 +66,9 @@ class ModelSpec:
 
     Attributes:
         key: short name used in file names, API calls and flags ("minilm").
-        hf_name: Hugging Face model id.
-        dim: embedding dimension (both our models are 384-d).
+        hf_name: Hugging Face model id, or a folder relative to the repo root for a model we
+            trained ourselves ("artifacts/models/minilm-ft", see scripts/finetune.py).
+        dim: embedding dimension (all our models are 384-d).
         query_prefix: text prepended to queries only (BGE instruction).
         max_seq_length: tokens kept per passage; the rest is truncated.
 
@@ -95,7 +96,28 @@ MODELS: dict[str, ModelSpec] = {
         # WHY: from the BGE model card. Used for short-query -> passage retrieval.
         query_prefix="Represent this sentence for searching relevant passages: ",
     ),
+    # MiniLM fine-tuned on the FiQA TRAIN split (scripts/finetune.py, `make finetune`).
+    # Same architecture and size as "minilm", so encode cost and memory are the same; only the
+    # weights differ. The folder is gitignored: rebuild it, or unzip minilm_ft_artifacts.zip
+    # from the GitHub release. docs/topics/17_fine_tuning.md explains the training.
+    "minilm-ft": ModelSpec("minilm-ft", "artifacts/models/minilm-ft", 384),
 }
+
+
+def model_path(spec: ModelSpec) -> str:
+    """What to pass to SentenceTransformer(): a local folder if the model is one of ours, else the HF id.
+
+    e.g. "artifacts/models/minilm-ft" -> "<repo>/artifacts/models/minilm-ft" (works on the host and in
+    Docker, where the repo root is /app); "BAAI/bge-small-en-v1.5" stays as it is.
+    """
+    local = ROOT / spec.hf_name
+    return str(local) if local.is_dir() else spec.hf_name
+
+
+def is_local_model(spec: ModelSpec) -> bool:
+    """True for models we trained (their hf_name is a folder under the repo), whether or not it exists yet."""
+    return spec.hf_name.startswith("artifacts/")
+
 
 # Primary model serves traffic first; B3 migrates to the secondary ("upgrade").
 # Values are MODELS keys. PRIMARY_MODEL is also the default --model in src/eval.py.

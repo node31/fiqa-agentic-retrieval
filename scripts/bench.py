@@ -2,6 +2,7 @@
 
     python scripts/bench.py                 # everything (about 20-30 min on 32 cores)
     python scripts/bench.py --only local    # single-node configs only
+    python scripts/bench.py --only finetune # the fine-tuned model's rows only
 
 WHAT RUNS
     local (in-process single node, each config in a FRESH process, so cold = cold):
@@ -11,6 +12,8 @@ WHAT RUNS
         3 shards: bm25 / dense / hybrid-linear  -> the 1%-of-single-node correctness check
         1 shard : hybrid-linear                 -> 1 vs N shard latency
         3 shards, BM25 LOCAL stats              -> what the DFS phase buys us
+    finetune (--only finetune, after `make finetune`): dense / hybrid single node and hybrid through 3 shards
+        for minilm-ft, at --ft-alpha (0.7, re-swept with scripts/ablations.py --model minilm-ft)
 Each run's full output (incl. per-query rankings) lands in results/runs/<name>.json.
 bench.json keeps the summary plus machine info (latency is hardware-dependent).
 """
@@ -47,6 +50,21 @@ SERVICE = [
 ]
 
 
+def finetune_configs(alpha: float) -> tuple[list, list]:
+    """The fine-tuned model's rows (scripts/finetune.py), at the alpha re-tuned for it on dev.
+
+    Same protocol as the rows above, so they are directly comparable with dense-minilm,
+    hybrid-linear-minilm and svc3-hybrid-linear-minilm.
+    """
+    a = str(alpha)
+    local = [
+        ("dense-minilm-ft", ["--strategy", "dense", "--model", "minilm-ft"]),
+        ("hybrid-linear-minilm-ft", ["--strategy", "hybrid", "--model", "minilm-ft", "--fusion", "linear", "--alpha", a]),
+    ]
+    service = [("svc3-hybrid-linear-minilm-ft", 3, {}, ["--strategy", "hybrid", "--fusion", "linear", "--alpha", a])]
+    return local, service
+
+
 def machine() -> dict:
     import psutil
 
@@ -81,7 +99,9 @@ def run_eval(name: str, args: list[str]) -> dict:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", choices=["local", "service"])
+    ap.add_argument("--only", choices=["local", "service", "finetune"],
+                    help="finetune = only the minilm-ft rows (needs `make finetune` first)")
+    ap.add_argument("--ft-alpha", type=float, default=0.7, help="alpha for the minilm-ft hybrid rows")
     a = ap.parse_args()
     path = RESULTS_DIR / "bench.json"
     bench = json.loads(path.read_text()) if path.exists() else {}
@@ -91,13 +111,20 @@ def main():
         "latency_measured_by": "client, end to end (service: includes HTTP to router)",
         "torch_threads_per_process": 4})
     bench.setdefault("configs", {})
-    if a.only in (None, "local"):
-        for name, args in LOCAL:
+    local, service = LOCAL, SERVICE
+    if a.only == "finetune":
+        local, service = finetune_configs(a.ft_alpha)
+    if a.only in (None, "local", "finetune"):
+        for name, args in local:
             bench["configs"][name] = {"mode": "local", **run_eval(name, ["--mode", "local", *args])}
             path.write_text(json.dumps(bench, indent=1))
-    if a.only in (None, "service"):
-        for name, n, env, args in SERVICE:
-            with Cluster(n, state_root=ARTIFACTS_DIR / f"bench_{name}", env=env, fresh=True, timeout_s=2.0) as c:
+    if a.only in (None, "service", "finetune"):
+        for name, n, env, args in service:
+            models = "minilm-ft" if name.endswith("minilm-ft") else "minilm"
+            # WHY own ports: 8000 is the Docker router's port; if the stack is up, a cluster on 8000 can't
+            # bind it and the eval would silently measure the Docker stack instead.
+            with Cluster(n, state_root=ARTIFACTS_DIR / f"bench_{name}", env=env, fresh=True, timeout_s=2.0,
+                         models=models, router_port=9000, base_port=9101) as c:
                 time.sleep(1)
                 res = run_eval(name, ["--mode", "service", "--url", c.router_url, *args])
             bench["configs"][name] = {"mode": "service", "n_shards": n, **res}

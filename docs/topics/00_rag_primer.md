@@ -31,6 +31,7 @@ Each shard has a BM25 index, a dense index, a doc store and a *WAL* (write-ahead
 |---|---|---|
 | tokenizer + BM25 | `src/retrieval/bm25.py` | [01](01_lexical_retrieval_bm25.md) |
 | embeddings + vector index | `src/retrieval/dense.py` | [02](02_dense_retrieval.md), [03](03_vector_indexes.md) |
+| fine-tuning the embedder | `scripts/finetune.py` | [17](17_fine_tuning.md) |
 | metrics | `src/metrics.py` | [04](04_ir_metrics.md) |
 | fusion | `src/retrieval/hybrid.py` | [05](05_hybrid_fusion.md), [16](16_ablations.md) |
 | reranker | `src/retrieval/rerank.py` | [06](06_reranking.md) |

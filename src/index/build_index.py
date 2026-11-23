@@ -49,7 +49,7 @@ from pathlib import Path
 
 import numpy as np
 
-from src.config import ARTIFACTS_DIR, MODELS, ROOT
+from src.config import ARTIFACTS_DIR, MODELS, ROOT, is_local_model
 
 
 def text_hash(text: str) -> str:
@@ -62,6 +62,20 @@ def text_hash(text: str) -> str:
 def _paths(model_key: str, artifacts: Path = ARTIFACTS_DIR) -> tuple[Path, Path]:
     # (matrix file, metadata file) for one model; both must exist for the cache to be usable.
     return artifacts / f"emb_{model_key}.npy", artifacts / f"emb_{model_key}.meta.json"
+
+
+def weights_id(spec) -> str | None:
+    """Fingerprint of a locally trained model's weights, or None for a Hugging Face model.
+
+    WHY: a model we train ourselves keeps the same name ("artifacts/models/minilm-ft") every time
+    it is retrained, so name + max_seq_length can't tell an old cache from a new one. Hashing the
+    weights file can: retrain -> new hash -> the old vectors are rejected as stale.
+    (Hub models are pinned by name; their weights don't change under us.)
+    """
+    if not is_local_model(spec):
+        return None
+    f = ROOT / spec.hf_name / "model.safetensors"
+    return hashlib.sha1(f.read_bytes()).hexdigest()[:16] if f.exists() else "missing"
 
 
 def build_cache(model_key: str, batch_size: int = 128) -> Path:
@@ -83,10 +97,11 @@ def build_cache(model_key: str, batch_size: int = 128) -> Path:
     npy.parent.mkdir(parents=True, exist_ok=True)
     np.save(npy, vecs)
     spec = MODELS[model_key]
-    # model + max_seq_length are what load_cache() checks to detect a stale cache;
-    # dim and seconds are informational.
+    # model + max_seq_length (+ the weights fingerprint for our own models) are what load_cache()
+    # checks to detect a stale cache; dim and seconds are informational.
     meta.write_text(json.dumps({
         "model": spec.hf_name, "max_seq_length": spec.max_seq_length, "dim": spec.dim,
+        "weights": weights_id(spec),
         "seconds": round(time.time() - t0, 1), "ids": ids, "hashes": [text_hash(t) for t in texts],
     }))
     print(f"[build_index] {model_key}: {vecs.shape} in {time.time() - t0:.0f}s -> {npy}")
@@ -106,26 +121,58 @@ def load_cache(model_key: str, artifacts: Path = ARTIFACTS_DIR):
     if m["model"] != spec.hf_name or m["max_seq_length"] != spec.max_seq_length:
         print(f"[build_index] cache for {model_key} is stale (spec changed); ignoring")
         return None
+    # Old meta files have no "weights" key (= None), which matches a Hub model's weights_id().
+    if m.get("weights") != weights_id(spec):
+        print(f"[build_index] cache for {model_key} is stale (the model was retrained); ignoring")
+        return None
     # WHY mmap: shards each read only their ~1/3 of the rows; mmap avoids loading all.
     return m["ids"], m["hashes"], np.load(npy, mmap_mode="r")
 
 
 def package(out: Path = ROOT / "dist" / "fiqa_index_artifacts.zip") -> Path:
-    """Zip every artifacts/emb_* file (matrix + meta, all models) into one release asset."""
+    """Zip the Hub models' artifacts/emb_* files (matrix + meta) into one release asset."""
     out.parent.mkdir(parents=True, exist_ok=True)
+    hub = [k for k, s in MODELS.items() if not is_local_model(s)]
     with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as z:
         # sorted() -> deterministic file order in the zip. arcname keeps the "artifacts/"
         # prefix, so unzipping at the repo root puts the files where load_cache() looks.
-        for p in sorted(ARTIFACTS_DIR.glob("emb_*")):
+        for p in sorted(p for k in hub for p in _paths(k)):
             z.write(p, arcname=f"artifacts/{p.name}")
     print(f"[build_index] packaged -> {out} ({out.stat().st_size / 1e6:.0f} MB)")
     return out
 
 
+def package_local(model_key: str, out: Path | None = None) -> Path:
+    """Zip one model we trained: its weights folder + its embedding cache (a second release asset).
+
+    e.g. minilm-ft -> dist/minilm_ft_artifacts.zip with artifacts/models/minilm-ft/* and
+    artifacts/emb_minilm-ft.{npy,meta.json}. Unzipped at the repo root, the model loads and the
+    shards start without training or re-embedding anything.
+    """
+    spec = MODELS[model_key]
+    out = out or ROOT / "dist" / f"{model_key.replace('-', '_')}_artifacts.zip"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    folder = ROOT / spec.hf_name
+    with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        for p in sorted(folder.rglob("*")):
+            if p.is_file():
+                z.write(p, arcname=p.relative_to(ROOT).as_posix())
+        for p in _paths(model_key):
+            z.write(p, arcname=f"artifacts/{p.name}")
+    print(f"[build_index] packaged {model_key} -> {out} ({out.stat().st_size / 1e6:.0f} MB)")
+    return out
+
+
+def available_models() -> list[str]:
+    """Hub models always; our own models only once their weights exist (train them first)."""
+    return [k for k, s in MODELS.items() if not is_local_model(s) or (ROOT / s.hf_name).is_dir()]
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--models", nargs="+", default=list(MODELS), choices=list(MODELS))
-    ap.add_argument("--package", action="store_true", help="zip artifacts into dist/")
+    ap.add_argument("--models", nargs="+", default=available_models(), choices=list(MODELS))
+    ap.add_argument("--package", action="store_true", help="zip the Hub models' caches into dist/")
+    ap.add_argument("--package-local", metavar="MODEL", help="zip one trained model (weights + cache) into dist/")
     args = ap.parse_args()
     # Build only what is missing or stale, so re-running the command is cheap. To force a
     # rebuild, delete artifacts/emb_<model>.* first.
@@ -136,6 +183,8 @@ def main() -> None:
             print(f"[build_index] {mk}: cache exists, skipping")
     if args.package:
         package()
+    if args.package_local:
+        package_local(args.package_local)
 
 
 if __name__ == "__main__":

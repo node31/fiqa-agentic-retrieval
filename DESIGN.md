@@ -716,6 +716,9 @@ sharding buys capacity and failure isolation, not speed.
 
 ## 13. Next steps
 
+The eight I'd do first are below. The longer list, task by task (other parameters, datasets, models, update types,
+failure points, LLMs and non-LLM alternatives), is in [docs/design/EXTENSIONS.md](docs/design/EXTENSIONS.md).
+
 1. Replicas per shard with hedged reads, so one slow or dead shard doesn't hurt p95 or completeness.
 2. A cached global-df table at the router to drop the DFS round trip (about 4 ms).
 3. WAL snapshots with truncation, tombstone cleanup and BM25 compaction.

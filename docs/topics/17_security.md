@@ -27,6 +27,8 @@ It covers reading and writing across tenants, admin endpoints and bad tokens, PI
 writes, harmful questions and a harmful document write, injection in a question and in a stored passage (with the
 exact prompt the agent's LLM receives, and what a real model did with it), off-topic abuse and the rate limit.
 
+![The security replay stepping through its 14 cases](../assets/gifs/security_replay.gif)
+
 ## Contents
 
 - [1. What can go wrong](#1-what-can-go-wrong)

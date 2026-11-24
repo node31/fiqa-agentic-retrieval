@@ -191,6 +191,8 @@ step added or removed next to the query the agent actually searched:
 [scenarios/SimpleScenarios/results/MemoryReplay/replay.html](../../scenarios/SimpleScenarios/results/MemoryReplay/replay.html).
 The memory's clock is a function the script controls, so "31 days later" is one step.
 
+![The memory replay, one card per step](../assets/gifs/memory_replay.gif)
+
 | step | who | what happens | what memory did |
 |---|---|---|---|
 | 1 | anonymous | "I live in Canada. how do I file my income taxes?" | nothing stored |

@@ -298,10 +298,14 @@ class AgentResult:
     latency_s: float = 0.0
     trace: list[dict] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    # Input tokens served from the PROVIDER's prompt cache (see LLMResult.cached_input_tokens).
+    cached_input_tokens: int = 0
+    # Set when the tokens were priced per model (the cascade's tiers); None = the project-wide prices.
+    priced_usd: float | None = None
 
     @property
     def cost_usd(self) -> float:
-        return cost_usd(self.input_tokens, self.output_tokens)
+        return self.priced_usd if self.priced_usd is not None else cost_usd(self.input_tokens, self.output_tokens)
 
 
 def fuse_lists(lists: list[list[dict]], k: int = 10) -> list[str]:
@@ -309,12 +313,46 @@ def fuse_lists(lists: list[list[dict]], k: int = 10) -> list[str]:
     return [d for d, _ in rrf([[(h["doc_id"], h["score"]) for h in lst] for lst in lists], top=k)]
 
 
+def _shown(searches: list[tuple], max_hits: int | None, snippet_chars: int | None, dedupe: bool) -> list[tuple]:
+    """The searches as the MODEL sees them: optionally fewer hits, shorter snippets, no repeats.
+
+    >>> s = [("hybrid", "q", [{"doc_id": "1", "text": "abcdef"}, {"doc_id": "2", "text": "xyz"}]),
+    ...      ("bm25", "q2", [{"doc_id": "1", "text": "abcdef"}, {"doc_id": "3", "text": "uvw"}])]
+    >>> [[h["doc_id"] for h in hits] for _, _, hits in _shown(s, None, None, dedupe=True)]
+    [['1', '2'], ['3']]
+    >>> _shown(s, 1, 3, dedupe=False)[0][2]
+    [{'doc_id': '1', 'text': 'abc'}]
+    """
+    if max_hits is None and snippet_chars is None and not dedupe:
+        return searches
+    out, already = [], set()
+    for strategy, query, hits in searches:
+        keep = []
+        for h in hits[:max_hits] if max_hits else hits:
+            if dedupe and h["doc_id"] in already:
+                continue
+            already.add(h["doc_id"])
+            keep.append({**h, "text": h["text"][:snippet_chars]} if snippet_chars else h)
+        out.append((strategy, query, keep))
+    return out
+
+
 def run_single_agent(question: str, llm: LLM, tool: SearchTool, max_steps: int = 3,
-                     budget: Budget | None = None, k: int = 10) -> AgentResult:
+                     budget: Budget | None = None, k: int = 10, system_prompt: str = prompts.SINGLE_AGENT,
+                     max_hits: int | None = None, snippet_chars: int | None = None,
+                     dedupe: bool = False) -> AgentResult:
     """Run the search-then-decide loop described in the module docstring.
 
     The step-0 search results are always part of the fill, so a failing LLM never empties the result.
     PITFALL: exceptions from the search tool itself are NOT caught here; they reach the caller.
+
+    Context trimming (used by the cheap tier of the cascade, src/agent/cascade.py), all off by default
+    so the default prompt is byte-for-byte what it always was (and cached answers still match):
+        max_hits       show only the top N hits of each search to the model
+        snippet_chars  cut each snippet shorter than the tool's 200 characters
+        dedupe         show a passage only the first time it appears across searches
+    The fill at the end still uses every hit, so trimming changes what the model READS, not what
+    the searches found.
     """
     t0 = time.perf_counter()
     # WHY max_calls=max_steps: one LLM call per step, so the budget enforces the step cap too.
@@ -326,7 +364,7 @@ def run_single_agent(question: str, llm: LLM, tool: SearchTool, max_steps: int =
     for step in range(1, max_steps + 1):
         remaining = max_steps - step  # actions left AFTER this one; 0 means "you must finish"
         # The prompt counts THIS action too, hence remaining + 1.
-        system = prompts.SINGLE_AGENT.replace("{remaining}", str(remaining + 1))
+        system = system_prompt.replace("{remaining}", str(remaining + 1))
         if remaining == 0:
             system += "\nThis is your LAST action: you must reply with finish."
         # Build the USER prompt for this step. The model has no memory between calls (each
@@ -355,7 +393,8 @@ def run_single_agent(question: str, llm: LLM, tool: SearchTool, max_steps: int =
         # further down keeps only ids that appear in these blocks. Cost: the prompt grows with
         # every search (up to 10 hits x ~200 chars each), so the 3-step cap also bounds its size.
         user = f"Question: {question}\n\n" + "\n\n".join(
-            f"Search {i} ({s}): {q!r}\n{render_hits(h)}" for i, (s, q, h) in enumerate(searches, 1))
+            f"Search {i} ({s}): {q!r}\n{render_hits(h) if h or not dedupe else '(every result was already shown above)'}"
+            for i, (s, q, h) in enumerate(_shown(searches, max_hits, snippet_chars, dedupe), 1))
         try:
             out = llm.complete(system, user, max_output_tokens=250, budget=budget)
             action = parse_json(out.text)
@@ -372,8 +411,9 @@ def run_single_agent(question: str, llm: LLM, tool: SearchTool, max_steps: int =
             searches.append((strat, action["query"], tool(action["query"], strat)))
             continue
         # Finish: validate the model's picks. dict.fromkeys dedupes while keeping order, str()
-        # normalises numeric ids, and "d in seen" drops hallucinated ids.
-        seen = {h["doc_id"] for _, _, hits in searches for h in hits}
+        # normalises numeric ids, and "d in seen" drops hallucinated ids. "seen" = what the model was
+        # actually SHOWN (with trimming on, a hit it never saw cannot be one it picked).
+        seen = {h["doc_id"] for _, _, hits in _shown(searches, max_hits, snippet_chars, dedupe) for h in hits}
         chosen = [d for d in dict.fromkeys(map(str, action.get("doc_ids") or [])) if d in seen]
         break
     # Fill: the model's picks first, then the RRF-fused ranking of every search (scores are
@@ -383,5 +423,6 @@ def run_single_agent(question: str, llm: LLM, tool: SearchTool, max_steps: int =
     res.doc_ids = list(dict.fromkeys(chosen + fill))[:k]
     # Usage numbers come from the budget, which saw every LLM call of this run.
     res.llm_calls, res.input_tokens, res.output_tokens = budget.calls, budget.input_tokens, budget.output_tokens
+    res.cached_input_tokens = budget.cached_input_tokens
     res.searches, res.latency_s = len(searches), time.perf_counter() - t0
     return res

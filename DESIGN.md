@@ -797,6 +797,16 @@ Security and LLM guardrails are built, each behind its own runtime toggle and of
 [docs/design/SECURITY.md](docs/design/SECURITY.md) has the threat model, how each piece works, how it is checked, and
 its own list of next steps.
 
+LLM cost optimizations and a web fallback are built too ([docs/design/LLM_OPTIMIZATIONS.md](docs/design/LLM_OPTIMIZATIONS.md)):
+
+- A model cascade (a one-call cheap tier, escalating to the single agent) matches the single agent's quality: plain
+  R@10 0.546 vs 0.547 at $0.00240 vs $0.00251 a question. With one model in both tiers that is all it saves. With a
+  tier-1 model at a tenth of the price, the shadow replay shows 18% savings on plain.
+- A semantic cache at cosine 0.85 answers 65% of paraphrased questions, while 0.8% of dev questions hit a different
+  question.
+- The web fallback (toggle `web_fallback`) fires on 1% of dev questions and 70% of off-topic ones, and sends the
+  question PII-free.
+
 ---
 Reproducibility: quality metrics come from `results/bench.json`, `results/ablation_*.json`, `results/write_load.json`,
 `results/migration_demo.json`, `results/agent_eval.json` and `results/compare_*.json`, and Docker reproduces the chosen configuration's quality

@@ -44,6 +44,28 @@ or
 Search again only if the results miss part of the question (e.g. a second topic) or are off-topic.
 You may take at most {remaining} more action(s)."""
 
+# SINGLE_AGENT_CHEAP: the cascade's first tier (src/agent/cascade.py). The same agent, plus a confidence
+# the cascade uses to decide whether to escalate to the strong tier.
+# WHY each extra part is there:
+#   * "confidence": the cheapest escalation signal there is: the model already read the passages, so
+#     asking "do these answer the question?" costs a few output tokens and no extra call.
+#   * "high if the passages you picked answer the question": version 1 said "high ONLY if ... clearly answer
+#     every part" and the model said "low" on 70 of 100 plain questions, so the cascade paid for both tiers
+#     almost every time (results/agent_eval_cascade_v1.json). The bar is still "answer", not "related".
+#   * same ROLE line as SINGLE_AGENT, so the fake LLM and every log treat it as the single agent.
+SINGLE_AGENT_CHEAP = """ROLE: single_agent
+You are a search agent over FiQA, a corpus of answers from a personal-finance Q&A forum.
+Goal: the 10 passages that best answer the user's question.
+Tool: search(query, strategy); strategy is "bm25" (exact keywords), "dense" (meaning) or "hybrid" (both; usually best).
+The question has already been searched once with "hybrid"; those results are shown (shortened).
+Reply with exactly ONE JSON object and nothing else, either
+  {"action": "search", "query": "<rewritten or sub-question query>", "strategy": "hybrid"}
+or
+  {"action": "finish", "doc_ids": ["<id>", "..."], "confidence": "high"}   (up to 10 ids you have SEEN, most relevant first)
+confidence is "high" if the passages you picked answer the question, "low" if they are only loosely related.
+Search again only if the results miss part of the question (e.g. a second topic) or are off-topic.
+You may take at most {remaining} more action(s)."""
+
 # PLANNER: the "decomposition" step of the multi-agent orchestrator. It only splits the
 # question; it never searches (the retrieval workers do that with the strings it writes).
 # WHY each part is there:

@@ -568,6 +568,8 @@ class SearchReq(BaseModel):
     alpha: float = DEFAULT_ALPHA
     include_text: bool = False
     rerank_k: int = 0
+    # Ask for web results too (needs the web_fallback toggle on); see src/service/websearch.py.
+    web: bool = False
 
 
 class WriteReq(BaseModel):
@@ -604,6 +606,8 @@ def create_app():
     Security (docs/design/SECURITY.md): SECURITY_STATE (toggle file, default next to ROUTER_STATE),
     AUDIT_LOG (default audit.jsonl next to it), AUTH_SECRET (token key), SECURITY_<FEATURE> (starting
     toggle values), RATE_LIMIT_PER_MIN / RATE_LIMIT_BURST, GUARD_SCOPE_MIN.
+    Web fallback (docs/topics/18_llm_cost_and_fallback.md): WEB_SEARCH_PROVIDER (wikipedia | fake),
+    WEB_FALLBACK_MIN (best dense score below which the corpus counts as "no good answer").
 
     PITFALL: the request models above live at MODULE level. With
     ``from __future__ import annotations``, FastAPI cannot resolve models defined
@@ -614,10 +618,12 @@ def create_app():
     import httpx
     from fastapi import FastAPI, HTTPException
 
+    from src.security import guardrails, pii
     from src.security.audit import AuditLog
     from src.security.config import SecurityConfig
     from src.security.policy import Caller, Denied, Policy, Verdict
     from src.security.ratelimit import TokenBuckets
+    from src.service.websearch import get_provider, web_query
 
     urls = [u for u in os.environ.get("SHARD_URLS", "").split(",") if u]
     # ONE shared async HTTP client (connection pool) for all shards and all requests, so
@@ -635,9 +641,11 @@ def create_app():
                     TokenBuckets(float(os.environ.get("RATE_LIMIT_PER_MIN", 120)),
                                  int(os.environ.get("RATE_LIMIT_BURST", 20))),
                     float(scope_min) if scope_min else None)
+    web_min = os.environ.get("WEB_FALLBACK_MIN")
+    web = get_provider(os.environ.get("WEB_SEARCH_PROVIDER", "wikipedia"), httpx.AsyncClient())
     app = FastAPI(title="FiQA router")
     # Exposed so tests/tools holding the app can reach the Router / Policy objects directly.
-    app.state.router, app.state.policy = router, policy
+    app.state.router, app.state.policy, app.state.web = router, policy, web
 
     # Translate Router exceptions into HTTP status codes in one place:
     #   ShardFailure            -> 503 Service Unavailable (+ which shards are missing)
@@ -682,6 +690,8 @@ def create_app():
             raise
         decision = "blocked" if v.blocked else "flagged" if v.findings else "allow"
         extra = {"results": [r["doc_id"] for r in out["results"]]} if isinstance(out, dict) and "results" in out else {}
+        if isinstance(out, dict) and "web_fallback" in out:
+            extra["web"] = {**out["web_fallback"], "urls": [w["url"] for w in out.get("web_results", [])]}
         policy.audit(caller, action, decision, 200, t0, findings=v.findings, **details, **extra)
         return out
 
@@ -695,12 +705,15 @@ def create_app():
     async def search(req: SearchReq, request: Request, cred: Cred = Depends(bearer)):
         async def work(caller, v):
             policy.check_question(req.query, v)
+            body = req.model_dump(exclude={"web"})  # the body fields -> keyword args of Router.search
             if not policy.active():
                 # Every toggle off: exactly the pre-security behaviour and response shape.
-                return await guard(router.search(**req.model_dump()))
-            # model_dump() -> dict of the body fields -> keyword args of Router.search.
-            out = await guard(router.search(**req.model_dump(), tenant=policy.search_tenant(caller), with_owners=True))
-            return policy.post_search(caller, out, v)
+                return await guard(router.search(**body))
+            out = await guard(router.search(**body, tenant=policy.search_tenant(caller), with_owners=True))
+            out = policy.post_search(caller, out, v)
+            if policy.config.on("web_fallback") and not v.blocked:
+                await web_fallback(req, out)
+            return out
         return await secured("search", request, cred, work, query=req.query, strategy=req.strategy, k=req.k)
 
     async def write(op: str, req: WriteReq, request: Request, cred: Cred):
@@ -712,6 +725,33 @@ def create_app():
                 raise Denied(403, {"error": f"doc {req.doc_id} belongs to another tenant", "doc_id": req.doc_id})
             return out
         return await secured(op, request, cred, work, doc_id=req.doc_id, version=req.version)
+
+    async def web_fallback(req: SearchReq, out: dict) -> None:
+        """Add ``web_results`` when the corpus has no good answer or the caller asked (module websearch.py)."""
+        floor = float(web_min) if web_min else guardrails.SCOPE_MIN.get(out.get("model", ""))
+        top = out.get("top_dense")
+        reason = ("requested" if req.web else "no results" if not out["results"]
+                  else "low confidence" if top is not None and floor is not None and top < floor else None)
+        if reason is None:
+            return
+        # the question leaves the system: never with personal data, nor the clause that held it
+        sent = web_query(pii.redact(req.query)[0])
+        t = time.perf_counter()
+        try:
+            hits = await web.search(sent)
+            error = None
+        except Exception as e:  # noqa: BLE001 - the web is optional; the corpus answer still goes out
+            hits, error = [], repr(e)[:200]
+        cleaned = []
+        for h in hits:
+            snippet, n_inj = guardrails.neutralize(h["snippet"])  # web text is untrusted, always
+            cleaned.append({"title": pii.redact(h["title"])[0], "url": h["url"], "snippet": pii.redact(snippet)[0],
+                            "source": "web", **({"injection_removed": n_inj} if n_inj else {})})
+        out["web_results"] = cleaned
+        out["web_fallback"] = {"reason": reason, "provider": web.name, "query_sent": sent,
+                               "latency_ms": round((time.perf_counter() - t) * 1e3, 1),
+                               **({"top_dense": top, "minimum": floor} if reason == "low confidence" else {}),
+                               **({"error": error} if error else {})}
 
     @app.post("/upsert")
     async def upsert(req: WriteReq, request: Request, cred: Cred = Depends(bearer)):

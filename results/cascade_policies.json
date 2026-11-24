@@ -1,0 +1,121 @@
+{
+ "input": "results\\agent_eval_cascade.json",
+ "cheap_price_ratio": 0.1,
+ "sets": {
+  "plain": {
+   "n": 100,
+   "rules": {
+    "strong only": {
+     "recall@10": 0.5474,
+     "mrr@10": 0.6416,
+     "usd_per_q": 0.002514,
+     "usd_per_q_what_if_cheaper_tier1": 0.002514,
+     "share_to_strong": 1.0
+    },
+    "cheap only": {
+     "recall@10": 0.5024,
+     "mrr@10": 0.5253,
+     "usd_per_q": 0.000675,
+     "usd_per_q_what_if_cheaper_tier1": 6.7e-05,
+     "share_to_strong": 0.0
+    },
+    "confidence": {
+     "recall@10": 0.5457,
+     "mrr@10": 0.6136,
+     "usd_per_q": 0.00214,
+     "usd_per_q_what_if_cheaper_tier1": 0.001533,
+     "share_to_strong": 0.48
+    },
+    "picks only": {
+     "recall@10": 0.5057,
+     "mrr@10": 0.5253,
+     "usd_per_q": 0.000879,
+     "usd_per_q_what_if_cheaper_tier1": 0.000272,
+     "share_to_strong": 0.11
+    },
+    "route only": {
+     "recall@10": 0.5174,
+     "mrr@10": 0.5935,
+     "usd_per_q": 0.001535,
+     "usd_per_q_what_if_cheaper_tier1": 0.001196,
+     "share_to_strong": 0.44
+    },
+    "route+confidence": {
+     "recall@10": 0.5457,
+     "mrr@10": 0.641,
+     "usd_per_q": 0.002401,
+     "usd_per_q_what_if_cheaper_tier1": 0.002062,
+     "share_to_strong": 0.75
+    },
+    "oracle": {
+     "recall@10": 0.5474,
+     "mrr@10": 0.5753,
+     "usd_per_q": 0.000938,
+     "usd_per_q_what_if_cheaper_tier1": 0.000331,
+     "share_to_strong": 0.07
+    }
+   }
+  },
+  "compound": {
+   "n": 100,
+   "rules": {
+    "strong only": {
+     "recall@10": 0.4002,
+     "mrr@10": 0.6091,
+     "coverage@10": 0.4,
+     "usd_per_q": 0.003934,
+     "usd_per_q_what_if_cheaper_tier1": 0.003934,
+     "share_to_strong": 1.0
+    },
+    "cheap only": {
+     "recall@10": 0.2036,
+     "mrr@10": 0.4177,
+     "coverage@10": 0.1,
+     "usd_per_q": 0.000725,
+     "usd_per_q_what_if_cheaper_tier1": 7.3e-05,
+     "share_to_strong": 0.0
+    },
+    "confidence": {
+     "recall@10": 0.384,
+     "mrr@10": 0.5958,
+     "coverage@10": 0.38,
+     "usd_per_q": 0.004349,
+     "usd_per_q_what_if_cheaper_tier1": 0.003697,
+     "share_to_strong": 0.9
+    },
+    "picks only": {
+     "recall@10": 0.2086,
+     "mrr@10": 0.4177,
+     "coverage@10": 0.1,
+     "usd_per_q": 0.000846,
+     "usd_per_q_what_if_cheaper_tier1": 0.000193,
+     "share_to_strong": 0.03
+    },
+    "route only": {
+     "recall@10": 0.4002,
+     "mrr@10": 0.6091,
+     "coverage@10": 0.4,
+     "usd_per_q": 0.003934,
+     "usd_per_q_what_if_cheaper_tier1": 0.003934,
+     "share_to_strong": 1.0
+    },
+    "route+confidence": {
+     "recall@10": 0.4002,
+     "mrr@10": 0.6091,
+     "coverage@10": 0.4,
+     "usd_per_q": 0.003934,
+     "usd_per_q_what_if_cheaper_tier1": 0.003934,
+     "share_to_strong": 1.0
+    },
+    "oracle": {
+     "recall@10": 0.4072,
+     "mrr@10": 0.5902,
+     "coverage@10": 0.4,
+     "usd_per_q": 0.002922,
+     "usd_per_q_what_if_cheaper_tier1": 0.002269,
+     "share_to_strong": 0.55
+    }
+   }
+  }
+ }
+}

@@ -55,6 +55,7 @@ now stops each one.
 | off-topic use | cookie recipes through a finance assistant | the best dense score must clear a calibrated threshold | `guard_scope` |
 | scraping, abuse, cost blow-up | one user fires thousands of searches (each agent search can cost LLM tokens) | token bucket per user (per IP when anonymous) | `rate_limit` |
 | an agent invents documents | the LLM returns doc ids it never saw | already in place before this change: unseen ids are dropped (`src/agent/prompts.py`) | always on |
+| the question leaves the system, and untrusted web text comes back | the web fallback sends the question to Wikipedia and returns its snippets | off by default and admin-only; the question is PII-redacted before it is sent; snippets always go through the injection neutraliser and PII redaction; every web call is audited with its URLs | `web_fallback` |
 
 What I did not cover, on purpose, is listed in [section 7](#7-pitfalls-and-what-i-would-do-next). The biggest one: the
 shards trust the router, so anything inside the Docker network can still call a shard directly.
@@ -91,6 +92,7 @@ The task left these open, and I was working on my own, so I picked a default for
 | `guard_injection` | off, log, block | flags or refuses (403) injected questions; flags, or cuts, instruction-like text in passages |
 | `guard_scope` | off, log, block | flags, or returns no results for, questions far from everything in the corpus |
 | `rate_limit` | off, log, block | flags, or refuses (429), callers over their budget (120 per minute, bursts of 20) |
+| `web_fallback` | off, on | when the corpus has no good answer (or the caller sends `"web": true`), also asks a web provider; see [LLM_OPTIMIZATIONS.md](LLM_OPTIMIZATIONS.md#3-web-search-fallback) |
 
 ```bash
 TOKEN=$(python -m scripts.mint_token admin)

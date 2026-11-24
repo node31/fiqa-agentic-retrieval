@@ -5,6 +5,7 @@
     python scripts/ask.py "what is a roth ira?" --url http://localhost:8000       # through the router
     python scripts/ask.py "roth ira and mortgage offset?" --strategy single --backend azure --confirm-spend
     python scripts/ask.py "roth ira and mortgage offset?" --strategy multi  --backend azure --confirm-spend
+    python scripts/ask.py "roth ira and mortgage offset?" --strategy cascade --backend azure --confirm-spend
     python scripts/ask.py "what is a roth ira?" --url http://localhost:8000 --token $(python -m scripts.mint_token alice)
 
 WHERE THE SEARCH RUNS
@@ -20,6 +21,10 @@ WHAT IT PRINTS
                             top-k, LLM calls, tokens and the estimated cost.
     multi                   the planner's split (or "simple"), the verifier's rewrites, the final top-k,
                             LLM calls, tokens and the estimated cost.
+    cascade                 each tier that ran (cheap, then strong only if it escalated, and why), its calls,
+                            tokens and cost, then the final top-k (src/agent/cascade.py). With --url, if even
+                            the strong tier found little, it asks the router for web results ("web": true),
+                            which the admin must have allowed with the web_fallback toggle.
 
 SECURITY (docs/design/SECURITY.md)
     With --url, ``--token`` (or env FIQA_TOKEN) makes every search run as that user: once an admin turns on
@@ -73,7 +78,7 @@ def show_hits(ids: list[str], texts: dict[str, str], scores: dict[str, float] | 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("question")
-    ap.add_argument("--strategy", choices=["bm25", "dense", "hybrid", "single", "multi"], default="hybrid")
+    ap.add_argument("--strategy", choices=["bm25", "dense", "hybrid", "single", "multi", "cascade"], default="hybrid")
     ap.add_argument("--url", help="router URL, e.g. http://localhost:8000 (default: in-process single node)")
     ap.add_argument("-k", type=int, default=10)
     ap.add_argument("--backend", choices=["azure", "copilot", "fake"], default="azure", help="LLM for single / multi")
@@ -85,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.reconfigure(errors="replace")   # a cp1252 console would choke on some passage text
 
     llm = None
-    if a.strategy in ("single", "multi"):
+    if a.strategy in ("single", "multi", "cascade"):
         if a.backend == "azure" and not a.confirm_spend:
             ap.error("--backend azure costs money: add --confirm-spend (or use --backend copilot / fake)")
         from src.agent.llm import get_llm
@@ -126,6 +131,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     tool = SearchTool(recording, k=a.k)
+    if a.strategy == "cascade":
+        return run_cascade_cli(a, tool, texts)
     if a.strategy == "single":
         from src.agent.single_agent import run_single_agent
 
@@ -162,6 +169,38 @@ def main(argv: list[str] | None = None) -> int:
           f"estimated ${res.cost_usd:.5f} (placeholder prices in src/config.py)")
     for e in res.errors:
         print(f"recovered from: {e}")
+    return 0
+
+
+def run_cascade_cli(a, tool, texts: dict[str, str]) -> int:
+    """--strategy cascade: run the tiers, show what each cost, and fall back to the web if the corpus can't answer."""
+    from src.agent.cascade import cascade_llms, corpus_unanswered, default_tiers, run_cascade
+
+    cheap, strong = default_tiers(*cascade_llms(a.backend, a.confirm_spend))
+    res = run_cascade(a.question, cheap, strong, tool, k=a.k)
+    print()
+    for t in res.trace:
+        why = f", escalated: {t['escalate']}" if t.get("escalate") else (", kept" if t["tier"] == "cheap" else "")
+        print(f"tier {t['tier']:6s} ({getattr(cheap if t['tier'] == 'cheap' else strong, 'llm').model or a.backend}): "
+              f"{t['llm_calls']} LLM call(s), {t['input_tokens']} in + {t['output_tokens']} out tokens, ${t['usd']:.5f}{why}")
+    print(f"\nfinal top {len(res.doc_ids)} ({res.searches} searches, {res.latency_s:.1f} s, total ${res.cost_usd:.5f}):")
+    show_hits(res.doc_ids, texts)
+    if corpus_unanswered(res):
+        print("\nthe corpus has little on this question", end="")
+        if not a.url:
+            print(" (web fallback needs --url: it runs in the router)")
+            return 0
+        import httpx
+
+        r = httpx.post(f"{a.url.rstrip('/')}/search", json={"query": a.question, "k": 1, "web": True}, timeout=30,
+                       headers={"Authorization": f"Bearer {a.token}"} if a.token else {})
+        body = r.json() if r.status_code == 200 else {}
+        if "web_results" not in body:
+            print("; web fallback is off (admin: POST /admin/security {\"web_fallback\": \"on\"})")
+            return 0
+        print(f"; from the web ({body['web_fallback']['provider']}, sent: {body['web_fallback']['query_sent']!r}):")
+        for w in body["web_results"]:
+            print(f"   - {w['title']}: {textwrap.shorten(w['snippet'], 160)}  <{w['url']}>")
     return 0
 
 

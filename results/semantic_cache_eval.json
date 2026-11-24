@@ -1,0 +1,203 @@
+{
+ "model": "minilm-ft",
+ "n_cache": 6000,
+ "n_paraphrases": 100,
+ "chosen": {
+  "threshold": 0.85,
+  "paraphrase_true_hits": 0.65,
+  "paraphrase_wrong_hits": 0.0,
+  "dev_false_hits": 0.008,
+  "false_hit_own_ndcg": 0.211,
+  "false_hit_served_ndcg": 0.2546
+ },
+ "sweep": [
+  {
+   "threshold": 0.8,
+   "paraphrase_true_hits": 0.84,
+   "paraphrase_wrong_hits": 0.0,
+   "dev_false_hits": 0.024,
+   "false_hit_own_ndcg": 0.3252,
+   "false_hit_served_ndcg": 0.2237
+  },
+  {
+   "threshold": 0.85,
+   "paraphrase_true_hits": 0.65,
+   "paraphrase_wrong_hits": 0.0,
+   "dev_false_hits": 0.008,
+   "false_hit_own_ndcg": 0.211,
+   "false_hit_served_ndcg": 0.2546
+  },
+  {
+   "threshold": 0.88,
+   "paraphrase_true_hits": 0.48,
+   "paraphrase_wrong_hits": 0.0,
+   "dev_false_hits": 0.004,
+   "false_hit_own_ndcg": 0.0,
+   "false_hit_served_ndcg": 0.0
+  },
+  {
+   "threshold": 0.9,
+   "paraphrase_true_hits": 0.4,
+   "paraphrase_wrong_hits": 0.0,
+   "dev_false_hits": 0.002,
+   "false_hit_own_ndcg": 0.0,
+   "false_hit_served_ndcg": 0.0
+  },
+  {
+   "threshold": 0.92,
+   "paraphrase_true_hits": 0.29,
+   "paraphrase_wrong_hits": 0.0,
+   "dev_false_hits": 0.002,
+   "false_hit_own_ndcg": 0.0,
+   "false_hit_served_ndcg": 0.0
+  },
+  {
+   "threshold": 0.94,
+   "paraphrase_true_hits": 0.17,
+   "paraphrase_wrong_hits": 0.0,
+   "dev_false_hits": 0.0,
+   "false_hit_own_ndcg": null,
+   "false_hit_served_ndcg": null
+  },
+  {
+   "threshold": 0.95,
+   "paraphrase_true_hits": 0.14,
+   "paraphrase_wrong_hits": 0.0,
+   "dev_false_hits": 0.0,
+   "false_hit_own_ndcg": null,
+   "false_hit_served_ndcg": null
+  },
+  {
+   "threshold": 0.96,
+   "paraphrase_true_hits": 0.08,
+   "paraphrase_wrong_hits": 0.0,
+   "dev_false_hits": 0.0,
+   "false_hit_own_ndcg": null,
+   "false_hit_served_ndcg": null
+  },
+  {
+   "threshold": 0.97,
+   "paraphrase_true_hits": 0.06,
+   "paraphrase_wrong_hits": 0.0,
+   "dev_false_hits": 0.0,
+   "false_hit_own_ndcg": null,
+   "false_hit_served_ndcg": null
+  },
+  {
+   "threshold": 0.98,
+   "paraphrase_true_hits": 0.02,
+   "paraphrase_wrong_hits": 0.0,
+   "dev_false_hits": 0.0,
+   "false_hit_own_ndcg": null,
+   "false_hit_served_ndcg": null
+  }
+ ],
+ "paraphrase_sim_to_original": {
+  "p10": 0.7657,
+  "median": 0.8752
+ },
+ "dev_nn_sim": {
+  "median": 0.6067,
+  "p99": 0.8411
+ },
+ "false_hit_examples": [
+  {
+   "id": "3937",
+   "neighbour": "3314",
+   "sim": 0.9335,
+   "own_ndcg": 0.0,
+   "served_ndcg": 0.0,
+   "question": "Purchasing first car out of college",
+   "neighbour_question": "Buying my first car out of college"
+  },
+  {
+   "id": "1741",
+   "neighbour": "4361",
+   "sim": 0.8833,
+   "own_ndcg": 0.0,
+   "served_ndcg": 0.0,
+   "question": "What does inflation actually mean? [duplicate]",
+   "neighbour_question": "What is inflation?"
+  },
+  {
+   "id": "2729",
+   "neighbour": "3667",
+   "sim": 0.862,
+   "own_ndcg": 0.3026024134988135,
+   "served_ndcg": 0.34222207292834145,
+   "question": "How do I get into investing in stocks?",
+   "neighbour_question": "How do I get into investing?"
+  },
+  {
+   "id": "38",
+   "neighbour": "93",
+   "sim": 0.8618,
+   "own_ndcg": 0.5413996682199069,
+   "served_ndcg": 0.6760236910196462,
+   "question": "Personal credit card for business expenses",
+   "neighbour_question": "Really have to use business credit card for personal expenses"
+  },
+  {
+   "id": "7839",
+   "neighbour": "9170",
+   "sim": 0.8497,
+   "own_ndcg": 0.6508205185601091,
+   "served_ndcg": 0.2960819109658652,
+   "question": "In the event of a corporate spin-off, how can I calculate the correct cost basis for each company's shares?",
+   "neighbour_question": "How to calculate cost basis for stock bought before a company spinoff? (USA)"
+  },
+  {
+   "id": "3153",
+   "neighbour": "1215",
+   "sim": 0.8411,
+   "own_ndcg": 0.46927872602275644,
+   "served_ndcg": 0.2960819109658652,
+   "question": "Does a US LLC need to file taxes if owned by a foreign citizen?",
+   "neighbour_question": "US Foreign-Owned LLC that owes no income tax - Do I have to file anything?"
+  },
+  {
+   "id": "5114",
+   "neighbour": "10636",
+   "sim": 0.826,
+   "own_ndcg": 0.13905617951077562,
+   "served_ndcg": 0.24630238874073,
+   "question": "Can someone help me understand my student loans?",
+   "neighbour_question": "Trying to figure out my student loans"
+  },
+  {
+   "id": "7826",
+   "neighbour": "8251",
+   "sim": 0.8209,
+   "own_ndcg": 0.0,
+   "served_ndcg": 0.0,
+   "question": "What will happen to my shares if company delisted",
+   "neighbour_question": "What happens when a stock gets delisted?"
+  },
+  {
+   "id": "7490",
+   "neighbour": "4903",
+   "sim": 0.8179,
+   "own_ndcg": 0.21840743681816419,
+   "served_ndcg": 0.17723928678404774,
+   "question": "Clarify on some Stocks Terminology",
+   "neighbour_question": "Understanding stock market terminology"
+  },
+  {
+   "id": "4953",
+   "neighbour": "8196",
+   "sim": 0.8115,
+   "own_ndcg": 0.5802792108518124,
+   "served_ndcg": 0.2640681225725909,
+   "question": "What does market cap (or market capitalization) mean?",
+   "neighbour_question": "What is market capitalization? [duplicate]"
+  }
+ ],
+ "agent": {
+  "threshold": 0.85,
+  "paraphrases": 100,
+  "hits": 65,
+  "llm_calls_saved": 131,
+  "usd_saved": 0.14524,
+  "served_recall@10_on_hits": 0.596
+ }
+}

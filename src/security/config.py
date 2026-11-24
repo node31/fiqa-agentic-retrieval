@@ -11,6 +11,8 @@
     guard_injection  off | log | block prompt-injection text in the question and in returned passages
     guard_scope      off | log | block questions far from anything in the corpus (off-topic)
     rate_limit       off | log | block requests per caller per minute
+    web_fallback     off | on          when the corpus has nothing good, add web results (src/service/websearch.py);
+                                       not a protection but a data flow out of the system, so it is admin-only too
 
     "log" = shadow mode: nothing is blocked, but the decision is reported and audited. That is how you
     measure a guardrail's false-alarm rate on real traffic before letting it refuse anyone.
@@ -31,6 +33,7 @@ GUARD = ("off", "log", "block")
 FEATURES: dict[str, tuple[str, ...]] = {
     "identity": ON_OFF, "authz": ON_OFF, "tenant_filter": ON_OFF, "pii_redaction": ON_OFF, "audit": ON_OFF,
     "guard_harmful": GUARD, "guard_injection": GUARD, "guard_scope": GUARD, "rate_limit": GUARD,
+    "web_fallback": ON_OFF,
 }
 NEEDS_IDENTITY = ("authz", "tenant_filter")  # without a caller identity there is no tenant to check against
 

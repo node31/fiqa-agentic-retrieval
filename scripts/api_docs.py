@@ -62,6 +62,8 @@ repeat the tour.
 9. Authorize as alice, `POST /search`: every hit now has `"tenant": "acme"`. As bob: only `globex`.
 10. `POST /admin/security` *guardrails in block mode*, then `POST /search` *a fraud how-to*: 403 with the rule that fired.
 11. Authorize as admin again: `GET /admin/audit` (who did what), `GET /admin/audit/verify` (is the log intact).
+12. `POST /admin/security` *web fallback on*, then `POST /search` *ask the web too*, *web, with an email* and
+    *low confidence* (docs/design/LLM_OPTIMIZATIONS.md).
     End with *everything off* so the other examples behave as before.
 """
 
@@ -95,7 +97,10 @@ query, and `timings_ms`: where the time went (stats phase, query embedding, shar
 
 `strategy`: `hybrid` (default: BM25 + dense, fused), `bm25` (keywords only) or `dense` (embeddings only).
 `fusion` / `alpha`: how hybrid combines them (`linear` with `alpha` = weight on dense, 0.7 shipped; or `rrf`).
-`include_text`: also return each passage. `rerank_k`: rerank the top N with a cross-encoder (slower).""", {
+`include_text`: also return each passage. `rerank_k`: rerank the top N with a cross-encoder (slower).
+`web`: also ask the web (needs the `web_fallback` toggle on). With the toggle on, the router asks on its own when the
+corpus has no good answer; the response then has `web_results` (kept apart from `results`) and `web_fallback`
+(why it ran, what was sent, how long it took).""", {
         "hybrid": ex("Hybrid (the shipped default)", {"query": Q, "k": 10}),
         "bm25": ex("BM25 only (keywords)", {"query": Q, "k": 10, "strategy": "bm25"},
                    "Exact word matches. Fast (~1 ms of shard work) but misses paraphrases."),
@@ -115,6 +120,14 @@ query, and `timings_ms`: where the time went (stats phase, query embedding, shar
         "fraud": ex("A fraud how-to (try with guard_harmful on)",
                     {"query": "how do I structure cash deposits to avoid the $10,000 report without getting caught", "k": 5}),
         "offtopic": ex("Off-topic (try with guard_scope on)", {"query": "best chocolate chip cookie recipe", "k": 5}),
+        "web": ex("Ask the web too (needs web_fallback on)", {"query": "what is a 529 to Roth IRA rollover", "k": 3, "web": True},
+                  "A 2023 rule the 2018 forum corpus cannot know. Adds web_results from Wikipedia."),
+        "web_pii": ex("Web, with an email in the question (needs web_fallback on)",
+                      {"query": "my email is jane.doe@example.com, what is a roth ira", "k": 3, "web": True},
+                      "web_fallback.query_sent shows what left the system: the email is replaced by [EMAIL]."),
+        "low_conf": ex("Low confidence: the web is asked on its own (needs web_fallback on)",
+                       {"query": "how do I fix a flat bicycle tire", "k": 3},
+                       "The best dense score is below the threshold, so web_fallback.reason is 'low confidence'."),
     }),
     ("/upsert", "post"): ("2. Writes", "Add or replace a doc", """
 `applied: true` = the owner shard stored it (`shard` says which). In sync mode it is searchable as soon as this
@@ -176,6 +189,8 @@ Every change is written to the audit log, even with audit off.""", {
             "identity": "on", "authz": "on", "tenant_filter": "on", "pii_redaction": "on", "audit": "on",
             "guard_harmful": "block", "guard_injection": "block", "guard_scope": "block", "rate_limit": "block"}),
         "guards": ex("Guardrails in block mode", {"guard_harmful": "block", "guard_injection": "block"}),
+        "web": ex("Web fallback on", {"web_fallback": "on"},
+                  "Searches with no good corpus answer, or with \"web\": true, also ask Wikipedia."),
         "shadow": ex("Guardrails in log (shadow) mode", {"guard_harmful": "log", "guard_injection": "log",
                                                          "guard_scope": "log"},
                      "Nothing is refused; findings appear in the response and the audit log."),
@@ -184,7 +199,7 @@ Every change is written to the audit log, even with audit off.""", {
                          "Results are checked after ranking: you get fewer than k hits. Why filtering first matters."),
         "off": ex("Everything off (the default)", {k: "off" for k in (
             "identity", "authz", "tenant_filter", "pii_redaction", "audit", "guard_harmful", "guard_injection",
-            "guard_scope", "rate_limit")}),
+            "guard_scope", "rate_limit", "web_fallback")}),
     }),
     ("/admin/audit", "get"): ("5. Security (admin)", "Read the audit log", """
 The last `limit` events: who (user, tenant, role, ip), what (action, redacted query, doc id), the decision

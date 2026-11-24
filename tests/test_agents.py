@@ -117,7 +117,7 @@ def _load_ask():
     return ask
 
 
-@pytest.mark.parametrize("strategy", ["bm25", "dense", "hybrid", "single", "multi"])
+@pytest.mark.parametrize("strategy", ["bm25", "dense", "hybrid", "single", "multi", "cascade"])
 def test_ask_cli_prints_every_strategy(strategy, monkeypatch, capsys):
     """scripts/ask.py end to end with the fake search and the fake LLM (heuristic policy)."""
     ask = _load_ask()

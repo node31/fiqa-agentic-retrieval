@@ -44,11 +44,15 @@ cached, and on Windows `PYTHONIOENCODING=utf-8`.
 | a scenario | `python scripts/scenario.py scenarios/SimpleScenarios/2_SimpleReadAfterWrite.csv --start-cluster --tiny` |
 | security tests | `python -m pytest -q tests/test_security.py src/security` (fast) and `tests/test_security_service.py` (toggle matrix, starts a cluster) |
 | security on the live stack | `python scripts/security_demo.py` (every toggle on and off, then restored); tokens: `python -m scripts.mint_token admin` |
+| cascade, semantic cache, web fallback tests | `python -m pytest -q tests/test_cascade.py --doctest-modules src/agent/cascade.py src/agent/semantic_cache.py src/service/websearch.py` (fast); web fallback service tests are in `tests/test_security_service.py` |
+| cascade on Azure / rules offline | `python scripts/agent_eval.py --backend azure --confirm-spend --systems cascade --cascade-shadow --out results/agent_eval_cascade.json`, then `python scripts/cascade_policies.py` (no LLM calls) |
+| web fallback on the live stack | `python scripts/web_fallback_eval.py` (calls Wikipedia; toggles restored) |
 
 Test clusters use their own ports (18000+, 19000+), so they can run while the dev cluster or Docker holds 8000.
 
 Security toggles ([docs/design/SECURITY.md](docs/design/SECURITY.md)) are all off by default and must be off for the
-eval numbers and the Docker tour; `GET /admin/security` with an admin token shows them.
+eval numbers and the Docker tour; `GET /admin/security` with an admin token shows them. That includes `web_fallback`,
+which sends questions to Wikipedia ([docs/design/LLM_OPTIMIZATIONS.md](docs/design/LLM_OPTIMIZATIONS.md)).
 
 ## Rules
 

@@ -1,0 +1,54 @@
+{
+ "provider": "wikipedia",
+ "dev": {
+  "n": 500,
+  "fired": 5,
+  "fired_share": 0.01,
+  "web_returned_results": 4,
+  "web_latency_ms_p50": 834.4,
+  "web_latency_ms_max": 905.1
+ },
+ "off_topic": {
+  "n": 30,
+  "fired": 21,
+  "fired_share": 0.7,
+  "web_returned_results": 21,
+  "web_latency_ms_p50": 638.9,
+  "web_latency_ms_max": 909.0
+ },
+ "newer_requested": {
+  "n": 10,
+  "fired": 10,
+  "fired_share": 1.0,
+  "web_returned_results": 10,
+  "web_latency_ms_p50": 664.0,
+  "web_latency_ms_max": 4743.0
+ },
+ "example": {
+  "question": "what is the 401k contribution limit for 2026",
+  "web_results": [
+   {
+    "title": "401(k)",
+    "url": "https://en.wikipedia.org/wiki/401(k)",
+    "snippet": "In the United States, a 401(k) plan is an employer-sponsored defined-contribution personal pension (savings) account, as defined in subsection 401(k) of the U.S. Internal Revenue Code. Periodic employee contributions come directly out of their paychecks, and may be matched by the employer.",
+    "source": "web"
+   },
+   {
+    "title": "Roth 401(k)",
+    "url": "https://en.wikipedia.org/wiki/Roth_401(k)",
+    "snippet": "The Roth 401(k) is a type of retirement savings plan. It was authorized by the United States Congress under the Internal Revenue Code, section 402A, and represents a unique combination of features of the Roth IRA and a traditional 401(k) plan.",
+    "source": "web"
+   },
+   {
+    "title": "Superannuation in Australia",
+    "url": "https://en.wikipedia.org/wiki/Superannuation_in_Australia",
+    "snippet": "Superannuation in Australia (colloquially known as \"super\") is a savings system for workplace pensions in retirement. It involves money earned by an employee being placed into an investment fund to be made legally available to members upon retirement.",
+    "source": "web"
+   }
+  ]
+ },
+ "pii_example": {
+  "question": "my email is jane.doe@example.com, what is a roth ira",
+  "query_sent": "what is a roth ira"
+ }
+}

@@ -351,5 +351,6 @@ class Orchestrator:
         # part). dict.fromkeys dedupes ids that are in both the interleave and the tail.
         res.doc_ids = list(dict.fromkeys(interleave(sub_lists, self.k) + tail))[: self.k]
         res.llm_calls, res.input_tokens, res.output_tokens = budget.calls, budget.input_tokens, budget.output_tokens
+        res.cached_input_tokens = budget.cached_input_tokens
         res.latency_s = time.perf_counter() - t0
         return res

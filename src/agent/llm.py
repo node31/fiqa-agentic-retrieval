@@ -86,6 +86,10 @@ class LLMResult:
     output_tokens: int
     latency_s: float
     cached: bool = False
+    # Input tokens the PROVIDER served from its own prompt cache (Azure/OpenAI report this in
+    # usage.input_tokens_details.cached_tokens and bill them at a discount). Different from ``cached``
+    # above, which is OUR disk cache. 0 for backends that do not report it.
+    cached_input_tokens: int = 0
 
     @property
     def cost_usd(self) -> float:
@@ -122,7 +126,7 @@ class Budget:
 
     def __init__(self, max_calls: int = 6, max_tokens: int = 12_000):
         self.max_calls, self.max_tokens = max_calls, max_tokens
-        self.calls = self.input_tokens = self.output_tokens = 0
+        self.calls = self.input_tokens = self.output_tokens = self.cached_input_tokens = 0
         # WHY a lock: check-then-increment in reserve() must be atomic, or two threads could
         # both see "1 call left" and both proceed.
         self._lock = threading.Lock()
@@ -149,6 +153,7 @@ class Budget:
         with self._lock:
             self.input_tokens += res.input_tokens
             self.output_tokens += res.output_tokens
+            self.cached_input_tokens += res.cached_input_tokens
 
 
 class LLM:
@@ -185,12 +190,13 @@ class LLM:
         path = CACHE_DIR / self.backend / f"{key}.json"
         if self.use_cache and path.exists():
             d = json.loads(path.read_text(encoding="utf-8"))
-            res = LLMResult(d["text"], d["input_tokens"], d["output_tokens"], d["latency_s"], cached=True)
+            res = LLMResult(d["text"], d["input_tokens"], d["output_tokens"], d["latency_s"], cached=True,
+                            cached_input_tokens=d.get("cached_input_tokens", 0))
         else:
             # Step c: cache miss -> really call the backend and time it.
             t0 = time.perf_counter()
-            text, tin, tout = self._call(system, user, max_output_tokens)
-            res = LLMResult(text, tin, tout, time.perf_counter() - t0)
+            text, tin, tout, *extra = self._call(system, user, max_output_tokens)  # extra: provider-cached tokens
+            res = LLMResult(text, tin, tout, time.perf_counter() - t0, cached_input_tokens=extra[0] if extra else 0)
             if self.use_cache:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 # res.__dict__ holds exactly the dataclass fields (text, tokens, latency, cached).
@@ -347,8 +353,12 @@ class AzureLLM(LLM):
         r = self.client.responses.create(model=self.model, instructions=system, input=user,
                                          max_output_tokens=max_output_tokens, **kw)
         # Unlike the other backends, these token counts are EXACT (billed by the service).
+        # cached_tokens: the part of the input the service served from its prompt cache. It only kicks
+        # in for prompts of 1,024+ tokens that share an identical prefix with a recent call, which is why
+        # every prompt here puts the fixed system prompt first and appends new searches at the END.
         u = r.usage
-        return r.output_text or "", u.input_tokens, u.output_tokens
+        details = getattr(u, "input_tokens_details", None)
+        return r.output_text or "", u.input_tokens, u.output_tokens, int(getattr(details, "cached_tokens", 0) or 0)
 
 
 def get_llm(backend: str | None = None, confirm_spend: bool = False, responder=None) -> LLM:

@@ -57,6 +57,11 @@ def heuristic_responder(system: str, user: str) -> str:
         n_searches = len(re.findall(r"^Search \d+", user, re.M))
         if len(parts) > 1 and n_searches < len(parts) and "LAST action" not in system:
             return json.dumps({"action": "search", "query": parts[n_searches], "strategy": "hybrid"})
+        if '"confidence"' in system:
+            # The cascade's cheap tier: pick the first 5 ids shown; confident only for one-topic questions,
+            # so tests see both outcomes (kept, escalated).
+            ids = re.findall(r"^\[([^\]]+)\]", user, re.M)[:5]
+            return json.dumps({"action": "finish", "doc_ids": ids, "confidence": "high" if len(parts) == 1 else "low"})
         return json.dumps({"action": "finish", "doc_ids": []})  # [] = keep the fused ranking
     # Fail loudly: a new prompt role needs a matching fake policy.
     raise ValueError(f"fake LLM has no policy for role {role!r}")

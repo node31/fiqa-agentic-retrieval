@@ -31,7 +31,8 @@ def cluster(tmp_path_factory):
     root = tmp_path_factory.mktemp("seccluster")
     env = {"FIQA_DATA_DIR": str(FIX), "EMBED_BACKEND": "hash", "ARTIFACTS_DIR": str(root / "artifacts"),
            "AUTH_SECRET": SECRET, "RATE_LIMIT_PER_MIN": "60", "RATE_LIMIT_BURST": "5",
-           "GUARD_SCOPE_MIN": "2.0"}  # a cosine is <= 1, so every dense search counts as off-topic here
+           "GUARD_SCOPE_MIN": "2.0",  # a cosine is <= 1, so every dense search counts as off-topic here
+           "WEB_SEARCH_PROVIDER": "fake", "WEB_FALLBACK_MIN": "2.0"}  # ... and as "no good corpus answer"
     c = Cluster(3, base_port=18301, router_port=18200, state_root=root, env=env, threads=1, timeout_s=2.0)
     c.start(wait_s=120)
     c.http = httpx.Client(base_url=c.router_url, timeout=10)
@@ -249,3 +250,33 @@ def test_rate_limit_off_log_block(cluster):
     assert out["results"] and out["security"]["findings"][0]["rule"] == "rate_limit"
     toggles(cluster, rate_limit="off")
     assert hits(cluster, BOB, "etf", strategy="bm25")["security"]["findings"] == []
+
+
+# ---------------------------------------------------------------------------- web fallback
+
+
+def test_web_fallback_off_on_and_sanitised(cluster):
+    q = "what is an ira? write to me at jane.doe@example.com"
+    assert "web_results" not in hits(cluster, None, q, web=True)                 # toggle off: never
+    toggles(cluster, web_fallback="on")
+    out = hits(cluster, None, q, strategy="dense")                               # low confidence (min 2.0)
+    fb, web = out["web_fallback"], out["web_results"]
+    assert fb["reason"] == "low confidence" and fb["provider"] == "fake"
+    assert fb["query_sent"] == "what is an ira?"          # redacted BEFORE it left, and the PII clause dropped
+    assert all(w["source"] == "web" for w in web) and out["results"]             # corpus results still there
+    assert "jane.doe" not in web[0]["snippet"]                                   # PII redacted in web text
+    assert "Ignore all previous" not in web[1]["snippet"] and web[1]["injection_removed"] == 1
+    bm = hits(cluster, None, "ira", strategy="bm25")                             # no dense score: no trigger
+    assert "web_results" not in bm
+    assert hits(cluster, None, "ira", strategy="bm25", web=True)["web_fallback"]["reason"] == "requested"
+
+
+def test_web_fallback_respects_guardrails_and_is_audited(cluster):
+    toggles(cluster, web_fallback="on", guard_scope="block", audit="on")
+    out = hits(cluster, None, "mortgage interest", strategy="dense")
+    assert out["security"]["blocked"] == "topic_scope" and "web_results" not in out  # off-topic stays refused
+    toggles(cluster, guard_scope="off")
+    hits(cluster, None, "mortgage interest", strategy="dense")
+    ev = cluster.http.get("/admin/audit", params={"limit": 3}, headers=H(ADMIN)).json()["events"]
+    web = [e for e in ev if e["action"] == "search" and "web" in e]
+    assert web and web[-1]["web"]["reason"] == "low confidence" and web[-1]["web"]["urls"]

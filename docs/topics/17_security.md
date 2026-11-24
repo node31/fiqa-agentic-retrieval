@@ -249,8 +249,8 @@ then restricts both indexes before it picks its top-k:
 #### A worked example: six documents, two tenants
 
 The same classes the shards use, on six tiny documents. Odd ids belong to acme (alice), even ids to globex (bob).
-"mortgage" is common in globex's documents and rare in acme's. Run it from the repo root; it needs the MiniLM
-weights, which `make setup` already downloaded.
+"mortgage" is common in globex's documents and rare in acme's. Run it from the repo root; the dense half needs the
+MiniLM weights, which `make index` downloads.
 
 ```python
 import numpy as np
@@ -411,6 +411,47 @@ snippets, so its LLM never sees the raw data.
 Regexes miss names and street addresses. For those I would add a named-entity model (Presidio with spaCy) behind the
 same `redact` function.
 
+#### Where pii.py runs
+
+Not in the shards and not in the index. It runs in four places, all on the way out of something:
+
+| where | what it redacts | when |
+|---|---|---|
+| the router, `Policy.post_search()` | the passage text a search returns | while `pii_redaction` is on |
+| the router, `Policy.audit()` | the question, before the audit line is written | always |
+| the router, `web_fallback()` | the question before it is sent to the web provider (the clause that held the PII is dropped too), and the titles and snippets that come back | always |
+| the A2A server, `MemoryStore.remember_*` | a conversation turn or a user fact, before it is stored | always |
+
+The question itself is not redacted before the search: the shards need the real words to find anything, and they
+never store questions.
+
+#### A worked example
+
+```python
+from src.security import pii
+
+for s in ["mail jane.doe@example.com or call +1 415 555 0123",
+          "card 4111 1111 1111 1111 vs order 1234 5678 9012 3456",
+          "IBAN GB82 WEST 1234 5698 7654 32 vs GB00 WEST 1234 5698 7654 32",
+          "SSN 123-45-6789, server 192.168.1.20",
+          "I paid $1,250,000.00 for 2,000 shares in 2015"]:
+    print(pii.redact(s))
+```
+
+```
+('mail [EMAIL] or call [PHONE]', {'EMAIL': 1, 'PHONE': 1})
+('card [CARD] vs order 1234 5678 9012 3456', {'CARD': 1})
+('IBAN [IBAN] vs GB00 WEST 1234 5698 7654 32', {'IBAN': 1})
+('SSN [SSN], server [IP]', {'SSN': 1, 'IP': 1})
+('I paid $1,250,000.00 for 2,000 shares in 2015', {})
+```
+
+The second and third lines are why the checksums are there. 4111 1111 1111 1111 passes the Luhn check (it is a
+standard test card number) and 1234 5678 9012 3456 doesn't, so only the first is a card. The two IBANs differ only in
+their check digits: GB82 passes mod 97, GB00 doesn't. The last line is the case that matters most in a finance
+corpus: amounts, share counts and years are long numbers too, and none of them is touched. Steps 1 to 5 below do
+the same through the API with a document alice writes.
+
 **Check it yourself**
 
 1. `toggle '{"identity":"on"}'`. alice writes a doc with personal data in it:
@@ -451,6 +492,56 @@ when audit is off.
 
 The chain detects edits but cannot stop someone with write access from rewriting the whole file and recomputing every
 hash. Section 7 has the fix.
+
+#### A worked example: the hash chain
+
+```python
+import json, tempfile
+from pathlib import Path
+from src.security.audit import AuditLog
+
+path = Path(tempfile.mkdtemp()) / "audit.jsonl"
+log = AuditLog(path)
+for user, action in [("alice", "search"), ("bob", "upsert"), ("alice", "delete")]:
+    log.append({"user": user, "action": action})
+for line in path.read_text().splitlines():
+    r = json.loads(line)
+    print(r["seq"], r["user"], r["action"], "prev", r["prev"][:8], "hash", r["hash"][:8])
+print("untouched:", log.verify())
+lines = path.read_text().splitlines()
+
+def attempt(name, new_lines):
+    path.write_text("\n".join(new_lines) + "\n")
+    print(f"{name:34}", log.verify())
+
+attempt("edit line 2 (bob -> mallory):", [lines[0], lines[1].replace('"bob"', '"mallory"'), lines[2]])
+attempt("delete line 2:", [lines[0], lines[2]])
+attempt("swap lines 2 and 3:", [lines[0], lines[2], lines[1]])
+attempt("delete the last line:", lines[:2])
+```
+
+```
+1 alice search prev 00000000 hash e0369d46
+2 bob upsert prev e0369d46 hash 4aa7099f
+3 alice delete prev 4aa7099f hash fd0a4b64
+untouched: {'ok': True, 'lines': 3}
+edit line 2 (bob -> mallory):      {'ok': False, 'first_bad_seq': 2, 'reason': 'hash mismatch'}
+delete line 2:                     {'ok': False, 'first_bad_seq': 3, 'reason': 'broken link'}
+swap lines 2 and 3:                {'ok': False, 'first_bad_seq': 3, 'reason': 'broken link'}
+delete the last line:              {'ok': True, 'lines': 2}
+```
+
+(Your hashes differ: each line includes its timestamp.) Each line's `prev` is the line before's `hash`, and the
+first line points to 64 zeros. `hash` is the SHA-256 of the line's JSON without the `hash` field, keys sorted, so it
+covers `prev` as well:
+
+- Editing line 2 changes its content, so its recomputed hash no longer matches the stored one: "hash mismatch" at
+  seq 2.
+- Deleting line 2 leaves line 3 pointing at a hash that is no longer in the file: "broken link" at seq 3.
+- Swapping lines 2 and 3 puts line 3 right after line 1, but its `prev` names line 2: "broken link" at seq 3.
+- Deleting the last line is not detected. Nothing comes after it to point at it. The same goes for rewriting the
+  whole file and recomputing every hash. Both need the latest hash kept somewhere the writer can't reach, which is
+  the fix in section 7.
 
 **Check it yourself**
 

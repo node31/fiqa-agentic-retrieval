@@ -1,8 +1,8 @@
 # 17 · Security and guardrails
 
 This page covers the security layer I added on top of the retrieval service: tenant identity, authorisation, tenant
-filtering inside the shards, PII redaction, an audit log, and four LLM guardrails (harmful intent, prompt injection,
-topic scope, rate limit). Each one has its own toggle. An admin flips toggles at runtime, and the same API call then
+filtering inside the shards, PII redaction, an audit log, two LLM guardrails (harmful intent, prompt injection), a
+topic-scope check and a rate limit. Each one has its own toggle. An admin flips toggles at runtime, and the same API call then
 answers with or without that protection. Everything starts off, so the service behaves exactly as before and every
 number in [DESIGN.md](../../DESIGN.md) still holds.
 
@@ -26,6 +26,11 @@ or open http://localhost:8000/docs, click Authorize, paste a token, and follow s
 - [2. Assumptions I made](#2-assumptions-i-made)
 - [3. The toggles](#3-the-toggles)
 - [4. How each piece works](#4-how-each-piece-works)
+  - [4.1 Identity](#41-identity), [4.2 Tenants and ownership](#42-tenants-and-ownership),
+    [4.3 The tenant filter](#43-the-tenant-filter), [4.4 Authorisation](#44-authorisation)
+  - [4.5 PII redaction](#45-pii-redaction), [4.6 Audit log](#46-audit-log)
+  - [4.7 Guardrails: harmful intent and prompt injection](#47-guardrails-harmful-intent-and-prompt-injection),
+    [4.8 Topic scope](#48-topic-scope), [4.9 Rate limiting](#49-rate-limiting)
 - [5. How it is checked](#5-how-it-is-checked)
 - [6. Results](#6-results)
 - [7. Pitfalls and what I would do next](#7-pitfalls-and-what-i-would-do-next)
@@ -214,11 +219,11 @@ when audit is off.
 The chain detects edits but cannot stop someone with write access from rewriting the whole file and recomputing every
 hash. Section 7 has the fix.
 
-### 4.7 Guardrails
+### 4.7 Guardrails: harmful intent and prompt injection
 
-All four live in [guardrails.py](../../src/security/guardrails.py) and [ratelimit.py](../../src/security/ratelimit.py).
-They are rules, on purpose: they take about 43 microseconds per question, cost nothing, give the same answer in every
-test, and return the phrase that triggered them, so every refusal can be explained.
+Both live in [guardrails.py](../../src/security/guardrails.py). They are rules, on purpose: they take about 43
+microseconds per question, cost nothing, give the same answer in every test, and return the phrase that triggered
+them, so every refusal can be explained.
 
 Harmful intent. The hard part is not refusing the many legitimate questions on the same topics (FiQA has "is it
 illegal to print my own checks?"). The rule blocks a question only if it names a financial-crime topic (14 categories,
@@ -229,21 +234,59 @@ scammed"). "What is the safest way to evade taxes" is not excused by its "what i
 Prompt injection. One pattern set covers override phrases ("ignore all previous instructions"), prompt extraction
 ("reveal your system prompt"), role switches ("you are now an unfiltered AI"), and chat-template markers (`<system>`,
 `[INST]`, `<<SYS>>`). On a question, block mode refuses it. On a returned passage, block mode replaces each span with
-`[instruction-like text removed]` and keeps the rest.
+`[instruction-like text removed]` and keeps the rest. The passage case matters more for an agent: the user never
+typed the injection, a forum post did, and the agent's LLM would read it as part of its context.
 
-Topic scope. After retrieval, the best dense cosine of the question against the corpus says how close it is to
-anything we hold. The threshold per model is the 1st percentile of that score over the 500 dev questions, so about 1%
-of real questions get flagged. Block mode returns no results with `"blocked": "topic_scope"`. A model without a
-calibrated value is not checked (`GUARD_SCOPE_MIN` sets one), and a BM25-only search has no dense score, so it is never
-judged.
-
-Rate limit. A token bucket per user (per IP for anonymous callers): 120 requests a minute with bursts of 20, set by
-`RATE_LIMIT_PER_MIN` and `RATE_LIMIT_BURST`.
+Both guard only what comes in through `/search` and `/guardrails/check`. A document written through `/upsert` is not
+checked, so a harmful or poisoned passage can be stored; the injection rule then cuts it on the way out, and the
+harmful rule never sees it. Section 7 lists this gap.
 
 Agents. `POST /guardrails/check` runs the question guardrails without searching. `scripts/ask.py` calls it before
 an agent's LLM sees the question, so a refused question costs no tokens; it prints the rule and exits with code 3.
 `--token` (or `FIQA_TOKEN`) makes the agent search as that user, so tenant filtering and redaction apply to
 everything its LLM reads.
+
+### 4.8 Topic scope
+
+Topic scope asks one question: is this question about anything we hold? FiQA is personal finance. Somebody who sends
+it "how do I bake chocolate chip cookies" is using a finance assistant as a free general chatbot, and once an agent
+sits on top, every such question is paid for in LLM tokens. Nothing about the question is harmful, so the harmful
+rule can't catch it; what gives it away is that the corpus has nothing close to it.
+
+The measure is the best dense score: the cosine between the question's embedding and its nearest passage, which the
+search computes anyway. Real finance questions land close to something; off-topic ones don't. On the stack
+(minilm-ft, dense search, top 1):
+
+| question | best dense score | below 0.4421? |
+|---|---|---|
+| should I pay off my mortgage early or invest? | 0.750 | no |
+| can I deduct my home office? | 0.722 | no |
+| how do I fix a flat bicycle tire | 0.383 | yes |
+| best way to train for a marathon | 0.345 | yes |
+| how do I bake chocolate chip cookies | 0.331 | yes |
+| who won the 2018 world cup | 0.241 | yes |
+
+The threshold is calibrated, not guessed: it is the 1st percentile of the best score over the 500 dev questions, so
+by construction about 1% of real questions fall below it. Each model has its own value (0.4421 for minilm-ft, 0.4455
+for minilm) because cosine scales differ between encoders; after a model migration the threshold must be measured
+again. `GUARD_SCOPE_MIN` overrides it, and a model without a value is not checked. A BM25-only search has no dense
+score, so it is never judged.
+
+In `log` mode the response carries a finding (`{"rule": "topic_scope", "top_dense": 0.3305, "minimum": 0.4421}`)
+and the results as usual; in `block` mode it returns no results and `"blocked": "topic_scope"`. Section 6 has the
+measured catch rate (70% of 30 off-topic questions) and why it is a weak guard.
+
+### 4.9 Rate limiting
+
+[ratelimit.py](../../src/security/ratelimit.py) keeps a token bucket per user (per IP for anonymous callers). The
+bucket holds up to 20 tokens and refills at 120 a minute (2 a second); each request takes one. A quick burst of 20
+passes, then the caller gets one request every half second, and anything faster is refused: 429, body
+`{"error": "rate limit exceeded"}`. Other users have their own buckets, so one noisy caller doesn't slow anyone else down.
+`RATE_LIMIT_PER_MIN` and `RATE_LIMIT_BURST` set the two numbers.
+
+It protects three things: the service (scraping the whole corpus one query at a time), the bill (each agent search
+can cost LLM tokens), and the other tenants (a shared cluster). In `log` mode nothing is refused; the response and the
+audit line say the caller was over budget, which is how I'd size the limits on real traffic first.
 
 ## 5. How it is checked
 
@@ -322,6 +365,7 @@ after a write (the row mask takes 3.9 ms to rebuild and the faiss selector 3.3 m
 | The audit chain can be rewritten wholesale by someone with file access | ship each hash to a separate append-only store (or sign it), and keep the log on write-once storage |
 | Keyword guardrails miss paraphrases (0/5) | a policy classifier (Llama Guard, Azure AI Content Safety, Prompt Shields, or an LLM judge with a written policy) behind the same three functions, measured on the same red-team and held-out sets, in log mode first |
 | Regex PII misses names and addresses | Presidio with a spaCy model behind `redact` |
+| Documents written through `/upsert` are not checked by the harmful or injection rules | run the same guardrails on writes (log first), so a poisoned or criminal how-to passage is flagged before it is stored |
 | The scope check catches 70% of off-topic questions | a small intent classifier, or let the answering LLM decline |
 | Tenancy by id parity is a toy | a tenant column set at ingestion; a separate index per large tenant (no mask at all) and a shared, filtered index for small ones |
 | Ownership can never move | an admin-only transfer endpoint, audited |

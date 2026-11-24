@@ -261,6 +261,7 @@ def test_coordinator_delegates_each_part_as_the_caller():
         alice.send("what is a roth ira?", skill="retrieve")
     assert e.value.code == P.INVALID_PARAMS
 
+
 def test_ui_page_and_demo_logins_are_off_unless_asked_for():
     tc, _ = make()
     assert "SendMessage" in tc.get("/ui").text

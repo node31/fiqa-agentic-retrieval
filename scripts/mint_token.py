@@ -27,7 +27,7 @@ if str(ROOT) not in sys.path:
 from src.security import tokens  # noqa: E402
 from src.security.tenants import ALL  # noqa: E402
 
-# The demo users from docs/design/SECURITY.md.
+# The demo users from docs/topics/17_security.md.
 USERS = {"alice": ("acme", "user"), "bob": ("globex", "user"), "admin": (ALL, "admin")}
 
 

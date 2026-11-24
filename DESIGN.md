@@ -530,7 +530,7 @@ What the traces showed:
 FiQA's 5,500 train questions have labelled answers that nothing used. I fine-tuned all-MiniLM-L6-v2 on them
 (`scripts/finetune.py`, `make finetune`) and registered the result as a third model, `minilm-ft`. Training is the
 offline path; putting it into service is the B3 migration (6.7) with no new serving code. The full walkthrough, with a
-toy example of the loss, is [docs/topics/17_fine_tuning.md](docs/topics/17_fine_tuning.md).
+toy example of the loss, is [docs/topics/18_fine_tuning.md](docs/topics/18_fine_tuning.md).
 
 ```mermaid
 flowchart LR
@@ -588,7 +588,7 @@ Shard readiness and progress per model are visible in `/admin/status` through ea
 
 Every endpoint accepts `Authorization: Bearer <token>` ([scripts/mint_token.py](scripts/mint_token.py)). What the token is
 needed for, and what each security toggle adds to the requests and responses above (401, 403 and 429, a `security`
-block and a `tenant` per hit), is in [docs/design/SECURITY.md](docs/design/SECURITY.md). With every toggle off, the
+block and a `tenant` per hit), is in [docs/topics/17_security.md](docs/topics/17_security.md). With every toggle off, the
 default, the API is exactly as in this table.
 
 ### Shard (`src/service/shard_server.py`, port 8101 in Docker, 8101 to 8103 locally)
@@ -672,7 +672,7 @@ and global-IDF guarantees would be lost.
 | planner splits some plain questions | those 7 lost recall (0.824 → 0.514) |
 | a failed worker's half loses its slots | the surviving sub-query fills all 10 slots |
 | agent quality depends on the model | the haiku and gpt-6-sol runs led to different routing decisions |
-| shards trust the router | with security on, anything inside the Docker network can still call a shard directly ([SECURITY.md](docs/design/SECURITY.md) section 7) |
+| shards trust the router | with security on, anything inside the Docker network can still call a shard directly ([SECURITY.md](docs/topics/17_security.md) section 7) |
 
 ## 11. Results
 
@@ -794,7 +794,7 @@ scaling, writes and agents), is in [docs/design/EXTENSIONS.md](docs/design/EXTEN
    done: section 6.12.)
 
 Security and LLM guardrails are built, each behind its own runtime toggle and off by default:
-[docs/design/SECURITY.md](docs/design/SECURITY.md) has the threat model, how each piece works, how it is checked, and
+[docs/topics/17_security.md](docs/topics/17_security.md) has the threat model, how each piece works, how it is checked, and
 its own list of next steps.
 
 LLM cost optimizations and a web fallback are built too ([docs/design/LLM_OPTIMIZATIONS.md](docs/design/LLM_OPTIMIZATIONS.md)):

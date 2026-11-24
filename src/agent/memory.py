@@ -17,7 +17,7 @@ TWO KINDS (the usual split in agent frameworks)
     >>> contextualize(m, "globex", "alice", "ctx-1", "can I withdraw from it early?")["query"]   # other tenant
     'can I withdraw from it early?'
 
-PRIVACY RULES (the same ones the retrieval service follows, docs/design/SECURITY.md)
+PRIVACY RULES (the same ones the retrieval service follows, docs/topics/17_security.md)
     * Only an IDENTIFIED user has memory (a verified token's tenant + user). Anonymous callers get none:
       there is nobody to attribute it to, and nobody who could ask to see or delete it.
     * Everything is PII-redacted BEFORE it is stored. "my email is jane@x.com" is kept as

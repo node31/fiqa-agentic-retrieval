@@ -33,7 +33,7 @@ TENANTS
     Entries are stored with the caller's tenant and only match the same tenant, so a cached answer built
     from acme's documents is never served to globex (the same rule as the tenant filter).
 
-NOT HANDLED (on purpose, see docs/topics/18_llm_cost_and_fallback.md)
+NOT HANDLED (on purpose, see docs/topics/19_llm_cost_and_fallback.md)
     Staleness: a cached answer does not notice that the corpus changed since. Production would expire
     entries by age or bump a corpus version on every write and key on it.
 """

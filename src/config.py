@@ -99,7 +99,7 @@ MODELS: dict[str, ModelSpec] = {
     # MiniLM fine-tuned on the FiQA TRAIN split (scripts/finetune.py, `make finetune`).
     # Same architecture and size as "minilm", so encode cost and memory are the same; only the
     # weights differ. The folder is gitignored: rebuild it, or unzip minilm_ft_artifacts.zip
-    # from the GitHub release. docs/topics/17_fine_tuning.md explains the training.
+    # from the GitHub release. docs/topics/18_fine_tuning.md explains the training.
     "minilm-ft": ModelSpec("minilm-ft", "artifacts/models/minilm-ft", 384),
 }
 

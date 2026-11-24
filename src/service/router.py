@@ -126,7 +126,7 @@ def dispatch(store, op: str, p: dict) -> dict:
         # took_ms = this shard's own compute time; the router subtracts it from the round-trip
         # time to estimate network + queueing (the per-query time split in Router.search).
         t = time.perf_counter()
-        # tenant (optional): search only that tenant's docs (docs/design/SECURITY.md, tenant_filter).
+        # tenant (optional): search only that tenant's docs (docs/topics/17_security.md, tenant_filter).
         out = store.search(p["terms"], p["k"], p.get("stats"), p.get("vector"), p.get("model"), p.get("tenant"))
         return {**out, "took_ms": round((time.perf_counter() - t) * 1e3, 2)}
     if op == "docs":
@@ -603,10 +603,10 @@ def create_app():
     Env vars: SHARD_URLS (comma list, in shard-id order), ACTIVE_MODEL (ignored if
     ROUTER_STATE already exists), FAILURE_POLICY, BM25_STATS, ROUTER_STATE (JSON path),
     SHARD_TIMEOUT_S (read by src.config). cluster.py / docker-compose set them.
-    Security (docs/design/SECURITY.md): SECURITY_STATE (toggle file, default next to ROUTER_STATE),
+    Security (docs/topics/17_security.md): SECURITY_STATE (toggle file, default next to ROUTER_STATE),
     AUDIT_LOG (default audit.jsonl next to it), AUTH_SECRET (token key), SECURITY_<FEATURE> (starting
     toggle values), RATE_LIMIT_PER_MIN / RATE_LIMIT_BURST, GUARD_SCOPE_MIN.
-    Web fallback (docs/topics/18_llm_cost_and_fallback.md): WEB_SEARCH_PROVIDER (wikipedia | fake),
+    Web fallback (docs/topics/19_llm_cost_and_fallback.md): WEB_SEARCH_PROVIDER (wikipedia | fake),
     WEB_FALLBACK_MIN (best dense score below which the corpus counts as "no good answer").
 
     PITFALL: the request models above live at MODULE level. With

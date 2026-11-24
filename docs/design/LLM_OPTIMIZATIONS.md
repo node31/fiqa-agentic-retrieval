@@ -9,8 +9,8 @@ for questions the corpus can't answer:
 4. **context trimming** in the cheap tier, and reporting of the provider's **prompt caching**.
 
 Each section says how to use it, what I measured, and what I learned. The concepts, with toy examples, are in
-[docs/topics/18_llm_cost_and_fallback.md](../topics/18_llm_cost_and_fallback.md). The web fallback is also a security
-decision (the question leaves the system), so it has a toggle like the ones in [SECURITY.md](SECURITY.md).
+[docs/topics/19_llm_cost_and_fallback.md](../topics/19_llm_cost_and_fallback.md). The web fallback is also a security
+decision (the question leaves the system), so it has a toggle like the ones in [SECURITY.md](../topics/17_security.md).
 
 ```mermaid
 flowchart LR

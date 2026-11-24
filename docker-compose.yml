@@ -68,7 +68,7 @@ services:
       SHARD_TIMEOUT_S: "0.5"
       TORCH_THREADS: "4"
       OMP_NUM_THREADS: "4"
-      # Security (docs/design/SECURITY.md). Every toggle starts off; an admin flips them at runtime via
+      # Security (docs/topics/17_security.md). Every toggle starts off; an admin flips them at runtime via
       # POST /admin/security, and the choice is saved in SECURITY_STATE. AUTH_SECRET signs the tokens
       # (scripts/mint_token.py on the host uses the same default); set your own outside a laptop demo.
       AUTH_SECRET: ${AUTH_SECRET:-dev-only-secret-change-me}

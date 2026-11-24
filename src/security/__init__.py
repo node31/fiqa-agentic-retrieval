@@ -1,6 +1,6 @@
 """Security and LLM guardrails for the retrieval service. Every feature has its own runtime toggle.
 
-Read docs/design/SECURITY.md first: threat model, how each piece works, how it is checked.
+Read docs/topics/17_security.md first: threat model, how each piece works, how it is checked.
 
     tenants.py     who owns which document (odd doc ids -> "acme", even -> "globex")
     tokens.py      signed identity tokens (JWT, HS256), written out by hand

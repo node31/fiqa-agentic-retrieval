@@ -1,6 +1,6 @@
 """Fine-tune all-MiniLM-L6-v2 on the FiQA TRAIN split -> artifacts/models/minilm-ft ("minilm-ft").
 
-Easier to read, with a toy example: docs/topics/17_fine_tuning.md
+Easier to read, with a toy example: docs/topics/18_fine_tuning.md
 
 WHAT (the offline path; the online path is the normal B3 migration: make migrate MODEL=minilm-ft)
     1. split    the 5,500 train questions into 5,000 for training and 500 "train-val" questions used

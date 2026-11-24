@@ -26,7 +26,7 @@ WHAT IT PRINTS
                             the strong tier found little, it asks the router for web results ("web": true),
                             which the admin must have allowed with the web_fallback toggle.
 
-SECURITY (docs/design/SECURITY.md)
+SECURITY (docs/topics/17_security.md)
     With --url, ``--token`` (or env FIQA_TOKEN) makes every search run as that user: once an admin turns on
     identity and tenant_filter, the agent only sees that tenant's passages. Before an agent's LLM sees the
     question, the router's guardrails check it (POST /guardrails/check): a refused question is never sent

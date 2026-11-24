@@ -1,6 +1,6 @@
 """Web search fallback: when the corpus has nothing good for a question, look on the web.
 
-WHEN IT RUNS (router, /search, toggle ``web_fallback``; docs/topics/18_llm_cost_and_fallback.md)
+WHEN IT RUNS (router, /search, toggle ``web_fallback``; docs/topics/19_llm_cost_and_fallback.md)
     * low confidence: the best dense score is below the calibrated threshold (the same one guard_scope
       uses: ~1% of real dev questions fall below it), or the search found nothing at all;
     * on request: the caller sets ``"web": true``, e.g. an agent whose strong tier still said "low

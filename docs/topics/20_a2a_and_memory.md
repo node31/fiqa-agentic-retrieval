@@ -1,4 +1,4 @@
-# 19 · Agents talking to agents (A2A), and agents that remember
+# 20 · Agents talking to agents (A2A), and agents that remember
 
 Until now every agent in this repo was a Python function: `run_single_agent(question, llm, tool)`. Two things change
 when agents become services that other agents use, and that people talk to more than once:

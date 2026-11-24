@@ -10,7 +10,7 @@ in [DESIGN.md](DESIGN.md), also as a [Word document](docs/design/DESIGN.docx) an
 [slides](docs/design/DESIGN.pptx). What I'd add next, task by task, as the engineering lead is in
 [docs/design/EXTENSIONS.md](docs/design/EXTENSIONS.md). Security (tenant identity, authorisation, tenant filtering inside
 the shards, PII redaction, an audit log) and LLM guardrails (harmful intent, prompt injection, topic scope, rate
-limit), each behind its own runtime toggle and all off by default, are in [docs/design/SECURITY.md](docs/design/SECURITY.md).
+limit), each behind its own runtime toggle and all off by default, are in [docs/topics/17_security.md](docs/topics/17_security.md).
 LLM cost optimizations (a model cascade, a semantic cache, context trimming) and a web search fallback for questions
 the corpus can't answer, with how to use each and what it measured, are in
 [docs/design/LLM_OPTIMIZATIONS.md](docs/design/LLM_OPTIMIZATIONS.md). The agents also run as an A2A (Agent2Agent
@@ -119,7 +119,7 @@ The sharded service gives exactly the single-node quality (0.0% difference) for 
 Fine-tuning MiniLM on the 5,500 FiQA train questions (`make finetune`, about 2.7 h on CPU) raised hybrid nDCG@10 by
 +0.028 on dev (95% CI +0.016 to +0.040) and by +0.039 on the test split, run once: 0.3968 → **0.4358**. The running
 cluster switched to it with the zero-downtime migration (426 queries during the switch, 0 failed). How it works and
-every number: [docs/topics/17_fine_tuning.md](docs/topics/17_fine_tuning.md).
+every number: [docs/topics/18_fine_tuning.md](docs/topics/18_fine_tuning.md).
 \* Measured on a busier day than the rows above: MiniLM through the same 3-shard setup measured 35.6 / 49.6 ms in the
 same session. Only the weights differ, so the encode cost is the same.
 
@@ -234,7 +234,7 @@ src/            search.py (CLI) · eval.py · metrics.py · config.py · beir_da
 data/           build_compound.py · compound_dev.jsonl · compound_rewrites.json · compound_review_sheet.md · guardrails_redteam.jsonl · guardrails_heldout.jsonl · paraphrases_plain.jsonl (semantic cache eval) · followups_plain.jsonl (memory eval)
 scripts/        ask.py (one question) · api_docs.py (API page with examples) · bench.py · ablations.py · failure_cases.py · migration.py · query_load.py · migration_demo.py · agent_eval.py · scenario.py (+ replay_html.py, run_simple_scenarios.py)
                 write_load.py (sync vs async) · docker_check.py · docker_trace.py · bootstrap.sh / bootstrap.ps1
-                mint_token.py · security_demo.py · guardrails_eval.py (security, docs/design/SECURITY.md)
+                mint_token.py · security_demo.py · guardrails_eval.py (security, docs/topics/17_security.md)
                 cascade_policies.py · semantic_cache_eval.py · web_fallback_eval.py (docs/design/LLM_OPTIMIZATIONS.md)
                 a2a_demo.py · memory_eval.py (docs/design/A2A_AND_MEMORY.md)
 scenarios/      SimpleScenarios/ (8 CSV stories + template + recorded results) · ComplexScenarios/ (JSONL: freshness, migration, shard failure, ...)
@@ -243,7 +243,7 @@ results/        bench.json · runs/ (incl. the one TEST run) · ablation_*.json 
 examples/       small standalone scripts
 FIQA_RETRIEVAL_TASKS.md  the task spec: parts A-C, constraints, deliverables
 AGENTS.md       how to set up, test and work in the repo (for coding agents)
-docs/           topics/ (00-19, one concept each) · from_zero/ (the whole system from scratch) · walkthroughs/ (eval, Part A/B results) · guides/ (scenarios, manual tests) · faq/ (concepts, this project) · design/ (DESIGN.docx, DESIGN.pptx, EXTENSIONS.md, SECURITY.md, LLM_OPTIMIZATIONS.md, A2A_AND_MEMORY.md) · assets/
+docs/           topics/ (00-20, one concept each) · from_zero/ (the whole system from scratch) · walkthroughs/ (eval, Part A/B results) · guides/ (scenarios, manual tests) · faq/ (concepts, this project) · design/ (DESIGN.docx, DESIGN.pptx, EXTENSIONS.md, SECURITY.md, LLM_OPTIMIZATIONS.md, A2A_AND_MEMORY.md) · assets/
 ```
 
 ## Measured on

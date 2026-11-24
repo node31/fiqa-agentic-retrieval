@@ -1,5 +1,5 @@
 """The toggle matrix: the SAME API calls against real processes (3 shards + router), each security toggle
-flipped on and off at runtime by an admin, and the answers change exactly as docs/design/SECURITY.md says.
+flipped on and off at runtime by an admin, and the answers change exactly as docs/topics/17_security.md says.
 
 Fixture corpus: 24 docs with ids 1..24, so acme owns 1, 3, 5, ... and globex 2, 4, 6, ...
 EMBED_BACKEND=hash, so no model download; the whole module takes ~20 s (most of it cluster startup).

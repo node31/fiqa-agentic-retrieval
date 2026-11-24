@@ -31,7 +31,7 @@ Each shard has a BM25 index, a dense index, a doc store and a *WAL* (write-ahead
 |---|---|---|
 | tokenizer + BM25 | `src/retrieval/bm25.py` | [01](01_lexical_retrieval_bm25.md) |
 | embeddings + vector index | `src/retrieval/dense.py` | [02](02_dense_retrieval.md), [03](03_vector_indexes.md) |
-| fine-tuning the embedder | `scripts/finetune.py` | [17](17_fine_tuning.md) |
+| fine-tuning the embedder | `scripts/finetune.py` | [18](18_fine_tuning.md) |
 | metrics | `src/metrics.py` | [04](04_ir_metrics.md) |
 | fusion | `src/retrieval/hybrid.py` | [05](05_hybrid_fusion.md), [16](16_ablations.md) |
 | reranker | `src/retrieval/rerank.py` | [06](06_reranking.md) |
@@ -40,8 +40,9 @@ Each shard has a BM25 index, a dense index, a doc store and a *WAL* (write-ahead
 | writes, WAL | `src/service/store.py`, `wal.py` | [09](09_live_updates_consistency.md) |
 | model migration | `ShardStore.start_build`, `Router.cutover` | [10](10_model_migration.md) |
 | LLM + agents | `src/agent/*` | [11](11_llm_tool_calling.md) to [14](14_agent_evaluation_cost.md) |
-| cascade, semantic cache, web fallback | `src/agent/cascade.py`, `semantic_cache.py`, `src/service/websearch.py` | [18](18_llm_cost_and_fallback.md) |
-| A2A service, agent memory | `src/a2a/`, `src/agent/memory.py` | [19](19_a2a_and_memory.md) |
+| cascade, semantic cache, web fallback | `src/agent/cascade.py`, `semantic_cache.py`, `src/service/websearch.py` | [19](19_llm_cost_and_fallback.md) |
+| tokens, tenants, PII, audit, guardrails | `src/security/*` | [17](17_security.md) |
+| A2A service, agent memory | `src/a2a/`, `src/agent/memory.py` | [20](20_a2a_and_memory.md) |
 
 Offline, `python -m src.index.build_index` embeds the corpus once per model (about 10 min for MiniLM, 18 min for
 bge-small on 32 cores). Each shard loads its slice (`crc32(doc_id) % 3`), builds BM25 in seconds and copies its vectors

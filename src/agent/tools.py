@@ -39,7 +39,7 @@ def http_search_fn(url: str, token: str | None = None) -> SearchFn:
 
     ``token``: a bearer token (scripts/mint_token.py), needed once the admin turns identity on. The agent
     then searches AS that user: with tenant_filter on it only ever sees that tenant's passages, and with
-    pii_redaction on the snippets its LLM reads are already redacted (docs/design/SECURITY.md).
+    pii_redaction on the snippets its LLM reads are already redacted (docs/topics/17_security.md).
     """
     import httpx
 

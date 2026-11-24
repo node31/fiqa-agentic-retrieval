@@ -10,7 +10,7 @@ This page covers two additions on top of the agents:
    redacted before it is stored, per-user isolation, an expiry date, and an API to read and delete it.
 
 The concepts, with toy examples you can run, are in
-[docs/topics/19_a2a_and_memory.md](../topics/19_a2a_and_memory.md). Code: `src/a2a/` (protocol, server, client)
+[docs/topics/20_a2a_and_memory.md](../topics/20_a2a_and_memory.md). Code: `src/a2a/` (protocol, server, client)
 and `src/agent/memory.py`.
 
 ```mermaid
@@ -68,7 +68,7 @@ Server options and environment:
 `src/a2a/server.py` is a separate FastAPI service in front of the router. The router stays a retrieval API, and
 the A2A server owns the LLM, the agents and their memory. It searches by calling the router's `/search` with the
 caller's bearer token, so the tenant filter, PII redaction, guardrails and audit of
-[SECURITY.md](SECURITY.md) apply to the agents unchanged.
+[SECURITY.md](../topics/17_security.md) apply to the agents unchanged.
 
 **The agent card** (`GET /.well-known/agent-card.json`) names one interface, JSON-RPC at `/a2a` with protocol
 version 1.0, a Bearer security scheme, and four skills:

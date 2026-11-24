@@ -40,7 +40,7 @@ WHY RULES AND NOT AN LLM JUDGE (yet)
    questions on the same topics refused, 10/10 injections caught, 0 of 6,648 real FiQA questions refused,
    and 0/5 of the paraphrases I wrote to dodge keywords caught. The production upgrade is a policy classifier
    (Llama Guard, Azure AI Content Safety, Prompt Shields, or an LLM judge with a written policy) behind the
-   same three functions, measured on the same sets. docs/design/SECURITY.md has the details.
+   same three functions, measured on the same sets. docs/topics/17_security.md has the details.
 """
 from __future__ import annotations
 

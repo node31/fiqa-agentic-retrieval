@@ -37,7 +37,7 @@ CRASH-ONLY RECOVERY
     down (partial results), and a restart rebuilds state from base corpus +
     WAL replay. Restart is the ONE recovery path, so it is the tested path.
 
-TENANTS (docs/design/SECURITY.md)
+TENANTS (docs/topics/17_security.md)
     owner     {doc_id: tenant}                 who owns each doc; KEPT after a delete (with the tombstone)
     Base-corpus docs belong to ``default_tenant(doc_id)`` (odd id -> acme, even -> globex). A new doc
     belongs to the tenant that first wrote it, and ownership never moves. The WAL record carries the

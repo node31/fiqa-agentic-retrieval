@@ -1,4 +1,4 @@
-# 18 · Paying less for LLM calls, and answering what the corpus can't
+# 19 · Paying less for LLM calls, and answering what the corpus can't
 
 Every agent question costs tokens. This note covers the ideas behind the four things I added to cut that cost (a
 model cascade, a semantic cache, context trimming, provider prompt caching) and the web fallback for questions the

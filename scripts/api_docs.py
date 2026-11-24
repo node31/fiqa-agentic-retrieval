@@ -54,7 +54,7 @@ owns the doc (`crc32(doc_id) % N`).
 Writes are kept in each shard's WAL, so they survive restarts. Use a new `doc_id` (or a higher `version`) when you
 repeat the tour.
 
-**Security** (docs/design/SECURITY.md; every feature is off until an admin switches it on):
+**Security** (docs/topics/17_security.md; every feature is off until an admin switches it on):
 
 7. Mint tokens: `python -m scripts.mint_token admin`, `... alice` (tenant acme), `... bob` (tenant globex).
    Click **Authorize** (top right), paste the admin token.

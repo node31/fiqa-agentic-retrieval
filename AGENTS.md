@@ -52,7 +52,7 @@ cached, and on Windows `PYTHONIOENCODING=utf-8`.
 
 Test clusters use their own ports (18000+, 19000+), so they can run while the dev cluster or Docker holds 8000.
 
-Security toggles ([docs/design/SECURITY.md](docs/design/SECURITY.md)) are all off by default and must be off for the
+Security toggles ([docs/topics/17_security.md](docs/topics/17_security.md)) are all off by default and must be off for the
 eval numbers and the Docker tour; `GET /admin/security` with an admin token shows them. That includes `web_fallback`,
 which sends questions to Wikipedia ([docs/design/LLM_OPTIMIZATIONS.md](docs/design/LLM_OPTIMIZATIONS.md)).
 

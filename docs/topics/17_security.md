@@ -1,4 +1,4 @@
-# Security and guardrails
+# 17 · Security and guardrails
 
 This page covers the security layer I added on top of the retrieval service: tenant identity, authorisation, tenant
 filtering inside the shards, PII redaction, an audit log, and four LLM guardrails (harmful intent, prompt injection,
@@ -92,7 +92,7 @@ The task left these open, and I was working on my own, so I picked a default for
 | `guard_injection` | off, log, block | flags or refuses (403) injected questions; flags, or cuts, instruction-like text in passages |
 | `guard_scope` | off, log, block | flags, or returns no results for, questions far from everything in the corpus |
 | `rate_limit` | off, log, block | flags, or refuses (429), callers over their budget (120 per minute, bursts of 20) |
-| `web_fallback` | off, on | when the corpus has no good answer (or the caller sends `"web": true`), also asks a web provider; see [LLM_OPTIMIZATIONS.md](LLM_OPTIMIZATIONS.md#3-web-search-fallback) |
+| `web_fallback` | off, on | when the corpus has no good answer (or the caller sends `"web": true`), also asks a web provider; see [LLM_OPTIMIZATIONS.md](../design/LLM_OPTIMIZATIONS.md#3-web-search-fallback) |
 
 ```bash
 TOKEN=$(python -m scripts.mint_token admin)

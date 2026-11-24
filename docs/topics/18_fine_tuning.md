@@ -1,4 +1,4 @@
-# 17 · Fine-tuning the embedding model on FiQA
+# 18 · Fine-tuning the embedding model on FiQA
 
 all-MiniLM-L6-v2 was trained on a billion general sentence pairs, not on personal-finance forum answers. FiQA ships
 5,500 training questions with labelled answers that nothing in the system used. Fine-tuning keeps training MiniLM on

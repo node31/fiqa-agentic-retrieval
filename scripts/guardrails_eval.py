@@ -3,7 +3,7 @@
     python scripts/guardrails_eval.py                      # rules + corpus scan + scope (minilm-ft, minilm)
     python scripts/guardrails_eval.py --models minilm      # scope calibration for one model only
 
-Writes results/guardrails_eval.json. docs/design/SECURITY.md quotes it.
+Writes results/guardrails_eval.json. docs/topics/17_security.md quotes it.
 
 WHAT IT MEASURES
     1. Rules on data/guardrails_redteam.jsonl (hand-written; 4 groups):

@@ -14,7 +14,7 @@ SKILLS (one per agent strategy; pick with message metadata {"skill": "..."}, def
     retrieve   hybrid search, no LLM (free, ~50 ms)
     single     the single agent (docs/topics/12_single_agent.md)
     multi      planner + parallel workers + verifier (docs/topics/13_multi_agent_orchestration.md)
-    cascade    cheap tier first, strong tier when unsure (docs/topics/18_llm_cost_and_fallback.md)
+    cascade    cheap tier first, strong tier when unsure (docs/topics/19_llm_cost_and_fallback.md)
 
 ONE TASK, STEP BY STEP (``_run_task``)
     1. Identify the caller from the bearer token (none = anonymous: works, but no memory).

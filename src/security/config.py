@@ -1,6 +1,6 @@
 """The toggles: one per security feature and guardrail, flipped at runtime by an admin, saved to disk.
 
-    feature          values            what "on" means (docs/design/SECURITY.md has the details)
+    feature          values            what "on" means (docs/topics/17_security.md has the details)
     identity         off | on          every request must carry a valid signed token (else 401)
     authz            off | on          role and tenant checks: admin-only endpoints, writes only to your own
                                        tenant's docs, search results checked against your tenant

@@ -1,26 +1,104 @@
 # 19 · Paying less for LLM calls
 
-Every agent question costs tokens. This note covers what I added to cut that cost: a model cascade, a semantic
-cache, context trimming and provider prompt caching. The first half explains each idea with a toy example you
-can run; the second half is how to use it and what I measured. Answering questions the corpus can't is a
-separate topic: [20_web_search.md](20_web_search.md).
+Every agent question costs tokens. This note covers six levers on that cost. Three are hard caps that bound the worst
+case: a dollar budget per run, a maximum number of LLM calls per question, and a maximum number of tokens. Three lower
+the typical cost: a model cascade, a semantic cache, and fewer tokens per call (trimming and provider prompt caching).
+Each section explains the idea with a toy example you can run; the second half is how to use it and what I measured.
+Answering questions the corpus can't is a separate topic: [20_web_search.md](20_web_search.md).
 
-Code: `src/agent/cascade.py`, `src/agent/semantic_cache.py`, and the trimming parameters of `run_single_agent` in
-`src/agent/single_agent.py`.
+Code: `Budget` and `BudgetExceeded` in `src/agent/llm.py`, `Spend` in `scripts/agent_eval.py`, `src/agent/cascade.py`,
+`src/agent/semantic_cache.py`, and the trimming parameters of `run_single_agent` in `src/agent/single_agent.py`.
 
-## 1. Where the money goes
+## 1. Where the money goes, and the six levers
 
 An LLM call is priced per token, input and output separately. For our agents the input dominates: the single agent
 reads the system prompt, the question and 10 search results of 200 characters each, then answers with a short JSON
-object. On a plain question that is about 2,118 tokens over 1 to 3 calls. So there are three levers:
+object. On a plain question that is about 2,118 tokens over 1 to 3 calls ($0.0025 at the placeholder prices of
+$1 / $4 per 1M input / output tokens).
 
-| lever | idea | here |
-|---|---|---|
-| fewer calls | don't call the LLM at all when you already know the answer | semantic cache |
-| cheaper calls | call a cheaper configuration first, the expensive one only when needed | cascade |
-| shorter calls | send fewer tokens per call, or get repeated tokens billed at a discount | trimming, prompt caching |
+| # | lever | what it bounds or saves | where | when it bites | measured |
+|---|---|---|---|---|---|
+| 1 | budget (dollars per run) | the total spend of an evaluation or batch | `Spend` and `--max-usd` (default $2) in `scripts/agent_eval.py` | the running estimate crosses the cap: the run stops with `ABORT: estimated spend ...` | never hit: the full Part C eval (600 runs) was estimated at $0.79 |
+| 2 | max calls per question | a looping or confused agent | `Budget.max_calls`: 3 for the single agent (= its step cap), 3 for the orchestrator | the next call would be one too many: `BudgetExceeded("call cap 3 reached")` before anything is sent | binds often: 72 of 100 compound questions used all 3 single-agent calls |
+| 3 | max tokens | the size of one question's conversation, and of each answer | `Budget.max_tokens` (12,000 single, 8,000 orchestrator); `max_output_tokens` per call (250, the planner 200) | input estimate + the worst-case output would cross the cap: `BudgetExceeded("token budget ...")` | never hit: compound single-agent questions averaged 3,380 tokens |
+| 4 | cascade | the typical cost: a cheap tier first, the strong one only when needed | `src/agent/cascade.py` | the cheap tier is unsure, or the question looks compound | R@10 0.546 vs 0.547 at $0.00240 vs $0.00251; a 10x cheaper tier 1 would save 18% |
+| 5 | semantic cache | repeat and rephrased questions: no LLM call at all | `src/agent/semantic_cache.py` | a cached question of the same tenant scores cosine >= 0.85 | 65% of paraphrases hit their original, 0.8% false hits |
+| 6 | fewer tokens per call | every call's input | trimming in `run_single_agent`; provider prompt caching | always (trimming); prefixes of 1,024+ identical tokens (caching) | the cheap tier reads about 442 input tokens; 0 cached tokens, as our prompts are too short |
 
-## 2. The cascade
+Levers 1 to 3 cap the worst case and never make a question cheaper; levers 4 to 6 make the typical question cheaper
+and never cap anything. A production agent needs both kinds.
+
+## 2. Hard caps: budget, max calls, max tokens
+
+All three caps refuse **before** money is spent. `Budget.reserve` runs at the start of every `llm.complete`: it adds
+one call and checks the input estimate (4 characters a token) plus the largest output the call may produce
+(`max_output_tokens`), because the real output length is only known after paying for it. One `Budget` object is
+shared by every LLM call of one question, including the orchestrator's parallel workers, so a lock makes the check
+and the increment atomic.
+
+```python
+from src.agent.llm import Budget, BudgetExceeded, FakeLLM, cost_usd
+
+llm = FakeLLM(lambda system, user: '{"action": "finish", "doc_ids": []}')   # scripted replies, no network
+system, user = "ROLE: single_agent\nReply with JSON.", "Question: what is a roth ira?\n" + "passage text " * 300
+
+# max calls: the 4th call is refused before anything is sent
+b = Budget(max_calls=3, max_tokens=100_000)
+for i in range(4):
+    try:
+        llm.complete(system, user, max_output_tokens=250, budget=b)
+        print(f"call {i + 1}: ok, {b.calls} calls, {b.tokens} tokens so far")
+    except BudgetExceeded as e:
+        print(f"call {i + 1}: refused: {e}")
+
+# max tokens: refused when input estimate + the WORST-CASE output would cross the cap
+b = Budget(max_calls=10, max_tokens=2_000)
+for i in range(3):
+    try:
+        llm.complete(system, user, max_output_tokens=250, budget=b)
+        print(f"call {i + 1}: ok, {b.tokens} tokens so far")
+    except BudgetExceeded as e:
+        print(f"call {i + 1}: refused: {e}")
+
+# the dollar ceiling these caps imply for ONE question (placeholder prices: $1 in, $4 out per 1M tokens)
+calls, cap, out = 3, 12_000, 250
+print(f"worst case per question: ${cost_usd(cap - calls * out, calls * out):.5f}")
+```
+
+```
+call 1: ok, 1 calls, 999 tokens so far
+call 2: ok, 2 calls, 1998 tokens so far
+call 3: ok, 3 calls, 2997 tokens so far
+call 4: refused: call cap 3 reached
+call 1: ok, 999 tokens so far
+call 2: refused: token budget 2000 would be exceeded
+call 3: refused: token budget 2000 would be exceeded
+worst case per question: $0.01425
+```
+
+The second block shows the worst-case rule: call 2 would really have ended at about 1,998 tokens, under the cap,
+but 999 so far + about 990 input + up to 250 output could reach 2,239, so it is refused. A cap that only checked
+after the call could overshoot by a whole answer.
+
+What happens on a refusal: the agents catch `BudgetExceeded` and degrade instead of failing. The single agent stops
+asking the model and fills the top 10 from the searches it already has; the orchestrator searches the
+question as asked if the planner is refused, and keeps its lists if the verifier is.
+The error is recorded on the result (`errors`), so an eval counts how often a cap fired.
+
+The three caps answer different questions:
+
+- **Max calls** bounds behaviour. An agent that keeps asking for "one more search" is stopped at 3. On compound
+  questions this is the cap that binds most: 72% of single-agent runs used all three calls, which is also why the
+  single agent's compound cost ($0.0039) is higher than its plain cost ($0.0025).
+- **Max tokens** bounds size. Each step re-sends the whole history, so the prompt grows with every search; 12,000
+  tokens is about four times what a compound question used, so it only fires on a runaway. `max_output_tokens`
+  bounds each answer: the agent replies with a short JSON object, and 250 tokens is plenty.
+- **The dollar budget** bounds a run, not a question. `scripts/agent_eval.py` adds every result's estimated cost to
+  a shared `Spend` and aborts the whole run past `--max-usd`. Together with the per-question caps it gives a ceiling
+  you can compute in advance: at most 12,000 tokens per question, at most 750 of them output (3 calls x 250),
+  means at most $0.01425 per question at the placeholder prices, so 300 questions can never cost more than $4.28.
+
+## 3. The cascade
 
 Run a cheap tier first. If its answer looks reliable, stop; otherwise run the strong tier. (FrugalGPT, 2023, is the
 paper usually cited for LLM cascades.) The expected cost per question is
@@ -99,7 +177,7 @@ only", "confidence", "picks only", and the **oracle**, which picks the better an
 No real rule can beat the oracle; the gap between your rule and the oracle is what a better signal could still win.
 On plain questions the oracle needed the strong tier for only 7% of questions, while our rule sent 75%.
 
-## 3. The semantic cache
+## 4. The semantic cache
 
 An exact cache keys on the prompt string, so "how do I roll my 401k into an IRA?" and "how do I roll over my 401k to
 an IRA?" are two misses. A semantic cache keys on the question's embedding: it returns a stored answer when the
@@ -142,7 +220,7 @@ Two more rules every semantic cache needs:
   of the key.
 - **Staleness.** The cache doesn't know the corpus changed. Key on a corpus version, or expire entries by age.
 
-## 4. Fewer tokens per call
+## 5. Fewer tokens per call
 
 **Trimming** is the obvious lever: show fewer and shorter passages (our cheap tier: 5 hits of 120 characters instead
 of 10 of 200), and don't show a passage twice. It saves only if the model doesn't compensate. An agent that is
@@ -177,7 +255,7 @@ Two questions share only the system prompt, 117 words, far below 1,024 tokens. S
 tokens. The layout rule still holds for when it does pay: put everything that never changes (instructions,
 examples, tool definitions) first, and the question and search results last.
 
-## 5. Quick start
+## 6. Quick start
 
 | I want to | command |
 |---|---|
@@ -197,7 +275,7 @@ Environment variables:
 | `CASCADE_STRONG_PRICE_IN` / `_OUT` | $1 / $4 per 1M tokens | the strong tier's prices |
 | `SEMANTIC_CACHE_MIN` | 0.85 | the cosine a cached question needs to count as a hit |
 
-## 6. Model cascade: usage and results
+## 7. Model cascade: usage and results
 
 ### What it does
 
@@ -308,7 +386,7 @@ What the tables say:
 - With a genuinely cheaper tier-1 model, the same rules save much more: confidence-only would cost 39% less than
   strong-only on plain, at the same recall.
 
-## 7. Semantic cache: usage and results
+## 8. Semantic cache: usage and results
 
 ### What it does
 
@@ -373,7 +451,7 @@ Fed the plain-set cascade answers, the cache at 0.85 answered 65 of the 100 para
 $0.145 of the $0.240 the plain set cost, with the served answers at the originals' recall (0.596 on those 65).
 That is an upper bound: every paraphrase here has its original in the cache, which real traffic won't.
 
-## 8. Context trimming and prompt caching: usage and results
+## 9. Context trimming and prompt caching: usage and results
 
 **Trimming.** `run_single_agent` takes `max_hits`, `snippet_chars` and `dedupe`. The strong tier keeps the old
 values (10 hits, 200 characters); the cheap tier uses 5 hits, 120 characters, and with `dedupe` a later search shows
@@ -388,16 +466,17 @@ plus the first search results are under 1,024 tokens, so no call had a long enou
 to pay with a longer system prompt (few-shot examples, tool schemas) placed first and kept identical, with the
 question and results after it.
 
-## 9. How it is checked
+## 10. How it is checked
 
 | what | where |
 |---|---|
+| the call cap and the token cap refuse before spending (worst-case output counted); agents degrade instead of failing | `tests/test_agents.py` (`Budget`, fake LLM) |
 | escalation reasons, routing, shadow entries outside the totals, prices per tier, the cheap tier reading less while the strong prompt stays byte-identical, provider cached tokens recorded | `tests/test_cascade.py` (fake LLM, no network) |
 | the cascade as a strategy next to single and multi | `tests/test_agents.py` |
 | semantic cache: same tenant only, a miss below the threshold; a hit skips every LLM call | doctests in `src/agent/semantic_cache.py`; `tests/test_cascade.py` |
 | quality and cost on real questions | `results/agent_eval_cascade.json`, `results/cascade_policies.json`, `results/semantic_cache_eval.json` |
 
-## 10. Pitfalls and what I would do next
+## 11. Pitfalls and what I would do next
 
 - **One model in both tiers.** The cascade's real saving needs a cheaper model in tier 1. Next: run it with a mini
   deployment and check the confidence calibration again, since a different model reports confidence differently.

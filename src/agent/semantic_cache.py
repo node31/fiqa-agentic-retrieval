@@ -7,7 +7,7 @@ WHY
     search uses, so it costs nothing extra), and a hit is any stored question with cosine >= ``threshold``.
     It is only as good as the encoder: minilm-ft puts those two at 0.657 (a miss), "how do I roll over my
     401k to an IRA?" at 0.935 (a hit), and "...into a ROTH IRA?", a different question, at 0.928 (a hit,
-    and a wrong one). docs/topics/19_llm_cost.md section 7 has the numbers.
+    and a wrong one). docs/topics/19_llm_cost.md section 8 has the numbers.
 
     >>> from src.retrieval.dense import HashEmbedder
     >>> emb = HashEmbedder(seed="doc")

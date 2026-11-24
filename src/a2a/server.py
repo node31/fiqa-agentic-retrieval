@@ -3,6 +3,7 @@
     python -m src.a2a.server --router http://localhost:8000 --port 8300                 # fake LLM, free
     python -m src.a2a.server --router http://localhost:8000 --backend azure --confirm-spend
     curl localhost:8300/.well-known/agent-card.json
+    python -m src.a2a.server --router http://127.0.0.1:8000 --demo-logins   # then open http://127.0.0.1:8300/ui
 
 WHERE IT SITS
     A separate service in front of the router, the way a real agent platform would deploy it: the router
@@ -41,18 +42,22 @@ import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Callable
 
 # Module level, not inside create_app: with ``from __future__ import annotations`` FastAPI resolves the
 # ``request: Request`` annotation by name in the module's globals; imported locally it would be unknown
 # and FastAPI would treat ``request`` as a required query parameter (422 on every call).
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from src.a2a import protocol as P
 from src.agent.memory import MemoryStore, contextualize, extract_facts
 from src.agent.tools import SearchTool, http_guardrail_check, http_search_fn
 from src.security import tokens
+
+# The two demo users of docs/topics/17_security.md, for the /ui page's optional demo logins.
+DEMO_USERS = {"alice": "acme", "bob": "globex"}
 
 SKILLS = {
     "retrieve": ("Search the FiQA corpus", "Hybrid BM25 + dense search over 57,638 personal-finance forum answers. "
@@ -157,7 +162,7 @@ def create_app(router_url: str | None = None, llm=None, memory: MemoryStore | No
                search_factory: Callable[[str | None], Callable] | None = None,
                guard_factory: Callable[[str | None], Callable] | None = None,
                base_url: str = "http://localhost:8300", workers: int = 4, card: dict | None = None,
-               plain_skills: tuple[str, ...] = ("retrieve",)):
+               plain_skills: tuple[str, ...] = ("retrieve",), demo_logins: tuple[str, ...] = ()):
     """Build the FastAPI app. Tests inject ``search_factory`` / ``guard_factory`` / ``llm`` instead of a router.
 
     search_factory(token) -> SearchFn (query, strategy, k) -> hits     default: the router's /search
@@ -165,6 +170,9 @@ def create_app(router_url: str | None = None, llm=None, memory: MemoryStore | No
     card          another agent's card (src/a2a/coordinator.py reuses this whole server that way); its skill ids
                   are the ones SendMessage accepts, the first one is the default
     plain_skills  skills that run ``search_factory`` once, without an LLM (here "retrieve")
+    demo_logins   users the browser page at /ui may log in as without a token (alice, bob); empty = off.
+                  It mints a token for whoever asks, so it is a laptop convenience standing in for a real
+                  identity provider, never something to turn on for a server other people can reach.
     """
     raw_factory = search_factory or (lambda tok: http_search_fn(router_url, tok))
     search_fns: dict = {}
@@ -459,6 +467,23 @@ def create_app(router_url: str | None = None, llm=None, memory: MemoryStore | No
         n = memory.forget(c.tenant, c.user, entry_id)
         return {"deleted": n} if n else JSONResponse({"detail": "no such entry"}, status_code=404)
 
+    # The browser page: one static file, it talks to the same /a2a, /memory and agent card a program would.
+    @app.get("/ui", include_in_schema=False)
+    async def ui():
+        return HTMLResponse((Path(__file__).with_name("ui.html")).read_text(encoding="utf-8"))
+
+    @app.get("/ui/config", include_in_schema=False)
+    async def ui_config():
+        return {"demo_logins": list(demo_logins), "memory": memory is not None}
+
+    @app.post("/ui/login", include_in_schema=False)
+    async def ui_login(request: Request):
+        user = (await request.json()).get("user")
+        if user not in demo_logins or user not in DEMO_USERS:
+            return JSONResponse({"detail": "demo logins are off for this user; paste a token from "
+                                 "python -m scripts.mint_token <user>"}, status_code=403)
+        return {"token": tokens.mint({"sub": user, "tenant": DEMO_USERS[user], "role": "user"}, ttl_s=3600)}
+
     @app.get("/health")
     async def health():
         return {"ok": True, "llm": getattr(llm, "name", type(llm).__name__) if llm else None,
@@ -476,6 +501,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--backend", choices=["none", "fake", "copilot", "azure"], default="fake",
                     help="LLM for the single / multi / cascade skills (none: only 'retrieve')")
     ap.add_argument("--confirm-spend", action="store_true", help="required for --backend azure")
+    ap.add_argument("--demo-logins", action="store_true",
+                    help="let the /ui page log in as alice or bob without a token (laptop demo only)")
     ap.add_argument("--memory-db", default=os.environ.get("MEMORY_DB", "a2a_memory.sqlite"),
                     help="SQLite file for agent memory ('off' disables memory, ':memory:' keeps it in RAM)")
     a = ap.parse_args(argv)
@@ -491,7 +518,9 @@ def main(argv: list[str] | None = None) -> int:
         else:
             llm = get_llm(a.backend, confirm_spend=a.confirm_spend)
     memory = None if a.memory_db == "off" else MemoryStore(a.memory_db)
-    app = create_app(a.router, llm=llm, memory=memory, base_url=a.public_url or f"http://{a.host}:{a.port}")
+    app = create_app(a.router, llm=llm, memory=memory, base_url=a.public_url or f"http://{a.host}:{a.port}",
+                     demo_logins=tuple(DEMO_USERS) if a.demo_logins else ())
+    print(f"A2A agent on http://{a.host}:{a.port}  (browser page: /ui)")
     uvicorn.run(app, host=a.host, port=a.port, log_level="warning")
     return 0
 

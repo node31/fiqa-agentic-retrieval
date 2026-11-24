@@ -261,3 +261,15 @@ def test_coordinator_delegates_each_part_as_the_caller():
         alice.send("what is a roth ira?", skill="retrieve")
     assert e.value.code == P.INVALID_PARAMS
 
+def test_ui_page_and_demo_logins_are_off_unless_asked_for():
+    tc, _ = make()
+    assert "SendMessage" in tc.get("/ui").text
+    assert tc.get("/ui/config").json()["demo_logins"] == []
+    assert tc.post("/ui/login", json={"user": "alice"}).status_code == 403
+
+    app = create_app(memory=MemoryStore(":memory:"), search_factory=StubSearch().factory, base_url=BASE,
+                     demo_logins=("alice", "bob"))
+    tc = TestClient(app)
+    tok = tc.post("/ui/login", json={"user": "bob"}).json()["token"]
+    assert tc.get("/memory", headers={"Authorization": f"Bearer {tok}"}).json()["tenant"] == "globex"
+    assert tc.post("/ui/login", json={"user": "admin"}).status_code == 403   # never an admin token

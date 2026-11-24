@@ -566,7 +566,7 @@
    "duty": "redaction",
    "who": "alice",
    "title": "alice shares an email address",
-   "note": "The turn is PII-redacted before it is written, so memory never holds the address. The search itself still sends the address to the router (the router redacts what it returns and what it audits when pii_redaction is on, 17_security.md).",
+   "note": "The turn is PII-redacted before it is written, so memory never holds the address. The search itself still sends the address to the router, which searches the question as it arrives (its audit log stores the question redacted, 17_security.md).",
    "ms": 76.4,
    "kind": "ask",
    "message": "my email is jane.doe@example.com, how do I report a phishing scam?",

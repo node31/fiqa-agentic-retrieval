@@ -156,8 +156,8 @@ def record(router: str) -> dict:
            s.ask("alice", TAXES, "chat-2", memory=False))
     s.step("redaction", "alice", "alice shares an email address",
            "The turn is PII-redacted before it is written, so memory never holds the address. The search "
-           "itself still sends the address to the router (the router redacts what it returns and what it "
-           "audits when pii_redaction is on, 17_security.md).",
+           "itself still sends the address to the router, which searches the question as it arrives (its audit "
+           "log stores the question redacted, 17_security.md).",
            s.ask("alice", "my email is jane.doe@example.com, how do I report a phishing scam?", "chat-2"))
     s.step("isolation", "bob", "bob sends alice's contextId with a follow-up",
            "Memory is read by (tenant, user, contextId). bob is another user, so alice's conversation does not "

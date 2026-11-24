@@ -189,8 +189,10 @@ def test_memory_carries_the_conversation_and_the_users_facts():
     client(tc, "bob").send("what retirement account should I open?")        # bob: nothing of alice's
     client(tc).send("what retirement account should I open?")               # anonymous: no memory at all
     assert search.queries[-2:] == ["what retirement account should I open?"] * 2
+    kept = len(mem.export("acme", "alice"))
     alice.send("what retirement account should I open?", memory=False)       # opt out per message
     assert search.queries[-1] == "what retirement account should I open?"
+    assert len(mem.export("acme", "alice")) == kept                           # ...and nothing written
 
 
 def test_memory_api_export_redacts_and_forget_deletes():
@@ -221,6 +223,15 @@ def test_memory_expires_and_a_new_country_replaces_the_old():
     assert mem.export("acme", "alice") == []
     with pytest.raises(ValueError):
         mem.remember_fact("", "alice", "I live in Canada")       # no identity, no memory
+
+
+def test_forget_removes_the_text_from_the_file(tmp_path):
+    path = tmp_path / "memory.sqlite"
+    mem = MemoryStore(str(path))
+    mem.remember_fact("acme", "alice", "my note zebra-quokka-42")
+    assert mem.forget("acme", "alice") == 1
+    mem.db.close()
+    assert b"zebra-quokka-42" not in path.read_bytes()      # overwritten, not just unlinked
 
 
 def test_concurrent_tasks_do_not_mix_up():

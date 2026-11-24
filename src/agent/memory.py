@@ -26,6 +26,7 @@ PRIVACY RULES (the same ones the retrieval service follows, docs/topics/17_secur
     * Expiry: every entry has a TTL (MEMORY_TTL_DAYS, default 30). Expired entries are never returned and
       are purged on the next write.
     * The user can see everything kept about them (``export``) and delete it (``forget``), one entry or all.
+      Deleted rows are overwritten with zeros in the file (PRAGMA secure_delete), not only unlinked.
 
 STORAGE
     SQLite: ":memory:" by default (tests), or a file (MEMORY_DB) so memory survives a restart. One table;
@@ -101,6 +102,9 @@ class MemoryStore:
         self.ttl_s, self.now = ttl_days * 86400, now
         self.lock = threading.Lock()
         self.db = sqlite3.connect(self.path, check_same_thread=False)
+        # Without this, DELETE only marks pages free and the "forgotten" text stays readable in the file
+        # until SQLite reuses the page (docs/topics/22_agent_memory.md, section 3).
+        self.db.execute("PRAGMA secure_delete = ON")
         self.db.execute("""CREATE TABLE IF NOT EXISTS memory (
             id TEXT PRIMARY KEY, tenant TEXT NOT NULL, user TEXT NOT NULL, kind TEXT NOT NULL,
             context_id TEXT, text TEXT NOT NULL, data TEXT, created REAL NOT NULL, expires REAL NOT NULL)""")

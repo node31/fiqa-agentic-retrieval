@@ -64,10 +64,12 @@ class A2AClient:
             raise A2AError(body["error"])
         return body["result"]
 
-    def send(self, question: str, skill: str = "retrieve", context_id: str | None = None, k: int = 10,
+    def send(self, question: str, skill: str | None = None, context_id: str | None = None, k: int = 10,
              remember: str | None = None, memory: bool = True, wait: bool = True) -> dict:
-        """SendMessage. Returns the Task (or, for a pure "remember" message, the agent's Message)."""
-        meta = {"skill": skill, "k": k, **({} if memory else {"memory": False})}
+        """SendMessage. Returns the Task (or, for a pure "remember" message, the agent's Message).
+
+        ``skill``: one of the card's skill ids; None lets the agent use its default (its first skill)."""
+        meta = {**({"skill": skill} if skill else {}), "k": k, **({} if memory else {"memory": False})}
         msg = P.user_message(question, context_id=context_id, data={"remember": remember} if remember else None,
                              metadata=meta)
         out = self.call("SendMessage", {"message": msg, "configuration": {"returnImmediately": not wait}})
@@ -105,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("question", nargs="?")
     ap.add_argument("--agent", default=os.environ.get("A2A_AGENT_URL", "http://localhost:8300"))
-    ap.add_argument("--skill", default="retrieve")
+    ap.add_argument("--skill", help="a skill id from the agent's card (default: the agent's first skill)")
     ap.add_argument("--context", help="contextId: reuse one to continue a conversation")
     ap.add_argument("--remember", help="a fact to remember about you, e.g. 'I live in Canada' (needs --token)")
     ap.add_argument("--token", default=os.environ.get("FIQA_TOKEN"))

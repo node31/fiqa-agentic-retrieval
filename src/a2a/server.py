@@ -156,11 +156,15 @@ def _with_history(task: dict, history_length: int | None) -> dict:
 def create_app(router_url: str | None = None, llm=None, memory: MemoryStore | None = None,
                search_factory: Callable[[str | None], Callable] | None = None,
                guard_factory: Callable[[str | None], Callable] | None = None,
-               base_url: str = "http://localhost:8300", workers: int = 4):
+               base_url: str = "http://localhost:8300", workers: int = 4, card: dict | None = None,
+               plain_skills: tuple[str, ...] = ("retrieve",)):
     """Build the FastAPI app. Tests inject ``search_factory`` / ``guard_factory`` / ``llm`` instead of a router.
 
     search_factory(token) -> SearchFn (query, strategy, k) -> hits     default: the router's /search
     guard_factory(token)  -> (text) -> {"allowed", "findings"}         default: the router's /guardrails/check
+    card          another agent's card (src/a2a/coordinator.py reuses this whole server that way); its skill ids
+                  are the ones SendMessage accepts, the first one is the default
+    plain_skills  skills that run ``search_factory`` once, without an LLM (here "retrieve")
     """
     raw_factory = search_factory or (lambda tok: http_search_fn(router_url, tok))
     search_fns: dict = {}
@@ -178,7 +182,8 @@ def create_app(router_url: str | None = None, llm=None, memory: MemoryStore | No
         guard_factory = lambda tok: http_guardrail_check(router_url, tok)  # noqa: E731
     store = TaskStore()
     pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="a2a-task")
-    card = agent_card(base_url)
+    card = card or agent_card(base_url)
+    skill_ids = [s["id"] for s in card["skills"]]
     etag = '"' + hashlib.sha256(json.dumps(card, sort_keys=True).encode()).hexdigest()[:16] + '"'
     app = FastAPI(title="FiQA A2A agents", description=__doc__.split("\n\n")[0])
     app.state.tasks, app.state.memory = store, memory
@@ -209,7 +214,7 @@ def create_app(router_url: str | None = None, llm=None, memory: MemoryStore | No
             ctx = contextualize(memory if mem_on else None, caller.tenant, caller.user, task["contextId"], question)
             meta["memory"] = {"enabled": mem_on, "query_searched": ctx["query"],
                               "turn_used": ctx["turn_used"], "facts_used": ctx["facts_used"]}
-            if skill != "retrieve":
+            if skill not in plain_skills:
                 if llm is None:
                     raise RuntimeError("this server has no LLM configured (start it with --backend)")
                 if guard_factory is not None:
@@ -228,7 +233,7 @@ def create_app(router_url: str | None = None, llm=None, memory: MemoryStore | No
                 return hits
 
             scores: dict[str, float] = {}
-            if skill == "retrieve":
+            if skill in plain_skills:
                 hits = recording(ctx["query"], "hybrid", k)
                 ids, scores = [h["doc_id"] for h in hits], {h["doc_id"]: h["score"] for h in hits}
                 meta.update(llm_calls=0, usd=0.0)
@@ -312,10 +317,10 @@ def create_app(router_url: str | None = None, llm=None, memory: MemoryStore | No
             return P.rpc_error(req_id, P.INVALID_PARAMS, "the message has no text part (the question)", "NO_QUESTION")
         if data.get("remember") and memory is not None and caller.user is not None:
             memory.remember_fact(caller.tenant, caller.user, str(data["remember"]))
-        skill = meta_in.get("skill", "retrieve")
-        if skill not in SKILLS:
+        skill = meta_in.get("skill", skill_ids[0])
+        if skill not in skill_ids:
             return P.rpc_error(req_id, P.INVALID_PARAMS, f"unknown skill {skill!r}; the agent card lists: "
-                               f"{', '.join(SKILLS)}", "UNKNOWN_SKILL")
+                               f"{', '.join(skill_ids)}", "UNKNOWN_SKILL")
         try:
             k = int(meta_in.get("k", 10))
             assert 1 <= k <= 50

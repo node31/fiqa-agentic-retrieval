@@ -237,3 +237,27 @@ def test_concurrent_tasks_do_not_mix_up():
     assert all(t["status"]["state"] == P.COMPLETED for t in out.values())
     assert {q: t["artifacts"][0]["parts"][0]["data"]["hits"][0]["snippet"] for q, t in out.items()} == \
         {q: f"passage 1 about {q}" for q in out}
+
+
+def test_coordinator_delegates_each_part_as_the_caller():
+    """Two agents: the coordinator (itself an A2A server) splits the question and asks the FiQA agent each part,
+    with the caller's token, so the FiQA agent's tasks belong to alice, and bob sees neither agent's tasks."""
+    from src.a2a.coordinator import create_coordinator_app
+
+    search = StubSearch()
+    fiqa = TestClient(create_app(memory=MemoryStore(), search_factory=search.factory, base_url=BASE))
+    coord = TestClient(create_coordinator_app(BASE, base_url=BASE, http_factory=lambda tok: fiqa))
+    alice = A2AClient(BASE, token_for("alice"), http=coord)
+    assert alice.card["name"] == "FiQA coordinator" and alice.skills == ["delegate"]
+    t = alice.send("what is a roth ira, and how do I buy my first home?", k=3)
+    assert t["status"]["state"] == P.COMPLETED and len(doc_ids(t)) == 3
+    assert search.queries == ["what is a roth ira", "how do I buy my first home"]   # one FiQA task per part
+    with pytest.raises(A2AError) as e:
+        A2AClient(BASE, token_for("bob"), http=coord).get(t["id"])
+    assert e.value.code == P.TASK_NOT_FOUND
+    assert len(A2AClient(BASE, token_for("alice"), http=fiqa).list()["tasks"]) == 2
+    assert A2AClient(BASE, token_for("bob"), http=fiqa).list()["tasks"] == []
+    with pytest.raises(A2AError) as e:                     # the coordinator only offers its own skill
+        alice.send("what is a roth ira?", skill="retrieve")
+    assert e.value.code == P.INVALID_PARAMS
+

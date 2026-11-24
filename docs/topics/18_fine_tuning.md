@@ -147,7 +147,50 @@ gh release download index-artifacts-v1 -p minilm_ft_artifacts.zip    # or downlo
 python -c "import zipfile; zipfile.ZipFile('minilm_ft_artifacts.zip').extractall('.')"
 ```
 
-## 7. Pitfalls
+## 7. How open is a model? The six openness checks
+
+Fine-tuning only works on a model whose weights I can download, and shipping the result depends on its license. The
+MTEB leaderboard (https://leaderboard.mteb.org, the "Compare models" page) puts a number on this: an **openness**
+score out of 6. Its source code (`ModelMeta.openness` in the `mteb` package) says the idea comes from the OSAI index
+(https://osai-index.eu), and checks six things, each yes or no:
+
+| check | in plain words | the question it answers for me |
+|---|---|---|
+| open weights | you can download the trained model file | can I run it on my own machines, and fine-tune it? An API-only model fails this |
+| open license | it is released under a recognised open license (MIT, Apache-2.0, BSD, ...) | may I use it commercially, change it and ship the result? "Weights on the internet" is not the same as "allowed" |
+| open training code | the code that trained it is public | can I see how it was made, and train it again or train my own variant the same way? |
+| open training data | the data it was trained on is public | can I check what it learned from: overlap with my test set (leakage), copyright, personal data, bias? |
+| paper | there is a paper or technical report to cite | is the method described somewhere I can read and judge? |
+| model card | a page documenting what it is for, how it was evaluated and its limits | do I know what it should and shouldn't be used for? (MTEB marks this yes for every model it lists, because the leaderboard requires one) |
+
+A simple way to remember it: weights and license decide whether I **can use** a model; code and data decide whether
+I **can reproduce and audit** it; paper and card decide whether I **can understand** it.
+
+The three models in this repo, scored the way MTEB scores them:
+
+| | all-MiniLM-L6-v2 | bge-small-en-v1.5 | minilm-ft (mine), today | minilm-ft, if I published it |
+|---|---|---|---|---|
+| open weights | yes | yes | no: a release asset of a private repository | yes, on Hugging Face |
+| open license | yes (Apache-2.0) | yes (MIT) | no license file | yes: Apache-2.0, inherited from the base model |
+| open training code | no in MTEB's metadata (see below) | no in MTEB's metadata | no (the repository is private) | yes: `scripts/finetune.py` |
+| open training data | no in MTEB's metadata (see below) | yes (BAAI-MTP) | no | yes: the FiQA train split, public through BEIR |
+| paper | yes (Sentence-BERT) | yes (C-Pack / BGE) | no | no |
+| model card | yes | yes | no | would need one |
+| score | 4/6 | 5/6 | 0/6 | 5/6 |
+
+The first two columns are MTEB's own metadata (`sentence_transformers_models.py` and `bge_models.py` in the `mteb`
+repository). One thing I noticed while checking it: the Hugging Face repository of all-MiniLM-L6-v2 includes
+`train_script.py` and `data_config.json`, and its card lists 21 public training datasets, yet MTEB's metadata leaves
+both fields empty. A score is only as good as the metadata someone filled in, so for a model that matters I look
+at the repository myself.
+
+Why the score mattered here: both candidates I compared are open-weight and openly licensed, which is what made
+fine-tuning possible at all. A closed embedding model behind an API (OpenAI's or Cohere's, for example) scores 0 on
+weights, and the only ways to adapt it are the ones in EXTENSIONS item 18: better context at question time, or
+distilling it into an open model. The model I trained is as open as I choose to make it: everything needed to publish
+it at 5/6 is already in this repository except the model card.
+
+## 8. Pitfalls
 
 | pitfall | what goes wrong | what I did |
 |---|---|---|

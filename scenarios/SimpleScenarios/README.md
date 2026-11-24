@@ -80,3 +80,14 @@ All 32 runs passed (`results/SUMMARY.md`). Every soft check held except one, on 
 writes stay there (the ids contain the run id, so reruns never collide), and 4, 5 and 6 leave bge-small active. The
 manual test guides ([Windows](../../docs/guides/manual_tests_windows.md), [macOS](../../docs/guides/manual_tests_mac.md)) show how to
 put it back on minilm.
+
+## Security replay
+
+[results/SecurityReplay/replay.html](results/SecurityReplay/replay.html) (download it and open it in a browser) is a
+different kind of replay: no timeline, one view per protection. Each of its 14 cases shows one request with the
+protection off and on, side by side, as the Docker stack answered it: which documents came back and whose they
+are, the status codes of writes and admin calls, where a question with personal data ends up, and the exact prompt
+the agent's LLM receives with and without the injection and topic-scope guards (with the real Azure run's tokens
+and reply). Cases 6 and 10 are marked as known gaps. `python scripts/security_replay.py --confirm-spend` records it
+again (about $0.01); `--render-only` rebuilds the page from `cases.json`. The protections themselves are explained
+in [docs/topics/17_security.md](../../docs/topics/17_security.md).

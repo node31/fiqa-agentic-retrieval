@@ -15,10 +15,17 @@ Try it on the running stack:
 ```bash
 python -m scripts.mint_token admin                 # also: alice (tenant acme), bob (tenant globex)
 python scripts/security_demo.py                    # every toggle on and off, same API -> results/security_demo.json
+python scripts/security_replay.py --confirm-spend  # 14 cases, off vs on, as an HTML page (below)
 python scripts/guardrails_eval.py                  # what the guardrails catch and wrongly refuse -> results/guardrails_eval.json
 ```
 
 or open http://localhost:8000/docs, click Authorize, paste a token, and follow steps 7 to 11 of the tour at the top.
+
+The recorded result is [the security replay](../../scenarios/SimpleScenarios/results/SecurityReplay/replay.html)
+(download and open it in a browser): 14 cases, each the same request with the protection off and on, side by side.
+It covers reading and writing across tenants, admin endpoints and bad tokens, PII in questions, answers and
+writes, harmful questions and a harmful document write, injection in a question and in a stored passage (with the
+exact prompt the agent's LLM receives, and what a real model did with it), off-topic abuse and the rate limit.
 
 ## Contents
 

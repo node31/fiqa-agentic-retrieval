@@ -4,7 +4,7 @@
 grouped by the part of the system it touches. Unless a line says otherwise (items 2, 15 and 20 to 25 are built), nothing here is built yet; the numbers
 quoted are the ones DESIGN.md measured, and each item says how I'd check it. Security and LLM guardrails (tenant
 identity, authorisation, tenant filtering, PII redaction, audit log, harmful-intent, injection, scope and rate-limit
-guards) are built and have their own page: [SECURITY.md](../topics/17_security.md). So are the LLM cost items 20 to 23 below,
+guards) are built and have their own page: [17_security.md](../topics/17_security.md). So are the LLM cost items 20 to 23 below,
 on [19_llm_cost.md](../topics/19_llm_cost.md) and [20_web_search.md](../topics/20_web_search.md), and A2A and agent memory (items 24 and 25), on
 [21_a2a.md](../topics/21_a2a.md) and [22_agent_memory.md](../topics/22_agent_memory.md).
 

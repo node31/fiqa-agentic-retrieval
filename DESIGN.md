@@ -672,7 +672,7 @@ and global-IDF guarantees would be lost.
 | planner splits some plain questions | those 7 lost recall (0.824 → 0.514) |
 | a failed worker's half loses its slots | the surviving sub-query fills all 10 slots |
 | agent quality depends on the model | the haiku and gpt-6-sol runs led to different routing decisions |
-| shards trust the router | with security on, anything inside the Docker network can still call a shard directly ([SECURITY.md](docs/topics/17_security.md) section 7) |
+| shards trust the router | with security on, anything inside the Docker network can still call a shard directly ([17_security.md](docs/topics/17_security.md) section 7) |
 
 ## 11. Results
 

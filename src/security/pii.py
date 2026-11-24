@@ -17,7 +17,7 @@ WHY CHECKSUMS
     Finance text is full of long numbers (amounts, account sizes, years). A pattern alone would redact
     "1234 5678 9012 3456" as a card; the Luhn check removes most of those false alarms. Same for IBANs.
 
-WHAT IT MISSES (on purpose, see SECURITY.md)
+WHAT IT MISSES (on purpose, see docs/topics/17_security.md)
     Names and street addresses need a named-entity model (e.g. Presidio + spaCy). Regexes stay instant,
     explainable and dependency-free; the doc lists the upgrade path.
 """

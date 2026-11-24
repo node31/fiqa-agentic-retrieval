@@ -104,3 +104,16 @@ so her next delegated parts are searched with "Canada" added and bob's are not; 
 `python scripts/a2a_two_agents.py` records it again against the running stack (no LLM calls, it restores the
 router's toggles afterwards); `--render-only` rebuilds the page from `messages.json`. The protocol is explained in
 [docs/topics/21_a2a.md](../../docs/topics/21_a2a.md).
+
+## Memory replay
+
+[results/MemoryReplay/replay.html](results/MemoryReplay/replay.html) is one recorded session with the A2A agent's
+memory, 16 cards, one per A2A message or `/memory` call. Each card shows what memory read, the query the agent
+actually searched (with the words memory added highlighted), the top passages, and the entries the step added or
+removed. The cards are tagged with the duty they show: attribution (an anonymous caller gets no memory), isolation
+(bob sending alice's contextId gets nothing of hers), opt-out (`memory: false`), redaction (an email is stored as
+`[EMAIL]`), access (`GET /memory`), deletion (one entry, then all) and expiry (the memory's clock moved 31 days).
+For "how do I file my income taxes?" alice's top 5 had 1 passage about Canada before she said she lives there and
+5 after. `python scripts/memory_replay.py` records it again against the running stack (no LLM calls);
+`--render-only` rebuilds the page from `steps.json`. Memory is explained in
+[docs/topics/22_agent_memory.md](../../docs/topics/22_agent_memory.md).

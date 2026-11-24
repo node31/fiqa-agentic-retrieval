@@ -80,7 +80,7 @@ def agent_card(base_url: str, skills=SKILLS) -> dict:
                                  "protocolVersion": P.PROTOCOL_VERSION}],
         "provider": {"organization": "fiqa-agentic-retrieval (learning project)",
                      "url": "https://github.com/node31/fiqa-agentic-retrieval"},
-        "documentationUrl": "https://github.com/node31/fiqa-agentic-retrieval/blob/main/docs/design/A2A_AND_MEMORY.md",
+        "documentationUrl": "https://github.com/node31/fiqa-agentic-retrieval/blob/main/docs/topics/21_a2a.md",
         "capabilities": {"streaming": False, "pushNotifications": False, "extendedAgentCard": False},
         "securitySchemes": {"bearer": {"httpAuthSecurityScheme": {
             "scheme": "Bearer", "bearerFormat": "JWT",

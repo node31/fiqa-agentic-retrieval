@@ -808,7 +808,7 @@ LLM cost optimizations and a web fallback are built too ([docs/topics/19_llm_cos
   question PII-free.
 
 The agents also run as an A2A (Agent2Agent 1.0) service with conversation and user memory
-([docs/design/A2A_AND_MEMORY.md](docs/design/A2A_AND_MEMORY.md)):
+([docs/topics/21_a2a.md](docs/topics/21_a2a.md) and [docs/topics/22_agent_memory.md](docs/topics/22_agent_memory.md)):
 
 - A coordinator agent that splits compound questions and delegates each part over A2A raises Coverage@10 from 0.11
   to 0.34, with no LLM.

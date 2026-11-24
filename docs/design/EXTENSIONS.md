@@ -6,7 +6,7 @@ quoted are the ones DESIGN.md measured, and each item says how I'd check it. Sec
 identity, authorisation, tenant filtering, PII redaction, audit log, harmful-intent, injection, scope and rate-limit
 guards) are built and have their own page: [SECURITY.md](../topics/17_security.md). So are the LLM cost items 20 to 23 below,
 on [19_llm_cost.md](../topics/19_llm_cost.md) and [20_web_search.md](../topics/20_web_search.md), and A2A and agent memory (items 24 and 25), on
-[A2A_AND_MEMORY.md](A2A_AND_MEMORY.md).
+[21_a2a.md](../topics/21_a2a.md) and [22_agent_memory.md](../topics/22_agent_memory.md).
 
 ## Contents
 
@@ -73,5 +73,5 @@ The failure analysis found two kinds I'd fix first:
 | 21 | **Semantic cache** (built) | users rephrase; an exact prompt cache misses every rephrasing | built: at cosine 0.85, 65% of paraphrases hit, 0.8% of dev questions hit a different question |
 | 22 | **Web search fallback** (built, toggle `web_fallback`) | the corpus ends around 2018 and is finance only | built: fires on 1% of dev and 70% of off-topic questions; the question is sent PII-free |
 | 23 | **Context trimming and provider prompt caching** (built) | fewer input tokens per call; repeated prefixes billed at a discount | built: the cheap tier reads about 442 input tokens; cached tokens are reported, and were 0 because our prompts are under the 1,024-token minimum |
-| 24 | **A2A (Agent2Agent) service** (built) | other agents can discover the FiQA agents from a card and delegate to them | built: delegation of compound questions over A2A, Coverage@10 0.11 → 0.34 without an LLM. [A2A_AND_MEMORY.md](A2A_AND_MEMORY.md) |
-| 25 | **Agent memory** (built) | follow-ups and user facts ("I live in Canada") | built: follow-up R@10 0.103 → 0.439 (rule) / 0.455 (LLM rewrite); PII-redacted, per user, expiring, deletable |
+| 24 | **A2A (Agent2Agent) service** (built) | other agents can discover the FiQA agents from a card and delegate to them | built: delegation of compound questions over A2A, Coverage@10 0.11 → 0.34 without an LLM. [21_a2a.md](../topics/21_a2a.md) |
+| 25 | **Agent memory** (built) | follow-ups and user facts ("I live in Canada") | built: follow-up R@10 0.103 → 0.439 (rule) / 0.455 (LLM rewrite); PII-redacted, per user, expiring, deletable. [22_agent_memory.md](../topics/22_agent_memory.md) |

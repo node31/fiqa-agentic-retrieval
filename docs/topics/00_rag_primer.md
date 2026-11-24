@@ -43,7 +43,8 @@ Each shard has a BM25 index, a dense index, a doc store and a *WAL* (write-ahead
 | cascade, semantic cache, trimming | `src/agent/cascade.py`, `semantic_cache.py`, `llm.py` (Budget) | [19](19_llm_cost.md) |
 | web search fallback | `src/service/websearch.py`, `Router.search` | [20](20_web_search.md) |
 | tokens, tenants, PII, audit, guardrails | `src/security/*` | [17](17_security.md) |
-| A2A service, agent memory | `src/a2a/`, `src/agent/memory.py` | [21](21_a2a_and_memory.md) |
+| A2A service | `src/a2a/` | [21](21_a2a.md) |
+| agent memory | `src/agent/memory.py` | [22](22_agent_memory.md) |
 
 Offline, `python -m src.index.build_index` embeds the corpus once per model (about 10 min for MiniLM, 18 min for
 bge-small on 32 cores). Each shard loads its slice (`crc32(doc_id) % 3`), builds BM25 in seconds and copies its vectors

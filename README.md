@@ -15,7 +15,7 @@ LLM cost optimizations (a model cascade, a semantic cache, context trimming) and
 the corpus can't answer, with how to use each and what it measured, are in
 [docs/topics/19_llm_cost.md](docs/topics/19_llm_cost.md) and [docs/topics/20_web_search.md](docs/topics/20_web_search.md). The agents also run as an A2A (Agent2Agent
 protocol 1.0) service that other agents can discover and call, with conversation and user memory under the same
-privacy rules: [docs/design/A2A_AND_MEMORY.md](docs/design/A2A_AND_MEMORY.md).
+privacy rules: [docs/topics/21_a2a.md](docs/topics/21_a2a.md) and [docs/topics/22_agent_memory.md](docs/topics/22_agent_memory.md).
 
 ![Scenario 7 replay: reads and writes keep flowing while the cluster migrates from MiniLM to bge-small and rolls back](docs/assets/gifs/migrate_cutover_rollback.gif)
 
@@ -236,14 +236,14 @@ scripts/        ask.py (one question) · api_docs.py (API page with examples) ·
                 write_load.py (sync vs async) · docker_check.py · docker_trace.py · bootstrap.sh / bootstrap.ps1
                 mint_token.py · security_demo.py · guardrails_eval.py (security, docs/topics/17_security.md)
                 cascade_policies.py · semantic_cache_eval.py · web_fallback_eval.py (docs/topics/19_llm_cost.md, 20_web_search.md)
-                a2a_demo.py · memory_eval.py (docs/design/A2A_AND_MEMORY.md)
+                a2a_demo.py · memory_eval.py (docs/topics/21_a2a.md, 22_agent_memory.md)
 scenarios/      SimpleScenarios/ (8 CSV stories + template + recorded results) · ComplexScenarios/ (JSONL: freshness, migration, shard failure, ...)
 tests/          unit, in-process and multi-process integration tests
 results/        bench.json · runs/ (incl. the one TEST run) · ablation_*.json · migration_demo.json · write_load.json · agent_eval*.json · failures.md
 examples/       small standalone scripts
 FIQA_RETRIEVAL_TASKS.md  the task spec: parts A-C, constraints, deliverables
 AGENTS.md       how to set up, test and work in the repo (for coding agents)
-docs/           topics/ (00-21, one concept each) · from_zero/ (the whole system from scratch) · walkthroughs/ (eval, Part A/B results) · guides/ (scenarios, manual tests) · faq/ (concepts, this project) · design/ (DESIGN.docx, DESIGN.pptx, EXTENSIONS.md, SECURITY.md, LLM_OPTIMIZATIONS.md, A2A_AND_MEMORY.md) · assets/
+docs/           topics/ (00-22, one concept each) · from_zero/ (the whole system from scratch) · walkthroughs/ (eval, Part A/B results) · guides/ (scenarios, manual tests) · faq/ (concepts, this project) · design/ (DESIGN.docx, DESIGN.pptx, EXTENSIONS.md, SECURITY.md, LLM_OPTIMIZATIONS.md, A2A_AND_MEMORY.md) · assets/
 ```
 
 ## Measured on

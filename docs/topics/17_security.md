@@ -246,6 +246,88 @@ then restricts both indexes before it picks its top-k:
 - Dense: a faiss `IDSelectorBatch` with the tenant's ids, passed as `SearchParameters(sel=...)`. faiss checks it inside
   the scan, so the result is the exact top-k among the allowed vectors.
 
+#### A worked example: six documents, two tenants
+
+The same classes the shards use, on six tiny documents. Odd ids belong to acme (alice), even ids to globex (bob).
+"mortgage" is common in globex's documents and rare in acme's. Run it from the repo root; it needs the MiniLM
+weights, which `make setup` already downloaded.
+
+```python
+import numpy as np
+from src.retrieval.bm25 import BM25Index, tokenize, idf
+from src.retrieval.dense import DenseIndex, get_embedder
+from src.security.tenants import default_tenant
+
+docs = {"1": "fixed rate mortgage refinancing explained",     # odd ids: acme
+        "3": "index funds and low fees",
+        "5": "roth ira contribution limits",
+        "2": "mortgage rates rise again",                     # even ids: globex
+        "4": "mortgage insurance and mortgage points",
+        "6": "paying off a mortgage early"}
+ids = list(docs)
+owner = {d: default_tenant(d) for d in ids}
+bm = BM25Index().build(ids, [docs[d] for d in ids])
+mask = np.array([owner[d] == "acme" for d in bm.doc_ids])     # one bool per BM25 row
+print("mask:", dict(zip(bm.doc_ids, mask.tolist())))
+
+terms = list(dict.fromkeys(tokenize("mortgage refinancing")))
+shared, acme = bm.local_stats(terms), bm.local_stats(terms, mask)
+for name, s in (("shared", shared), ("acme only", acme)):
+    print(f"{name:9}  N={s.n_docs}  avgdl={s.avgdl:.2f}  df={s.df}  "
+          f"idf={ {t: round(idf(s.n_docs, s.df[t]), 3) for t in terms} }")
+
+print("alice, shared stats:    ", bm.search(terms, 3, shared, mask))
+print("alice, per-tenant stats:", bm.search(terms, 3, acme, mask))
+
+bm.add("8", "mortgage mortgage mortgage")                      # globex writes one more doc
+mask = np.array([owner.get(d, default_tenant(d)) == "acme" for d in bm.doc_ids])
+print("after globex adds doc 8:")
+print("  alice, shared stats:    ", bm.search(terms, 3, bm.local_stats(terms), mask))
+print("  alice, per-tenant stats:", bm.search(terms, 3, bm.local_stats(terms, mask), mask))
+
+emb = get_embedder("minilm")
+dn = DenseIndex(384)
+dn.add(ids, emb.encode_docs([docs[d] for d in ids]))
+q = emb.encode_queries(["what are mortgage rates doing?"])[0]
+print("dense, no filter, k=2:        ", [(d, owner[d], round(s, 3)) for d, s in dn.search(q, 2)])
+after = [(d, round(s, 3)) for d, s in dn.search(q, 2) if owner[d] == "acme"]
+print("dense, filter AFTER top-2:    ", after)
+sel, n = dn.selector(d for d in ids if owner[d] == "acme")
+print("dense, IDSelectorBatch, k=2:  ", [(d, owner[d], round(s, 3)) for d, s in dn.search(q, 2, sel, n)])
+```
+
+```
+mask: {'1': True, '3': True, '5': True, '2': False, '4': False, '6': False}
+shared     N=6  avgdl=4.17  df={'mortgag': 4, 'refinanc': 1}  idf={'mortgag': 0.442, 'refinanc': 1.54}
+acme only  N=3  avgdl=4.33  df={'mortgag': 1, 'refinanc': 1}  idf={'mortgag': 0.981, 'refinanc': 0.981}
+alice, shared stats:     [('1', 1.83235764503479)]
+alice, per-tenant stats: [('1', 1.8455077409744263)]
+after globex adds doc 8:
+  alice, shared stats:     [('1', 1.8585870265960693)]
+  alice, per-tenant stats: [('1', 1.8455077409744263)]
+dense, no filter, k=2:         [('2', 'globex', 0.705), ('1', 'acme', 0.615)]
+dense, filter AFTER top-2:     [('1', 0.615)]
+dense, IDSelectorBatch, k=2:   [('1', 'acme', 0.615), ('3', 'acme', 0.155)]
+```
+
+Line by line:
+
+- The mask is one boolean per BM25 row. `search` sets the score of every False row to 0 before `_top_k`, so
+  globex's docs 2, 4 and 6 never compete, even though three of them contain "mortgage".
+- Shared statistics count all six docs: "mortgage" (stemmed to `mortgag`) is in 4 of 6, so its IDF is 0.442.
+  Counted over acme's three docs it is in 1 of 3, and its IDF is 0.981. N, avgdl and every df change, which is why
+  `stats()` and `search()` both take the tenant: the router sums the per-tenant statistics from the three shards,
+  then sends them back for scoring.
+- The leak: globex writes doc 8, and alice's score for her own doc 1 moves from 1.832 to 1.859 under shared
+  statistics. alice never sees doc 8, but by watching her own scores she learns that globex's documents changed,
+  and by searching one word at a time she can estimate how common a word is in globex's data. With per-tenant
+  statistics her score stays at 1.846: only acme's documents can move it.
+- Dense, no filter: the closest doc to "what are mortgage rates doing?" is globex's doc 2. Filtering after the top 2
+  leaves alice one result instead of two. On the real corpus this is the "5 of 10" result in step 5 below.
+- Dense with `IDSelectorBatch`: faiss checks the selector for each vector while it scans, so the top 2 are the two
+  best acme docs (1 and 3). The second is a poor match (0.155), but it is the best acme has, which is what
+  "exact top-k among the allowed vectors" means.
+
 Both filters are cached per tenant against a generation counter that every applied write, backfill batch and model
 change increments. A read-only workload builds each tenant's filter once.
 

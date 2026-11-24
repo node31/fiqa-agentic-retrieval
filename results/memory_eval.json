@@ -1,0 +1,163 @@
+{
+ "model": "minilm-ft",
+ "search": "hybrid, in-process",
+ "follow_ups": {
+  "n": 100,
+  "share_flagged_as_follow_up": 0.97,
+  "conditions": {
+   "original": {
+    "recall@10": 0.4912,
+    "ndcg@10": 0.4293
+   },
+   "follow-up only": {
+    "recall@10": 0.1032,
+    "ndcg@10": 0.0893
+   },
+   "memory rule": {
+    "recall@10": 0.439,
+    "ndcg@10": 0.4008
+   },
+   "always prepend": {
+    "recall@10": 0.444,
+    "ndcg@10": 0.4074
+   },
+   "LLM rewrite": {
+    "recall@10": 0.4545,
+    "ndcg@10": 0.4096
+   }
+  }
+ },
+ "follow_up_examples": [
+  {
+   "id": "6617",
+   "queries": {
+    "original": "(How) can I print my own checks on my printer on regular paper?",
+    "follow-up only": "How can I do that on regular paper?",
+    "memory rule": "I want to print my own checks on my printer. How can I do that on regular paper?",
+    "always prepend": "I want to print my own checks on my printer. How can I do that on regular paper?",
+    "LLM rewrite": "How can I print my own checks on my printer using regular paper?"
+   },
+   "recall@10": {
+    "original": 1.0,
+    "follow-up only": 0.0,
+    "memory rule": 1.0,
+    "always prepend": 1.0,
+    "LLM rewrite": 1.0
+   }
+  },
+  {
+   "id": "1718",
+   "queries": {
+    "original": "What exactly is the interest rate that the Fed is going to adjust?",
+    "follow-up only": "What exactly is that rate?",
+    "memory rule": "The Fed is going to adjust an interest rate. What exactly is that rate?",
+    "always prepend": "The Fed is going to adjust an interest rate. What exactly is that rate?",
+    "LLM rewrite": "Which specific interest rate is the Federal Reserve going to adjust, and what exactly is that rate?"
+   },
+   "recall@10": {
+    "original": 0.0,
+    "follow-up only": 0.0,
+    "memory rule": 0.0,
+    "always prepend": 0.0,
+    "LLM rewrite": 0.3333
+   }
+  },
+  {
+   "id": "10237",
+   "queries": {
+    "original": "Why is gold not a good investment?",
+    "follow-up only": "Why might it not be a good investment?",
+    "memory rule": "I'm thinking about investing in gold. Why might it not be a good investment?",
+    "always prepend": "I'm thinking about investing in gold. Why might it not be a good investment?",
+    "LLM rewrite": "Why might investing in gold not be a good investment?"
+   },
+   "recall@10": {
+    "original": 0.75,
+    "follow-up only": 0.0,
+    "memory rule": 0.5,
+    "always prepend": 0.5,
+    "LLM rewrite": 0.5
+   }
+  },
+  {
+   "id": "7391",
+   "queries": {
+    "original": "How to trade large number of shares?",
+    "follow-up only": "How do I trade a large number of them?",
+    "memory rule": "I want to trade shares. How do I trade a large number of them?",
+    "always prepend": "I want to trade shares. How do I trade a large number of them?",
+    "LLM rewrite": "How do I trade a large number of shares?"
+   },
+   "recall@10": {
+    "original": 0.6667,
+    "follow-up only": 0.6667,
+    "memory rule": 0.6667,
+    "always prepend": 0.6667,
+    "LLM rewrite": 0.6667
+   }
+  },
+  {
+   "id": "3353",
+   "queries": {
+    "original": "Why did the stock chart for Facebook's first trading day show an initial price of $42 when the IPO price was $38?",
+    "follow-up only": "Why did it start at $42 instead of $38?",
+    "memory rule": "Facebook’s IPO price was $38, but its stock chart shows $42 at the start of its first trading day. Why did it start at $42 instead of $38?",
+    "always prepend": "Facebook’s IPO price was $38, but its stock chart shows $42 at the start of its first trading day. Why did it start at $42 instead of $38?",
+    "LLM rewrite": "Why did Facebook stock start trading at $42 on its first trading day when its IPO price was $38?"
+   },
+   "recall@10": {
+    "original": 1.0,
+    "follow-up only": 0.0,
+    "memory rule": 1.0,
+    "always prepend": 1.0,
+    "LLM rewrite": 0.5
+   }
+  }
+ ],
+ "country_facts": {
+  "questions": [
+   "what retirement account should I open?",
+   "how are capital gains taxed?",
+   "how do I file my income taxes?",
+   "should I buy or rent a house?",
+   "how do I build a good credit score?",
+   "how can I save for my children's education?",
+   "what is the best way to send money abroad?",
+   "how much tax do I pay on dividends?",
+   "how do I start investing in index funds?",
+   "what happens to my pension if I change jobs?"
+  ],
+  "share_of_top10_mentioning_country": {
+   "Canada": {
+    "without_memory": 0.08,
+    "with_memory": 0.54
+   },
+   "UK": {
+    "without_memory": 0.09,
+    "with_memory": 0.7
+   },
+   "India": {
+    "without_memory": 0.02,
+    "with_memory": 0.35
+   },
+   "Australia": {
+    "without_memory": 0.01,
+    "with_memory": 0.25
+   }
+  },
+  "example": {
+   "question": "how do I file my income taxes?",
+   "fact": "I live in India",
+   "without": [
+    "\"In the U.S., Form 1040 is known as the tax return. This is the form that is filed annually to calculate your tax due fo",
+    "You need to file IRS Form 1040-NR. The IRS's website provides instructions.",
+    "You must file an FBAR when doing your taxes."
+   ],
+   "with_fact": [
+    "Since you are living in India and earning income not from salary, you must file your tax return under ITR4(Profits or Ga",
+    "\"My tax preparing agent is suggesting that since the stock brokers in India does not have any US state ITINS, it becomes",
+    "\"You will need to file a US income tax return, and declare all income world-wide. Whether this results in any tax owed d"
+   ]
+  }
+ }
+}

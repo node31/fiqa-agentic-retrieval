@@ -47,6 +47,8 @@ cached, and on Windows `PYTHONIOENCODING=utf-8`.
 | cascade, semantic cache, web fallback tests | `python -m pytest -q tests/test_cascade.py --doctest-modules src/agent/cascade.py src/agent/semantic_cache.py src/service/websearch.py` (fast); web fallback service tests are in `tests/test_security_service.py` |
 | cascade on Azure / rules offline | `python scripts/agent_eval.py --backend azure --confirm-spend --systems cascade --cascade-shadow --out results/agent_eval_cascade.json`, then `python scripts/cascade_policies.py` (no LLM calls) |
 | web fallback on the live stack | `python scripts/web_fallback_eval.py` (calls Wikipedia; toggles restored) |
+| A2A + memory tests | `python -m pytest -q tests/test_a2a.py --doctest-modules src/a2a src/agent/memory.py` (fast, in-process) |
+| A2A server / demo | `python -m src.a2a.server --router http://localhost:8000` (:8300, fake LLM); `python scripts/a2a_demo.py` (starts its own) |
 
 Test clusters use their own ports (18000+, 19000+), so they can run while the dev cluster or Docker holds 8000.
 

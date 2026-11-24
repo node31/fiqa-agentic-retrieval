@@ -1,0 +1,30 @@
+{
+ "cascade": {
+  "state": "TASK_STATE_COMPLETED",
+  "meta": {
+   "skill": "cascade",
+   "k": 3,
+   "memory": {
+    "enabled": true,
+    "query_searched": "what is a roth ira?",
+    "turn_used": null,
+    "facts_used": []
+   },
+   "llm_calls": 4,
+   "usd": 0.003013,
+   "input_tokens": 1881,
+   "output_tokens": 283,
+   "latency_s": 14.539
+  },
+  "top": [
+   "Your question seems like you don't understand what a Roth IRA is. A Roth IRA isn't an inve",
+   "\"A Roth IRA is simply a tax-sheltered account that you deposit funds into, and then invest",
+   "\"This does not apply to Roth IRAs. It defines the difference between the two depending on "
+  ]
+ },
+ "guardrail": {
+  "state": "TASK_STATE_REJECTED",
+  "message": "refused by the guardrails (structuring); no LLM call was made",
+  "llm_calls": null
+ }
+}

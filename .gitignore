@@ -39,3 +39,5 @@ exercises/
 # the cluster logs (local paths) and run.json (wall time for SUMMARY.md) are not
 scenarios/SimpleScenarios/results/**/cluster_logs/
 scenarios/SimpleScenarios/results/**/run.json
+# agent memory of the A2A server (personal data: never commit)
+*.sqlite

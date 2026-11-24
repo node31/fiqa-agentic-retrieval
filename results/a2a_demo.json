@@ -1,0 +1,111 @@
+{
+ "card": {
+  "name": "FiQA retrieval agents",
+  "interface": {
+   "url": "http://127.0.0.1:8300/a2a",
+   "protocolBinding": "JSONRPC",
+   "protocolVersion": "1.0"
+  },
+  "skills": [
+   "retrieve",
+   "single",
+   "multi",
+   "cascade"
+  ]
+ },
+ "delegation": {
+  "n": 100,
+  "coverage@10_one_task": 0.11,
+  "coverage@10_split_and_delegate": 0.34,
+  "avg_parts": 2.14,
+  "a2a_tasks": 314,
+  "wall_s": 21.1,
+  "examples": [
+   {
+    "question": "Why might a share price not change at all for several days, and what are the steps to buying a home?",
+    "parts": [
+     "Why might a share price not change at all for several days",
+     "what are the steps to buying a home"
+    ],
+    "coverage_whole": 0.0,
+    "coverage_split": 0.0
+   },
+   {
+    "question": "We're switching from DINK to single income with kids: how do people afford children, and how can I receive important daily wire transfers from abroad?",
+    "parts": [
+     "We're switching from DINK to single income with kids: how do people afford children",
+     "how can I receive important daily wire transfers from abroad"
+    ],
+    "coverage_whole": 0.0,
+    "coverage_split": 0.0
+   },
+   {
+    "question": "Can I use a Roth IRA instead of a college savings account, and when the Reserve Bank sets interest rates does it take house prices into account?",
+    "parts": [
+     "Can I use a Roth IRA instead of a college savings account",
+     "when the Reserve Bank sets interest rates does it take house prices into account"
+    ],
+    "coverage_whole": 0.0,
+    "coverage_split": 0.0
+   }
+  ]
+ },
+ "memory": {
+  "turns": [
+   {
+    "asked": "I live in Canada. What is the best account to save for retirement?",
+    "searched": "I live in Canada. What is the best account to save for retirement?",
+    "top3": [
+     "To piggyback on a comment that @enderland posted, if you have some extra cash saved, something worth",
+     "It really depends on your taxable income. If you are in a higher tax bracket and expect to be in a l",
+     "You have a variety of options depending on the specifics of your situation. I would recommend the fi"
+    ]
+   },
+   {
+    "asked": "can I take money out of it early?",
+    "searched": "I live in Canada. What is the best account to save for retirement? can I take money out of it early?",
+    "top3": [
+     "To piggyback on a comment that @enderland posted, if you have some extra cash saved, something worth",
+     "\"The biggest and primary question is how much money you want to live on within retirement. The lower",
+     "Actually there has been lots of talk around using a TFSA (Tax Free Savings Account) in Canada for ju"
+    ]
+   },
+   {
+    "asked": "how are capital gains taxed?",
+    "searched": "how are capital gains taxed? Canada",
+    "top3": [
+     "In Canada, it is similarly taxed as CQM states. Mining is considered business income and you need to",
+     "I think this question is very nearly off-topic for this site, but I also believe that a basic unders",
+     "\"Appreciation of a Capital Asset is a Capital Gain. In the United States, Capital Gains get favorabl"
+    ]
+   }
+  ],
+  "export": [
+   {
+    "kind": "fact",
+    "text": "I live in Canada"
+   },
+   {
+    "kind": "turn",
+    "text": "I live in Canada. What is the best account to save for retirement?"
+   },
+   {
+    "kind": "turn",
+    "text": "can I take money out of it early?"
+   },
+   {
+    "kind": "turn",
+    "text": "how are capital gains taxed?"
+   }
+  ],
+  "forget": {
+   "deleted": 4
+  },
+  "after_forget": 0
+ },
+ "isolation": {
+  "bob_can_read_alices_task": false,
+  "bob_searched": "how are capital gains taxed?",
+  "bob_memory_entries_before_his_search": 0
+ }
+}

@@ -13,7 +13,9 @@ the shards, PII redaction, an audit log) and LLM guardrails (harmful intent, pro
 limit), each behind its own runtime toggle and all off by default, are in [docs/design/SECURITY.md](docs/design/SECURITY.md).
 LLM cost optimizations (a model cascade, a semantic cache, context trimming) and a web search fallback for questions
 the corpus can't answer, with how to use each and what it measured, are in
-[docs/design/LLM_OPTIMIZATIONS.md](docs/design/LLM_OPTIMIZATIONS.md).
+[docs/design/LLM_OPTIMIZATIONS.md](docs/design/LLM_OPTIMIZATIONS.md). The agents also run as an A2A (Agent2Agent
+protocol 1.0) service that other agents can discover and call, with conversation and user memory under the same
+privacy rules: [docs/design/A2A_AND_MEMORY.md](docs/design/A2A_AND_MEMORY.md).
 
 ![Scenario 7 replay: reads and writes keep flowing while the cluster migrates from MiniLM to bge-small and rolls back](docs/assets/gifs/migrate_cutover_rollback.gif)
 
@@ -226,20 +228,22 @@ src/            search.py (CLI) · eval.py · metrics.py · config.py · beir_da
   retrieval/    bm25.py · dense.py · hybrid.py · rerank.py
   index/        build_index.py (embedding cache) · sharding.py
   service/      router.py · shard_server.py · store.py · async_apply.py (async write mode) · wal.py · cluster.py · websearch.py (web fallback)
-  agent/        llm.py · tools.py · prompts.py · single_agent.py · orchestrator.py · fake_policies.py · cascade.py · semantic_cache.py
+  agent/        llm.py · tools.py · prompts.py · single_agent.py · orchestrator.py · fake_policies.py · cascade.py · semantic_cache.py · memory.py
+  a2a/          protocol.py · server.py (the agents as an A2A service, :8300) · client.py
   security/     tenants.py · tokens.py · pii.py · audit.py · guardrails.py · ratelimit.py · config.py (toggles) · policy.py
-data/           build_compound.py · compound_dev.jsonl · compound_rewrites.json · compound_review_sheet.md · guardrails_redteam.jsonl · guardrails_heldout.jsonl · paraphrases_plain.jsonl (semantic cache eval)
+data/           build_compound.py · compound_dev.jsonl · compound_rewrites.json · compound_review_sheet.md · guardrails_redteam.jsonl · guardrails_heldout.jsonl · paraphrases_plain.jsonl (semantic cache eval) · followups_plain.jsonl (memory eval)
 scripts/        ask.py (one question) · api_docs.py (API page with examples) · bench.py · ablations.py · failure_cases.py · migration.py · query_load.py · migration_demo.py · agent_eval.py · scenario.py (+ replay_html.py, run_simple_scenarios.py)
                 write_load.py (sync vs async) · docker_check.py · docker_trace.py · bootstrap.sh / bootstrap.ps1
                 mint_token.py · security_demo.py · guardrails_eval.py (security, docs/design/SECURITY.md)
                 cascade_policies.py · semantic_cache_eval.py · web_fallback_eval.py (docs/design/LLM_OPTIMIZATIONS.md)
+                a2a_demo.py · memory_eval.py (docs/design/A2A_AND_MEMORY.md)
 scenarios/      SimpleScenarios/ (8 CSV stories + template + recorded results) · ComplexScenarios/ (JSONL: freshness, migration, shard failure, ...)
 tests/          unit, in-process and multi-process integration tests
 results/        bench.json · runs/ (incl. the one TEST run) · ablation_*.json · migration_demo.json · write_load.json · agent_eval*.json · failures.md
 examples/       small standalone scripts
 FIQA_RETRIEVAL_TASKS.md  the task spec: parts A-C, constraints, deliverables
 AGENTS.md       how to set up, test and work in the repo (for coding agents)
-docs/           topics/ (00-18, one concept each) · from_zero/ (the whole system from scratch) · walkthroughs/ (eval, Part A/B results) · guides/ (scenarios, manual tests) · faq/ (concepts, this project) · design/ (DESIGN.docx, DESIGN.pptx, EXTENSIONS.md, SECURITY.md, LLM_OPTIMIZATIONS.md) · assets/
+docs/           topics/ (00-19, one concept each) · from_zero/ (the whole system from scratch) · walkthroughs/ (eval, Part A/B results) · guides/ (scenarios, manual tests) · faq/ (concepts, this project) · design/ (DESIGN.docx, DESIGN.pptx, EXTENSIONS.md, SECURITY.md, LLM_OPTIMIZATIONS.md, A2A_AND_MEMORY.md) · assets/
 ```
 
 ## Measured on

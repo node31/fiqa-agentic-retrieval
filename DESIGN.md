@@ -807,6 +807,15 @@ LLM cost optimizations and a web fallback are built too ([docs/design/LLM_OPTIMI
 - The web fallback (toggle `web_fallback`) fires on 1% of dev questions and 70% of off-topic ones, and sends the
   question PII-free.
 
+The agents also run as an A2A (Agent2Agent 1.0) service with conversation and user memory
+([docs/design/A2A_AND_MEMORY.md](docs/design/A2A_AND_MEMORY.md)):
+
+- A coordinator agent that splits compound questions and delegates each part over A2A raises Coverage@10 from 0.11
+  to 0.34, with no LLM.
+- Without memory a follow-up question keeps R@10 0.103 of the original's 0.491. Prepending the last turn recovers
+  0.439, and an LLM rewrite 0.455.
+- Memory is kept for identified users only, PII-redacted, isolated per user, expiring, and deletable.
+
 ---
 Reproducibility: quality metrics come from `results/bench.json`, `results/ablation_*.json`, `results/write_load.json`,
 `results/migration_demo.json`, `results/agent_eval.json` and `results/compare_*.json`, and Docker reproduces the chosen configuration's quality

@@ -7,7 +7,8 @@ orchestrator on top, evaluated on plain and compound questions.
 
 The tasks and constraints are in [FIQA_RETRIEVAL_TASKS.md](FIQA_RETRIEVAL_TASKS.md). Design, results and trade-offs are
 in [DESIGN.md](DESIGN.md), also as a [Word document](docs/design/DESIGN.docx) and
-[slides](docs/design/DESIGN.pptx). What I'd add next, task by task, as the engineering lead is in
+[slides](docs/design/DESIGN.pptx) (45 slides in 20 sections, from the results through security, fine-tuning, cost,
+memory, A2A and web search to next steps). What I'd add next, task by task, as the engineering lead is in
 [docs/design/EXTENSIONS.md](docs/design/EXTENSIONS.md). Security (tenant identity, authorisation, tenant filtering inside
 the shards, PII redaction, an audit log) and LLM guardrails (harmful intent, prompt injection, topic scope, rate
 limit), each behind its own runtime toggle and all off by default, are in [docs/topics/17_security.md](docs/topics/17_security.md).

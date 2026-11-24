@@ -133,6 +133,19 @@ flowchart LR
 
 ### 4.1 Identity
 
+```mermaid
+flowchart LR
+  C["client<br/>Authorization: Bearer token"] --> S["router: secured()<br/>(every endpoint but /health)"]
+  S --> I["Policy.identify()"]:::check
+  I --> V["tokens.verify()<br/>HS256 only, HMAC compared in<br/>constant time, exp, sub/tenant/role"]:::check
+  V -- "missing or bad (identity on)" --> X["401"]
+  V -- ok --> K["Caller(user, tenant, role)"] --> W["the endpoint's work()"]
+  A["A2A server: caller_of()"] --> V
+  classDef check fill:#fde68a,stroke:#b45309,color:#111
+```
+
+The highlighted boxes are where the check runs.
+
 [tokens.py](../../src/security/tokens.py) is a JWT (HS256) written out by hand so every step is visible: base64url
 header and payload, and an HMAC-SHA256 signature over both. The payload carries `sub`, `tenant`, `role`, `iat` and
 `exp`. Anyone can read it, but changing one byte breaks the signature. `verify` rejects a malformed token, any
@@ -147,6 +160,15 @@ client can test its token before the admin switches identity on.
 
 ### 4.2 Tenants and ownership
 
+```mermaid
+flowchart LR
+  L["shard start: load()"] --> DT["default_tenant(doc_id)<br/>odd id: acme, even id: globex"]:::check --> O[("owner map<br/>in each shard")]
+  U["POST /upsert as alice"] --> WS["router: Policy.write_scope()<br/>owner = caller's tenant"] --> SW["owner shard: _write()<br/>sets owner if the doc has none"]:::check --> O
+  SW --> WAL[("WAL record<br/>carries the tenant")]
+  WAL -- "restart: replay" --> O
+  classDef check fill:#fde68a,stroke:#b45309,color:#111
+```
+
 The shard keeps an `owner` map next to `versions`. The base corpus gets `default_tenant(doc_id)`. A write carries the
 caller's tenant, the shard sets the owner if the doc has none yet, and the WAL record carries it so a restart restores
 it. An old WAL without the field falls back to the default owner.
@@ -156,6 +178,19 @@ succeeded, because doc 1 did not exist, so bob created it and became its owner. 
 now picks a real acme document from alice's results.
 
 ### 4.3 The tenant filter
+
+```mermaid
+flowchart LR
+  C["POST /search as alice"] --> T["router: Policy.search_tenant()<br/>returns 'acme'"]
+  T -- "stats(), then search(),<br/>both with tenant='acme'" --> SH
+  subgraph SH["each of the 3 shards: ShardStore"]
+    M["_row_mask('acme')<br/>one bool per BM25 row"]:::check --> B["BM25 local_stats() and search()<br/>other rows score 0, per-tenant N, df"]
+    SEL["_selector('acme', model)<br/>faiss IDSelectorBatch"]:::check --> DN["dense search: exact top-k<br/>among acme's vectors"]
+  end
+  B --> F["router: fuse, top-k"]
+  DN --> F
+  classDef check fill:#fde68a,stroke:#b45309,color:#111
+```
 
 The router passes the caller's tenant to every shard, in both the statistics phase and the search phase. Each shard
 then restricts both indexes before it picks its top-k:
@@ -177,6 +212,16 @@ tenants and three queries.
 
 ### 4.4 Authorisation
 
+```mermaid
+flowchart LR
+  A1["/admin/security, /admin/audit"] --> RA["secured(admin='always')<br/>Policy.require_admin()"]:::check
+  A2["/admin/migrate, cutover, ..."] --> RB["secured(admin='if_authz')<br/>Policy.require_admin()"]:::check
+  W1["/upsert, /delete"] --> WS["Policy.write_scope()<br/>enforce_tenant"] --> WF["owner shard: forbidden()<br/>under the write lock"]:::check
+  WF -- "someone else's doc" --> X["router: 403"]
+  S1["/search"] --> PS["Policy.post_search()<br/>drop hits owned by another tenant"]:::check
+  classDef check fill:#fde68a,stroke:#b45309,color:#111
+```
+
 Three rules, all in [policy.py](../../src/security/policy.py) and the shard:
 
 1. `/admin/security`, `/admin/audit` and `/admin/audit/verify` always need an admin token. The migration endpoints
@@ -194,6 +239,16 @@ Three rules, all in [policy.py](../../src/security/policy.py) and the shard:
 
 ### 4.5 PII redaction
 
+```mermaid
+flowchart LR
+  Q["POST /search"] --> R["Router.search"] --> SH[("shards: the index<br/>keeps the original text")]
+  SH --> PS["Policy.post_search()<br/>pii.redact(passage text)<br/>toggle pii_redaction"]:::check --> OUT["response"]
+  Q --> AU["Policy.audit()<br/>pii.redact(question), always"]:::check --> L[("audit.jsonl")]
+  Q --> WF["web_fallback()<br/>pii.redact(question) before it leaves,<br/>title and snippet when they return"]:::check --> WEB["Wikipedia"]
+  M["A2A server: MemoryStore<br/>pii.redact(text) before storing"]:::check --> MEM[("memory SQLite")]
+  classDef check fill:#fde68a,stroke:#b45309,color:#111
+```
+
 [pii.py](../../src/security/pii.py) finds emails, card numbers (13 to 19 digits that pass the Luhn check), IBANs (that
 pass the mod-97 check), US SSNs, phone numbers and IPv4 addresses. The checksums matter in finance text, which is full
 of long numbers: "1234 5678 9012 3456" fails Luhn and stays.
@@ -206,6 +261,17 @@ Regexes miss names and street addresses. For those I would add a named-entity mo
 same `redact` function.
 
 ### 4.6 Audit log
+
+```mermaid
+flowchart LR
+  REQ["any request"] --> S["router: secured()"]
+  S -- "allow, flagged, blocked" --> A["Policy.audit()"]
+  S -- "Denied: 401, 403, 429" --> A
+  T["POST /admin/security<br/>(logged even with audit off)"] --> A
+  A --> AP["AuditLog.append()<br/>prev hash + own hash"]:::check --> F[("audit.jsonl")]
+  V["GET /admin/audit/verify"] --> VR["AuditLog.verify()<br/>recomputes the chain"]:::check --> F
+  classDef check fill:#fde68a,stroke:#b45309,color:#111
+```
 
 [audit.py](../../src/security/audit.py) appends one JSON line per request: sequence number, time, action, user,
 tenant, role, IP, the redacted question or the doc id and version, the decision (allow, flagged, blocked, deny,
@@ -220,6 +286,15 @@ The chain detects edits but cannot stop someone with write access from rewriting
 hash. Section 7 has the fix.
 
 ### 4.7 Guardrails: harmful intent and prompt injection
+
+```mermaid
+flowchart LR
+  Q["POST /search, or /guardrails/check<br/>(ask.py, before the LLM)"] --> CQ["Policy.check_question()<br/>check_harmful(), check_injection()"]:::check
+  CQ -- block --> X["403"]
+  CQ --> RS["Router.search"] --> PS["Policy.post_search()<br/>find_injection() on each passage,<br/>neutralize() in block mode"]:::check --> OUT["response, read by<br/>an agent's LLM"]
+  UP["POST /upsert"] -. "not checked" .-> IDX[("index")]
+  classDef check fill:#fde68a,stroke:#b45309,color:#111
+```
 
 Both live in [guardrails.py](../../src/security/guardrails.py). They are rules, on purpose: they take about 43
 microseconds per question, cost nothing, give the same answer in every test, and return the phrase that triggered
@@ -247,6 +322,15 @@ an agent's LLM sees the question, so a refused question costs no tokens; it prin
 everything its LLM reads.
 
 ### 4.8 Topic scope
+
+```mermaid
+flowchart LR
+  Q["POST /search"] --> RS["Router.search<br/>also returns top_dense"] --> PS["Policy.post_search()<br/>check_scope(top_dense, model)"]:::check
+  PS -- "below the minimum, block" --> X["no results,<br/>blocked: topic_scope"]
+  PS -- "below the minimum, log" --> F["results + finding"]
+  PS -- "above" --> OK["results"]
+  classDef check fill:#fde68a,stroke:#b45309,color:#111
+```
 
 Topic scope asks one question: is this question about anything we hold? FiQA is personal finance. Somebody who sends
 it "how do I bake chocolate chip cookies" is using a finance assistant as a free general chatbot, and once an agent
@@ -277,6 +361,14 @@ and the results as usual; in `block` mode it returns no results and `"blocked": 
 measured catch rate (70% of 30 off-topic questions) and why it is a weak guard.
 
 ### 4.9 Rate limiting
+
+```mermaid
+flowchart LR
+  C["any request"] --> S["router: secured()"] --> I["Policy.identify()"] --> RL["Policy.check_rate()<br/>TokenBuckets.allow(caller.key)<br/>key: user, or IP if anonymous"]:::check
+  RL -- "bucket empty, block" --> X["429"]
+  RL -- "token taken" --> W["the endpoint's work()"]
+  classDef check fill:#fde68a,stroke:#b45309,color:#111
+```
 
 [ratelimit.py](../../src/security/ratelimit.py) keeps a token bucket per user (per IP for anonymous callers). The
 bucket holds up to 20 tokens and refills at 120 a minute (2 a second); each request takes one. A quick burst of 20

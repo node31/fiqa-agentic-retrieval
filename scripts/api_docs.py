@@ -63,7 +63,7 @@ repeat the tour.
 10. `POST /admin/security` *guardrails in block mode*, then `POST /search` *a fraud how-to*: 403 with the rule that fired.
 11. Authorize as admin again: `GET /admin/audit` (who did what), `GET /admin/audit/verify` (is the log intact).
 12. `POST /admin/security` *web fallback on*, then `POST /search` *ask the web too*, *web, with an email* and
-    *low confidence* (docs/design/LLM_OPTIMIZATIONS.md).
+    *low confidence* (docs/topics/20_web_search.md).
     End with *everything off* so the other examples behave as before.
 """
 

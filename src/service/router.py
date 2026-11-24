@@ -606,7 +606,7 @@ def create_app():
     Security (docs/topics/17_security.md): SECURITY_STATE (toggle file, default next to ROUTER_STATE),
     AUDIT_LOG (default audit.jsonl next to it), AUTH_SECRET (token key), SECURITY_<FEATURE> (starting
     toggle values), RATE_LIMIT_PER_MIN / RATE_LIMIT_BURST, GUARD_SCOPE_MIN.
-    Web fallback (docs/topics/19_llm_cost_and_fallback.md): WEB_SEARCH_PROVIDER (wikipedia | fake),
+    Web fallback (docs/topics/20_web_search.md): WEB_SEARCH_PROVIDER (wikipedia | fake),
     WEB_FALLBACK_MIN (best dense score below which the corpus counts as "no good answer").
 
     PITFALL: the request models above live at MODULE level. With

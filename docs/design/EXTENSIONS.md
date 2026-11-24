@@ -5,7 +5,7 @@ grouped by the part of the system it touches. Unless a line says otherwise (item
 quoted are the ones DESIGN.md measured, and each item says how I'd check it. Security and LLM guardrails (tenant
 identity, authorisation, tenant filtering, PII redaction, audit log, harmful-intent, injection, scope and rate-limit
 guards) are built and have their own page: [SECURITY.md](../topics/17_security.md). So are the LLM cost items 20 to 23 below,
-on [LLM_OPTIMIZATIONS.md](LLM_OPTIMIZATIONS.md), and A2A and agent memory (items 24 and 25), on
+on [19_llm_cost.md](../topics/19_llm_cost.md) and [20_web_search.md](../topics/20_web_search.md), and A2A and agent memory (items 24 and 25), on
 [A2A_AND_MEMORY.md](A2A_AND_MEMORY.md).
 
 ## Contents
@@ -69,7 +69,7 @@ The failure analysis found two kinds I'd fix first:
 | 17 | **Break complex queries into simpler ones** | a compound question searched as one query finds one half (baseline Coverage@10 0.10); splitting it is what the agents do (single 0.40, multi 0.32) | Coverage@10 on the compound set |
 | 18 | **Closed models**: improve them through **retrieval and tools** at question time, and **distillation** into a small open model (reading of my notes) | you can't fine-tune a closed model's weights; you can give it better context, or train an open model on its outputs | the distilled model must match the big one on the agent-eval table |
 | 19 | **Check the LLM's answer quality** (item 7) | the four criteria: grounded, correct, complete, relevant | as in item 7 |
-| 20 | **Model cascade** (built) | most questions don't need the strong configuration | built: plain R@10 0.546 vs 0.547 at 4% lower cost with one model in both tiers; the shadow replay prices a 10x cheaper tier-1 model at 18% lower. [LLM_OPTIMIZATIONS.md](LLM_OPTIMIZATIONS.md#1-model-cascade) |
+| 20 | **Model cascade** (built) | most questions don't need the strong configuration | built: plain R@10 0.546 vs 0.547 at 4% lower cost with one model in both tiers; the shadow replay prices a 10x cheaper tier-1 model at 18% lower. [19_llm_cost.md](../topics/19_llm_cost.md#2-the-cascade) |
 | 21 | **Semantic cache** (built) | users rephrase; an exact prompt cache misses every rephrasing | built: at cosine 0.85, 65% of paraphrases hit, 0.8% of dev questions hit a different question |
 | 22 | **Web search fallback** (built, toggle `web_fallback`) | the corpus ends around 2018 and is finance only | built: fires on 1% of dev and 70% of off-topic questions; the question is sent PII-free |
 | 23 | **Context trimming and provider prompt caching** (built) | fewer input tokens per call; repeated prefixes billed at a discount | built: the cheap tier reads about 442 input tokens; cached tokens are reported, and were 0 because our prompts are under the 1,024-token minimum |

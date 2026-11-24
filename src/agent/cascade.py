@@ -10,7 +10,7 @@ THE TWO TIERS (``default_tiers``)
     cheap   ONE call, no extra searches: the question's hybrid results with TRIMMED context (top 5 hits,
             120-character snippets), and a prompt that also asks for a confidence ("high" / "low").
             Version 1 let the cheap tier search again; with less context it did, on 80 of 100 plain
-            questions (3 calls each), and cost almost as much as the strong tier (docs/design/LLM_OPTIMIZATIONS.md).
+            questions (3 calls each), and cost almost as much as the strong tier (docs/topics/19_llm_cost.md).
     strong  the single agent exactly as before: 10 hits, 200 characters, the original prompt. Because
             the prompt is byte-for-byte the same, answers already in .llm_cache replay for free.
     Each tier has its OWN LLM and its own prices (CASCADE_CHEAP_* / CASCADE_STRONG_* env vars). Today

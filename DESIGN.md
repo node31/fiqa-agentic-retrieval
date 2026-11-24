@@ -797,7 +797,7 @@ Security and LLM guardrails are built, each behind its own runtime toggle and of
 [docs/topics/17_security.md](docs/topics/17_security.md) has the threat model, how each piece works, how it is checked, and
 its own list of next steps.
 
-LLM cost optimizations and a web fallback are built too ([docs/design/LLM_OPTIMIZATIONS.md](docs/design/LLM_OPTIMIZATIONS.md)):
+LLM cost optimizations and a web fallback are built too ([docs/topics/19_llm_cost.md](docs/topics/19_llm_cost.md) and [docs/topics/20_web_search.md](docs/topics/20_web_search.md)):
 
 - A model cascade (a one-call cheap tier, escalating to the single agent) matches the single agent's quality: plain
   R@10 0.546 vs 0.547 at $0.00240 vs $0.00251 a question. With one model in both tiers that is all it saves. With a

@@ -10,7 +10,7 @@ This page covers two additions on top of the agents:
    redacted before it is stored, per-user isolation, an expiry date, and an API to read and delete it.
 
 The concepts, with toy examples you can run, are in
-[docs/topics/20_a2a_and_memory.md](../topics/20_a2a_and_memory.md). Code: `src/a2a/` (protocol, server, client)
+[docs/topics/21_a2a_and_memory.md](../topics/21_a2a_and_memory.md). Code: `src/a2a/` (protocol, server, client)
 and `src/agent/memory.py`.
 
 ```mermaid
@@ -78,7 +78,7 @@ version 1.0, a Bearer security scheme, and four skills:
 | `retrieve` (default) | hybrid search of the question | 0 |
 | `single` | the single agent ([12_single_agent.md](../topics/12_single_agent.md)) | 1 to 3 |
 | `multi` | planner, parallel workers, verifier ([13](../topics/13_multi_agent_orchestration.md)) | 0 to 2 (simple questions skip the planner) |
-| `cascade` | cheap tier, escalating to the single agent ([LLM_OPTIMIZATIONS.md](LLM_OPTIMIZATIONS.md)) | 1 to 4 |
+| `cascade` | cheap tier, escalating to the single agent ([19_llm_cost.md](../topics/19_llm_cost.md)) | 1 to 4 |
 
 The card has `Cache-Control: max-age=300` and an `ETag`; a client that sends `If-None-Match` gets 304.
 

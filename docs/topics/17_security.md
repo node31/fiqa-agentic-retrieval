@@ -92,7 +92,7 @@ The task left these open, and I was working on my own, so I picked a default for
 | `guard_injection` | off, log, block | flags or refuses (403) injected questions; flags, or cuts, instruction-like text in passages |
 | `guard_scope` | off, log, block | flags, or returns no results for, questions far from everything in the corpus |
 | `rate_limit` | off, log, block | flags, or refuses (429), callers over their budget (120 per minute, bursts of 20) |
-| `web_fallback` | off, on | when the corpus has no good answer (or the caller sends `"web": true`), also asks a web provider; see [LLM_OPTIMIZATIONS.md](../design/LLM_OPTIMIZATIONS.md#3-web-search-fallback) |
+| `web_fallback` | off, on | when the corpus has no good answer (or the caller sends `"web": true`), also asks a web provider; see [20_web_search.md](20_web_search.md) |
 
 ```bash
 TOKEN=$(python -m scripts.mint_token admin)

@@ -13,7 +13,7 @@ the shards, PII redaction, an audit log) and LLM guardrails (harmful intent, pro
 limit), each behind its own runtime toggle and all off by default, are in [docs/topics/17_security.md](docs/topics/17_security.md).
 LLM cost optimizations (a model cascade, a semantic cache, context trimming) and a web search fallback for questions
 the corpus can't answer, with how to use each and what it measured, are in
-[docs/design/LLM_OPTIMIZATIONS.md](docs/design/LLM_OPTIMIZATIONS.md). The agents also run as an A2A (Agent2Agent
+[docs/topics/19_llm_cost.md](docs/topics/19_llm_cost.md) and [docs/topics/20_web_search.md](docs/topics/20_web_search.md). The agents also run as an A2A (Agent2Agent
 protocol 1.0) service that other agents can discover and call, with conversation and user memory under the same
 privacy rules: [docs/design/A2A_AND_MEMORY.md](docs/design/A2A_AND_MEMORY.md).
 
@@ -235,7 +235,7 @@ data/           build_compound.py · compound_dev.jsonl · compound_rewrites.jso
 scripts/        ask.py (one question) · api_docs.py (API page with examples) · bench.py · ablations.py · failure_cases.py · migration.py · query_load.py · migration_demo.py · agent_eval.py · scenario.py (+ replay_html.py, run_simple_scenarios.py)
                 write_load.py (sync vs async) · docker_check.py · docker_trace.py · bootstrap.sh / bootstrap.ps1
                 mint_token.py · security_demo.py · guardrails_eval.py (security, docs/topics/17_security.md)
-                cascade_policies.py · semantic_cache_eval.py · web_fallback_eval.py (docs/design/LLM_OPTIMIZATIONS.md)
+                cascade_policies.py · semantic_cache_eval.py · web_fallback_eval.py (docs/topics/19_llm_cost.md, 20_web_search.md)
                 a2a_demo.py · memory_eval.py (docs/design/A2A_AND_MEMORY.md)
 scenarios/      SimpleScenarios/ (8 CSV stories + template + recorded results) · ComplexScenarios/ (JSONL: freshness, migration, shard failure, ...)
 tests/          unit, in-process and multi-process integration tests
@@ -243,7 +243,7 @@ results/        bench.json · runs/ (incl. the one TEST run) · ablation_*.json 
 examples/       small standalone scripts
 FIQA_RETRIEVAL_TASKS.md  the task spec: parts A-C, constraints, deliverables
 AGENTS.md       how to set up, test and work in the repo (for coding agents)
-docs/           topics/ (00-20, one concept each) · from_zero/ (the whole system from scratch) · walkthroughs/ (eval, Part A/B results) · guides/ (scenarios, manual tests) · faq/ (concepts, this project) · design/ (DESIGN.docx, DESIGN.pptx, EXTENSIONS.md, SECURITY.md, LLM_OPTIMIZATIONS.md, A2A_AND_MEMORY.md) · assets/
+docs/           topics/ (00-21, one concept each) · from_zero/ (the whole system from scratch) · walkthroughs/ (eval, Part A/B results) · guides/ (scenarios, manual tests) · faq/ (concepts, this project) · design/ (DESIGN.docx, DESIGN.pptx, EXTENSIONS.md, SECURITY.md, LLM_OPTIMIZATIONS.md, A2A_AND_MEMORY.md) · assets/
 ```
 
 ## Measured on

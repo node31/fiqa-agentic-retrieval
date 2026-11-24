@@ -1,53 +1,190 @@
-# LLM cost optimizations and the web fallback
+# 19 · Paying less for LLM calls
 
-The agents in Part C pay for every question with LLM tokens. This page covers four things I added to pay less, and one
-for questions the corpus can't answer:
+Every agent question costs tokens. This note covers what I added to cut that cost: a model cascade, a semantic
+cache, context trimming and provider prompt caching. The first half explains each idea with a toy example you
+can run; the second half is how to use it and what I measured. Answering questions the corpus can't is a
+separate topic: [20_web_search.md](20_web_search.md).
 
-1. a **model cascade**: a cheap tier answers first, and only the questions it is unsure about go to the strong tier;
-2. a **semantic cache**: a question that means the same as an earlier one gets the earlier answer, with no LLM call;
-3. a **web search fallback**: when the corpus has nothing good, the router also asks Wikipedia;
-4. **context trimming** in the cheap tier, and reporting of the provider's **prompt caching**.
+Code: `src/agent/cascade.py`, `src/agent/semantic_cache.py`, and the trimming parameters of `run_single_agent` in
+`src/agent/single_agent.py`.
 
-Each section says how to use it, what I measured, and what I learned. The concepts, with toy examples, are in
-[docs/topics/19_llm_cost_and_fallback.md](../topics/19_llm_cost_and_fallback.md). The web fallback is also a security
-decision (the question leaves the system), so it has a toggle like the ones in [SECURITY.md](../topics/17_security.md).
+## 1. Where the money goes
 
-```mermaid
-flowchart LR
-  Q["question"] --> SC{"semantic cache, if passed:<br/>cosine >= 0.85?"}
-  SC -- hit --> A["answer, $0"]
-  SC -- miss --> R{"looks compound?"}
-  R -- yes --> S["strong tier<br/>single agent, up to 3 calls"]
-  R -- no --> C["cheap tier<br/>1 call, 5 hits x 120 chars"]
-  C -- "high confidence,<br/>>= 3 picks" --> A2["answer"]
-  C -- "low confidence,<br/>< 3 picks, error" --> S
-  S --> U{"strong found<br/>< 3 docs?"}
-  U -- no --> A3["answer"]
-  U -- yes --> W["router /search with web: true<br/>(toggle web_fallback)"]
-  W --> A4["answer + web_results"]
+An LLM call is priced per token, input and output separately. For our agents the input dominates: the single agent
+reads the system prompt, the question and 10 search results of 200 characters each, then answers with a short JSON
+object. On a plain question that is about 2,118 tokens over 1 to 3 calls. So there are three levers:
+
+| lever | idea | here |
+|---|---|---|
+| fewer calls | don't call the LLM at all when you already know the answer | semantic cache |
+| cheaper calls | call a cheaper configuration first, the expensive one only when needed | cascade |
+| shorter calls | send fewer tokens per call, or get repeated tokens billed at a discount | trimming, prompt caching |
+
+## 2. The cascade
+
+Run a cheap tier first. If its answer looks reliable, stop; otherwise run the strong tier. (FrugalGPT, 2023, is the
+paper usually cited for LLM cascades.) The expected cost per question is
+
+```
+cost = c_cheap + p_escalate × c_strong
 ```
 
-## Contents
+so the cascade beats strong-only only while `p_escalate < 1 − c_cheap / c_strong`, the break-even escalation rate.
+A cheap tier that costs almost as much as the strong one leaves almost no room to escalate.
 
-- [Quick start](#quick-start)
-- [1. Model cascade](#1-model-cascade)
-- [2. Semantic cache](#2-semantic-cache)
-- [3. Web search fallback](#3-web-search-fallback)
-- [4. Context trimming and prompt caching](#4-context-trimming-and-prompt-caching)
-- [5. How it is checked](#5-how-it-is-checked)
-- [6. Pitfalls and what I would do next](#6-pitfalls-and-what-i-would-do-next)
+```python
+def cascade_cost(c_cheap, c_strong, escalate):
+    return c_cheap + escalate * c_strong
 
-## Quick start
+for name, c_cheap, c_strong, esc in [("textbook", 0.0005, 0.0025, 0.30), ("our v1", 0.00223, 0.0025, 0.74),
+                                     ("our v2, non-routed", 0.00068, 0.0025, 31/56)]:
+    print(f"{name:20s} cascade ${cascade_cost(c_cheap, c_strong, esc):.5f} vs strong ${c_strong:.5f};"
+          f" break-even escalation {1 - c_cheap / c_strong:.0%}, actual {esc:.0%}")
+```
+
+```
+textbook             cascade $0.00125 vs strong $0.00250; break-even escalation 80%, actual 30%
+our v1               cascade $0.00408 vs strong $0.00250; break-even escalation 11%, actual 74%
+our v2, non-routed   cascade $0.00206 vs strong $0.00250; break-even escalation 73%, actual 55%
+```
+
+My first cascade is the middle line. Its cheap tier read less context but was allowed to search again, so it did,
+and cost $0.00223 a question against the strong tier's $0.0025. That left room for 11% escalation, and 74%
+escalated. The model predicts $0.00408; I measured $0.0044. Version 2 gave the cheap tier exactly one call, which
+moved the break-even to 73%.
+
+The cascade also needs a signal for "this answer looks unreliable". Ours, cheapest first:
+
+| signal | costs | catches |
+|---|---|---|
+| route: the question looks compound | nothing (a word count and "and"/"?" check) | questions the cheap tier would almost surely fail |
+| error, no finish | nothing | broken JSON, timeouts |
+| low confidence | nothing extra (a field in the same answer) | the model's own doubt |
+| too few picks (< 3 ids) | nothing | it found little that answers the question |
+
+The toy below runs both tiers with the scripted fake LLM, which is confident on a one-topic question and not on a
+two-topic one (no network, no cost):
+
+```python
+from src.agent.llm import FakeLLM
+from src.agent.fake_policies import heuristic_responder
+from src.agent.cascade import default_tiers, run_cascade
+
+hits = [{"doc_id": str(i), "score": 1.0 / i, "text": f"passage {i}"} for i in range(1, 11)]
+tool = lambda q, s="hybrid": hits                     # a search that always returns the same 10 passages
+cheap, strong = default_tiers(FakeLLM(heuristic_responder), FakeLLM(heuristic_responder))
+for q in ["what is a roth ira?", "what is a roth ira and should I pay off my mortgage?"]:
+    r = run_cascade(q, cheap, strong, tool, route_compound=False)
+    print(q)
+    for t in r.trace:
+        print(f"   {t['tier']:6s} calls={t['llm_calls']} in={t['input_tokens']} out={t['output_tokens']} escalate={t.get('escalate')}")
+```
+
+```
+what is a roth ira?
+   cheap  calls=1 in=276 out=20 escalate=None
+what is a roth ira and should I pay off my mortgage?
+   cheap  calls=1 in=292 out=19 escalate=low confidence
+   strong calls=2 in=570 out=28 escalate=None
+```
+
+With `route_compound=True` (the default) the second question skips the cheap tier and goes straight to strong.
+
+### Evaluating escalation rules without paying twice
+
+To compare rules fairly, every rule must be scored on the same answers; two separate LLM runs differ by noise
+alone. Shadow mode (`--cascade-shadow`) runs both tiers on every question, records the tier the rule skipped as
+`"shadow": true`, and keeps it out of the totals. Any rule can then be replayed offline: "strong only", "cheap
+only", "confidence", "picks only", and the **oracle**, which picks the better answer per question with hindsight.
+No real rule can beat the oracle; the gap between your rule and the oracle is what a better signal could still win.
+On plain questions the oracle needed the strong tier for only 7% of questions, while our rule sent 75%.
+
+## 3. The semantic cache
+
+An exact cache keys on the prompt string, so "how do I roll my 401k into an IRA?" and "how do I roll over my 401k to
+an IRA?" are two misses. A semantic cache keys on the question's embedding: it returns a stored answer when the
+cosine similarity to a stored question is at least a threshold. It is a nearest-neighbour search with a cut-off,
+the same operation as dense retrieval, run over past questions instead of passages.
+
+The threshold trades two errors against each other: too high and paraphrases miss (no saving), too low and a
+*different* question gets someone else's answer. The toy uses made-up 4-dimensional vectors:
+
+```python
+import numpy as np
+cached = {"how do I roll my 401k into an IRA?": np.array([0.90, 0.40, 0.10, 0.10])}
+incoming = {"how do I roll over my 401k to an IRA?": np.array([0.86, 0.45, 0.10, 0.22]),
+            "how do I roll my 401k into a Roth IRA?": np.array([0.88, 0.38, 0.30, 0.10]),
+            "can I move my old 401(k) to an IRA?": np.array([0.55, 0.70, 0.10, 0.45]),
+            "should I pay off my mortgage early?": np.array([0.05, 0.10, 0.20, 0.97])}
+unit = lambda v: v / np.linalg.norm(v)
+(cq, cv), = cached.items()
+for q, v in incoming.items():
+    s = float(unit(v) @ unit(cv))
+    print(f"{s:.3f}  {q:40s}  at 0.85: {'hit ' if s >= 0.85 else 'miss'}  at 0.95: {'hit' if s >= 0.95 else 'miss'}")
+```
+
+```
+0.991  how do I roll over my 401k to an IRA?     at 0.85: hit   at 0.95: hit
+0.980  how do I roll my 401k into a Roth IRA?    at 0.85: hit   at 0.95: hit
+0.832  can I move my old 401(k) to an IRA?       at 0.85: miss  at 0.95: miss
+0.204  should I pay off my mortgage early?       at 0.85: miss  at 0.95: miss
+```
+
+The Roth question is a different question (a Roth rollover is taxed), yet it sits as close as the true rephrasing,
+and the third line is the same question in other words and misses. No threshold fixes both. The real encoder
+behaves the same way: minilm-ft gives 0.935, 0.928 and 0.657 for the first three. So the threshold has to be set
+from data, on the error you care about most. I fixed the rule first (at most 1% of real dev questions may hit a
+different question) and then measured: 0.85, where 65% of paraphrases still hit.
+
+Two more rules every semantic cache needs:
+
+- **Tenant isolation.** An answer built from acme's documents must never be served to globex, so the tenant is part
+  of the key.
+- **Staleness.** The cache doesn't know the corpus changed. Key on a corpus version, or expire entries by age.
+
+## 4. Fewer tokens per call
+
+**Trimming** is the obvious lever: show fewer and shorter passages (our cheap tier: 5 hits of 120 characters instead
+of 10 of 200), and don't show a passage twice. It saves only if the model doesn't compensate. An agent that is
+allowed to search again often will, when it sees less: that is how cascade v1 lost money.
+
+**Provider prompt caching** is the less obvious lever. The model provider keeps the computed state (the attention
+key/value cache) of a prompt's beginning, and when the next prompt starts with the same tokens it reuses that work
+and bills those tokens at a discount. On Azure OpenAI it applies automatically once the identical prefix is at
+least 1,024 tokens. Only the *prefix* counts: one changed token near the start makes everything after it new.
+
+```python
+from src.agent.prompts import SINGLE_AGENT
+
+def shared_prefix_words(a: str, b: str) -> int:
+    n = 0
+    for x, y in zip(a.split(), b.split()):
+        if x != y:
+            break
+        n += 1
+    return n
+
+p1 = SINGLE_AGENT + "\nQuestion: what is a roth ira?\n1. doc 214174: A Roth IRA is simply ..."
+p2 = SINGLE_AGENT + "\nQuestion: should I pay off my mortgage early?\n1. doc 8126: ..."
+print("system prompt words:", len(SINGLE_AGENT.split()), " shared prefix words:", shared_prefix_words(p1, p2))
+```
+
+```
+system prompt words: 117  shared prefix words: 118
+```
+
+Two questions share only the system prompt, 117 words, far below 1,024 tokens. So every run reported 0 cached
+tokens. The layout rule still holds for when it does pay: put everything that never changes (instructions,
+examples, tool definitions) first, and the question and search results last.
+
+## 5. Quick start
 
 | I want to | command |
 |---|---|
 | ask one question through the cascade | `python scripts/ask.py "what is a roth ira?" --strategy cascade --backend azure --confirm-spend` |
-| the same, with the web fallback | add `--url http://localhost:8000` and switch the toggle on (next row) |
-| switch the web fallback on | `curl -H "Authorization: Bearer $(python -m scripts.mint_token admin)" -X POST localhost:8000/admin/security -H "Content-Type: application/json" -d '{"web_fallback": "on"}'` |
 | evaluate the cascade (both tiers on every question) | `python scripts/agent_eval.py --backend azure --confirm-spend --systems cascade --cascade-shadow --out results/agent_eval_cascade.json` |
 | compare escalation rules offline, no LLM calls | `python scripts/cascade_policies.py` |
 | calibrate the semantic cache | `python scripts/semantic_cache_eval.py --confirm-spend` (the spend is 100 paraphrase calls, once) |
-| measure the web fallback on the stack | `python scripts/web_fallback_eval.py` (restores the toggles) |
 | try it in the browser | `http://localhost:8000/docs`, tour step 12 |
 
 Environment variables:
@@ -59,10 +196,8 @@ Environment variables:
 | `CASCADE_CHEAP_PRICE_IN` / `_OUT` | $1 / $4 per 1M tokens | the cheap tier's prices, for the cost columns |
 | `CASCADE_STRONG_PRICE_IN` / `_OUT` | $1 / $4 per 1M tokens | the strong tier's prices |
 | `SEMANTIC_CACHE_MIN` | 0.85 | the cosine a cached question needs to count as a hit |
-| `WEB_SEARCH_PROVIDER` | `wikipedia` | `wikipedia` (free, no key) or `fake` (tests, no network) |
-| `WEB_FALLBACK_MIN` | the `guard_scope` threshold of the active model (0.4421 for minilm-ft) | best dense score below which the corpus counts as "no good answer" |
 
-## 1. Model cascade
+## 6. Model cascade: usage and results
 
 ### What it does
 
@@ -173,7 +308,7 @@ What the tables say:
 - With a genuinely cheaper tier-1 model, the same rules save much more: confidence-only would cost 39% less than
   strong-only on plain, at the same recall.
 
-## 2. Semantic cache
+## 7. Semantic cache: usage and results
 
 ### What it does
 
@@ -238,83 +373,7 @@ Fed the plain-set cascade answers, the cache at 0.85 answered 65 of the 100 para
 $0.145 of the $0.240 the plain set cost, with the served answers at the originals' recall (0.596 on those 65).
 That is an upper bound: every paraphrase here has its original in the cache, which real traffic won't.
 
-## 3. Web search fallback
-
-### What it does
-
-When the corpus has no good answer, the router (`/search`) also asks a web provider and returns its results in a
-separate `web_results` list, never mixed into `results`. It runs when the admin toggle `web_fallback` is on and one
-of these holds:
-
-| reason | when |
-|---|---|
-| `requested` | the caller sent `"web": true` (the cascade CLI does this when even the strong tier picked fewer than 3 docs) |
-| `no results` | the search returned nothing |
-| `low confidence` | the best dense score is below `WEB_FALLBACK_MIN` (by default the `guard_scope` threshold: about 1% of real dev questions fall below it) |
-
-It never runs for a request a guardrail blocked: `guard_scope=block` means "off-topic, don't answer", and the web
-would undo that decision.
-
-The question leaves the system, so: the toggle is off by default and admin-only; the question is PII-redacted
-before it is sent; every snippet that comes back goes through the injection neutraliser and PII redaction, whatever
-those toggles say; and the audit log records the reason and the URLs.
-
-### How to use it
-
-Switch it on (admin token), then search as usual or with `"web": true`:
-
-```bash
-TOKEN=$(python -m scripts.mint_token admin)
-curl -H "Authorization: Bearer $TOKEN" -X POST localhost:8000/admin/security \
-     -H "Content-Type: application/json" -d '{"web_fallback": "on"}'
-curl -X POST localhost:8000/search -H "Content-Type: application/json" \
-     -d '{"query": "my email is jane.doe@example.com, what is a roth ira", "k": 3, "web": true}'
-```
-
-The response adds (a real response; latency varies):
-
-```json
-"web_results": [
-  {"title": "Roth IRA", "url": "https://en.wikipedia.org/wiki/Roth_IRA",
-   "snippet": "A Roth IRA is an individual retirement account (IRA) under United States law that is generally not taxed upon distribution, ...",
-   "source": "web"},
-  {"title": "Roth 401(k)", ...},
-  {"title": "Individual retirement account", ...}],
-"web_fallback": {"reason": "requested", "provider": "wikipedia", "query_sent": "what is a roth ira", "latency_ms": 663.5}
-```
-
-`query_sent` is what left the system. The email is gone, and so is the clause around it: the first version sent
-"my email is [EMAIL], what is a roth ira", and Wikipedia answered with three pages on the 2016 election email hacks,
-because "email" outweighed the question. `web_query` in `src/service/websearch.py` now drops every clause that held
-personal data. A low-confidence call also reports the score that triggered it, e.g. for "how do I fix a flat bicycle
-tire": `"top_dense": 0.382508, "minimum": 0.4421`. A snippet that had instruction-like text cut out carries
-`"injection_removed": <count>`, and a provider failure adds `"error"`.
-
-In `/docs`, tour step 12 and the search examples *Ask the web too*, *Web, with an email* and *Low confidence* do
-the same.
-
-The Wikipedia provider (`src/service/websearch.py`) asks the MediaWiki API for the top pages and each page's first
-two intro sentences, in one request. Asking for the search snippets instead returned the text around the match,
-which on finance pages was often the reference list ("Archived from the original on July 5, 2017..."). Wikimedia
-answers 403 to a request without a descriptive User-Agent. Another provider (Tavily, Brave, Bing grounding) is one
-class with the same `search` method.
-
-### Results
-
-`scripts/web_fallback_eval.py` on the Docker stack (`results/web_fallback_eval.json`):
-
-| set | questions | fallback ran | web returned results | web latency p50 / max |
-|---|---|---|---|---|
-| FiQA dev questions (the corpus should answer these) | 500 | 5 (1%) | 4 | 834 / 905 ms |
-| off-topic questions from the guardrail red team | 30 | 21 (70%) | 21 | 639 / 909 ms |
-| finance questions newer than the corpus, `"web": true` | 10 | 10 | 10 | 664 / 4,743 ms |
-
-The dev rate matches the threshold's design (the 1st percentile of real questions). The 9 off-topic questions that
-did not fire score above the threshold; `guard_scope` uses the same threshold, so it lets the same 9 through.
-Latency is the router's wait for the provider, added to the search only when the fallback runs. The 4.7 s maximum
-was one slow Wikipedia answer; the router gives up after 5 s and returns the corpus results with an `error`.
-
-## 4. Context trimming and prompt caching
+## 8. Context trimming and prompt caching: usage and results
 
 **Trimming.** `run_single_agent` takes `max_hits`, `snippet_chars` and `dedupe`. The strong tier keeps the old
 values (10 hits, 200 characters); the cheap tier uses 5 hits, 120 characters, and with `dedupe` a later search shows
@@ -329,18 +388,16 @@ plus the first search results are under 1,024 tokens, so no call had a long enou
 to pay with a longer system prompt (few-shot examples, tool schemas) placed first and kept identical, with the
 question and results after it.
 
-## 5. How it is checked
+## 9. How it is checked
 
 | what | where |
 |---|---|
 | escalation reasons, routing, shadow entries outside the totals, prices per tier, the cheap tier reading less while the strong prompt stays byte-identical, provider cached tokens recorded | `tests/test_cascade.py` (fake LLM, no network) |
 | the cascade as a strategy next to single and multi | `tests/test_agents.py` |
 | semantic cache: same tenant only, a miss below the threshold; a hit skips every LLM call | doctests in `src/agent/semantic_cache.py`; `tests/test_cascade.py` |
-| web fallback: off by default, `requested` and `low confidence` triggers, no trigger without a dense score, PII redacted and its clause dropped in `query_sent`, PII and injections cut from snippets, a guardrail block wins, audit entry with URLs | `tests/test_security_service.py` (fake provider, real cluster); doctests of `web_query` in `src/service/websearch.py` |
-| `/docs` examples are valid request bodies | `tests/test_api_docs.py` |
-| quality and cost on real questions | `results/agent_eval_cascade.json`, `results/cascade_policies.json`, `results/semantic_cache_eval.json`, `results/web_fallback_eval.json` |
+| quality and cost on real questions | `results/agent_eval_cascade.json`, `results/cascade_policies.json`, `results/semantic_cache_eval.json` |
 
-## 6. Pitfalls and what I would do next
+## 10. Pitfalls and what I would do next
 
 - **One model in both tiers.** The cascade's real saving needs a cheaper model in tier 1. Next: run it with a mini
   deployment and check the confidence calibration again, since a different model reports confidence differently.
@@ -351,6 +408,6 @@ question and results after it.
 - **Semantic cache staleness.** A cached answer doesn't notice that the corpus changed. I would key entries on a
   corpus version that every write bumps, or expire them by age. The threshold also belongs to the encoder: re-run
   the eval after a model migration.
-- **Web results are not ranked against the corpus.** They come back as a separate list, and nothing checks that the
-  web text answers the question. An agent that writes answers would need to cite which source each claim came from.
+- **Latency from cached runs.** Replays from the LLM disk cache report near-zero latency; take latency from the
+  first run.
 - **Prices are placeholders** ($1 / $4 per 1M tokens), so read the dollar columns as ratios between rows.

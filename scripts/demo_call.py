@@ -29,7 +29,8 @@ WHO IS CALLING (--as)
 
 PICKING WHAT TO LOOK AT
     --pick EXPR prints one value under the response as an "=" line (repeat it for several). "label=EXPR" prints
-    "= label: value". --brief leaves the response body out (the request and the status line stay).
+    "= label: value". When an A2A task did not complete, its reason is printed in red under the status line, and
+    picks that need the finished task say so instead of failing.
 
 GETTING A VALUE OUT
     Everything human goes to stderr. --out EXPR prints one value to stdout, so a shell can keep it:
@@ -206,8 +207,7 @@ def classify(status: int, d) -> tuple[str, str]:
 # ------------------------------------------------------------------------------------------------ one call
 def call(method: str, url: str, body=None, who: str = "none", raw_token: str | None = None, ttl: int | None = None,
          sleep: float = 0.0, headers: list[str] | None = None, picks: list[str] | None = None, out: str | None = None,
-         full: bool = False, admin: bool = False, quiet: bool = False, timeout: float = 120.0, view=None,
-         brief: bool = False):
+         full: bool = False, admin: bool = False, quiet: bool = False, timeout: float = 120.0, view=None):
     import httpx
 
     url = ROUTER.rstrip("/") + url if url.startswith("/") else url
@@ -255,14 +255,18 @@ def call(method: str, url: str, body=None, who: str = "none", raw_token: str | N
         for k in ("etag", "www-authenticate", "retry-after"):
             if k in r.headers:
                 say(paint(f"  {k}: {r.headers[k]}", "dim"))
-        if d not in (None, "") and not brief:
+        failed = task_failure(d)
+        if failed:
+            say(paint(f"  the task ended {failed}", "red", "bold"))
+        if d not in (None, ""):
             for line in render(view(d) if view and not full else d, full):
                 say("  " + line)
-        elif brief:
-            say(paint("  (response body not shown: --brief; drop it to see the whole body)", "dim"))
     env = {"d": d, "status": r.status_code, "headers": r.headers, "collections": collections, "json": json}
+    failed = task_failure(d)
     for expr in picks or []:
         label, val = pick(expr, env)
+        if failed and isinstance(val, str) and val.startswith("(could not evaluate"):
+            val = f"(not available: the task ended {failed.split(':')[0]})"
         text = val if isinstance(val, str) else json.dumps(val, ensure_ascii=False)
         head = f"= {label}: " if label else "= "
         if "\n" in text:   # multi-line text (the prompt an LLM read): print it as text, indented
@@ -276,6 +280,23 @@ def call(method: str, url: str, body=None, who: str = "none", raw_token: str | N
     if out:
         print(pick(out, env)[1])
     return r.status_code, d
+
+
+def task_failure(d) -> str | None:
+    """'TASK_STATE_FAILED: <reason>' when the response is an A2A task that ended without completing, else None.
+
+    >>> task_failure({"result": {"task": {"status": {"state": "TASK_STATE_FAILED",
+    ...     "message": {"parts": [{"text": "RuntimeError: no LLM"}]}}}}})
+    'TASK_STATE_FAILED: RuntimeError: no LLM'
+    >>> task_failure({"result": {"task": {"status": {"state": "TASK_STATE_COMPLETED"}}}}) is None
+    True
+    """
+    status = _task(d).get("status") if isinstance(d, dict) else None
+    state = (status or {}).get("state", "")
+    if not state or state.endswith(("COMPLETED", "SUBMITTED", "WORKING")):
+        return None
+    why = " ".join(p.get("text", "") for p in (status.get("message") or {}).get("parts", []) if p.get("text"))
+    return f"{state}: {why}" if why else state
 
 
 def pick(expr: str, env: dict):
@@ -344,7 +365,6 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", help="Python expression on d to print to stdout (for $(...))")
     ap.add_argument("--full", action="store_true", help="do not shorten strings and lists")
     ap.add_argument("--quiet", action="store_true", help="print only the --pick lines")
-    ap.add_argument("--brief", action="store_true", help="show the request and the status, not the response body")
     ap.add_argument("--skill"), ap.add_argument("--k", type=int), ap.add_argument("--context")
     ap.add_argument("--meta", help="extra message metadata, JSON (e.g. '{\"memory\": false}')")
     ap.add_argument("--data", help="a data part, JSON (e.g. '{\"remember\": \"I am from the UK\"}')")
@@ -361,7 +381,7 @@ def main(argv: list[str] | None = None) -> int:
             say(paint("  (keys and strings need double quotes; wrap the whole body in single quotes in the shell)", "dim"))
             sys.exit(2)
     common = dict(who=a.who, raw_token=a.token, ttl=a.ttl, sleep=a.sleep, headers=a.header, picks=a.pick,
-                  out=a.out, full=a.full, quiet=a.quiet, brief=a.brief)
+                  out=a.out, full=a.full, quiet=a.quiet)
     what = a.what.lower()
     if what in ("get", "post", "delete", "put"):
         url, *rest = a.args

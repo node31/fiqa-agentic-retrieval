@@ -184,7 +184,7 @@ def llm_input(question: str, hits: list[dict], ctx: dict) -> str:
     if ctx.get("facts_used"):
         lines.append("What I know about the user: " + "; ".join(ctx["facts_used"]))
     # 700 characters a passage keeps the prompt near 1k tokens at k=3 (FiQA answers average ~760 characters).
-    lines += ["", "Passages:"] + [f"[{h['doc_id']}] {' '.join(h.get('text', '').split())[:700]}" for h in hits]
+    lines += ["", "Passages:"] + [f"[{h['doc_id']}] {' '.join((h.get('text') or '').split())[:700]}" for h in hits]
     return "\n".join(lines)
 
 
@@ -280,7 +280,7 @@ def create_app(router_url: str | None = None, llm=None, memory: MemoryStore | No
             def recording(q: str, strategy: str, kk: int) -> list[dict]:
                 hits = raw(q, strategy, kk)
                 for h in hits:
-                    texts.setdefault(h["doc_id"], h.get("text", ""))
+                    texts.setdefault(h["doc_id"], h.get("text") or "")
                 return hits
 
             scores: dict[str, float] = {}
@@ -343,7 +343,10 @@ def create_app(router_url: str | None = None, llm=None, memory: MemoryStore | No
             elif code in (403, 429):
                 store.set_status(task, P.REJECTED, f"the retrieval service refused (HTTP {code}): {detail}")
             else:
-                store.set_status(task, P.FAILED, f"{type(e).__name__}: {e}"[:400])
+                hint = ""
+                if skill not in plain_skills and type(e).__module__.startswith("openai"):
+                    hint = " (the LLM call failed; python scripts/llm_check.py --confirm-spend shows what is wrong)"
+                store.set_status(task, P.FAILED, (f"{type(e).__name__}: {e}"[:400]) + hint)
             meta["latency_s"] = round(time.perf_counter() - t0, 3)
 
     # ---------------------------------------------------------------- JSON-RPC methods

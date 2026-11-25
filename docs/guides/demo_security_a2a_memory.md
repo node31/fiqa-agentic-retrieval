@@ -44,8 +44,9 @@ and timestamps that are new on every run (task ids, doc ids with a time in them,
 
 You need the Docker stack up (`./scripts/bootstrap.sh`, see [manual_tests_mac.md](manual_tests_mac.md)) and the venv
 (`python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`). If your stack was built
-before this guide existed, rebuild the router once (`docker compose up -d --build router`): Part D needs the redacted
-question its guard check now returns. Parts B to D also use two extra terminals for the A2A servers; I say when.
+before this guide existed, rebuild it once with `docker compose up -d --build` (it keeps the data, the WALs and the
+active model): Part D needs the redacted question the router's guard check now returns. Rebuild all of it, not only
+the router: the router and the shards share one image, and the Docker tour's shape check notices when they differ. Parts B to D also use two extra terminals for the A2A servers; I say when.
 
 Open Terminal 1 in the repo root and paste this. Paste it again in any new terminal.
 

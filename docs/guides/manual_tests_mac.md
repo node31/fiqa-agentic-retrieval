@@ -35,13 +35,15 @@ wheels. I have not tried it.
 It checks prerequisites, creates `.env` from `.env.example`, builds the image, downloads FiQA and the embedding caches
 into `data/` and `artifacts/`, starts the 4 containers and runs a 6-check smoke test inside a container. It took ~545 s
 on a clean Linux box; a re-run skips what is already there. `--mode async` starts the async write mode, `--down` stops
-everything and keeps the data. More options are in [DEPLOY.md](../../DEPLOY.md).
+everything and keeps the data. More options are in [DEPLOY.md](../../DEPLOY.md). After a `git pull` that changed anything under `src/`, run it
+again: it rebuilds the image and recreates all four containers on it, and keeps the data, the WALs and the active
+model. (Rebuilding only the router leaves the shards on the old image, which the Docker tour's shape check reports.)
 
 Check it:
 
 ```bash
 docker compose ps                                              # router, shard0, shard1, shard2: all "healthy"
-curl -s http://localhost:8000/admin/status | python3 -m json.tool   # active_model minilm, 3 shards, ~19.2K docs each
+curl -s http://localhost:8000/admin/status | python3 -m json.tool   # active_model minilm (or minilm-ft, see below), 3 shards, ~19.2K docs each
 open http://localhost:8000/docs                                   # every API in the browser, with examples (section 4)
 ```
 
@@ -64,10 +66,41 @@ export HF_HUB_OFFLINE=1                  # models from the local cache; leave it
 
 ### 1c. The LLM key (only for the agent steps)
 
-Open `.env` (`open -e .env`) and fill in `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT` (gpt-6-sol) and
-`AZURE_OPENAI_API_KEY`. `.env` is gitignored. Every LLM answer is cached in `.llm_cache/`, so asking the same thing twice
-costs nothing. Without a key, use `--backend copilot` (free, through the GitHub Copilot CLI, ~40 s per call) or
+Open `.env` (`open -e .env`) and fill in `AZURE_OPENAI_ENDPOINT` (it must end with `/openai/v1/`),
+`AZURE_OPENAI_DEPLOYMENT` (the deployment name you chose in Foundry; mine is gpt-6-sol) and `AZURE_OPENAI_API_KEY`.
+`.env` is gitignored. Without a key, use `--backend copilot` (free, through the GitHub Copilot CLI, ~40 s per call) or
 `--backend fake` (scripted, only shows the plumbing).
+
+Then check the settings before any agent step:
+
+```bash
+python scripts/llm_check.py                   # where each setting came from, and what is wrong with it; no call
+python scripts/llm_check.py --confirm-spend   # one tiny real call, never from the cache (a fraction of a cent)
+```
+
+What I got from the second one:
+
+```text
+.env: .../fiqa-agentic-retrieval/.env (found)
+  AZURE_OPENAI_ENDPOINT    https://...openai/v1/   [from .env]
+  AZURE_OPENAI_DEPLOYMENT  gpt-6-sol   [from .env]
+  AZURE_OPENAI_API_KEY     ...aw5x (84 chars)   [from .env]
+  AZURE_REASONING_EFFORT   (not set)
+OK: gpt-6-sol answered 'OK' in 3.4 s, 27 input + 5 output tokens ($0.000047 at the prices in .env)
+```
+
+Three things can make a run look as if Azure was never called, and this check or the agents' own output now shows
+each one:
+
+| what you see | why | what to do |
+|---|---|---|
+| `[from your shell (it overrides .env)]` next to a setting | `.env` is loaded with `override=False`, so a variable already exported in your shell (an old line in `~/.zshrc`) wins | `unset AZURE_OPENAI_API_KEY` (and the other one it names), or fix `~/.zshrc` |
+| `N answered from the disk cache (.llm_cache/azure/, no request)` at the end of a run | every answer is cached by prompt, so asking the same thing again sends nothing and costs nothing now | expected; delete `.llm_cache/azure/` to force fresh calls |
+| `LLM calls 0` with `--strategy multi` | a short, one-clause question passes the multi-agent's free gate: it is searched as asked, with no planner and no verifier | expected; ask a two-topic question, or use `--strategy single` |
+
+A wrong key, endpoint or deployment no longer hides either: `agent_eval.py` and the A2A server make the same tiny
+call first (`preflight: ...`), and `agent_eval.py` stops with the error and its likely cause instead of serving every
+question from the no-LLM baseline.
 
 ## 2. Single process (no Docker, no HTTP)
 
@@ -114,7 +147,17 @@ python scripts/ask.py "Can stock brokerage firms fail, and can I print my own ch
 The single agent prints each step: step 0 searches the question as asked (no LLM call), then the model either asks for
 another search (with its query) or finishes. The multi-agent prints the plan (the free gate's "simple", the planner's
 "simple", or the sub-queries it split into) and any verifier rewrites. Both end with the top 10, the LLM calls, tokens
-and the estimated cost. A compound question costs about $0.001 to $0.004.
+and the estimated cost, and a line saying how many requests really went to Azure and how many answers came from the
+disk cache. A compound question costs about $0.001 to $0.004. The single agent's last lines, on my first run:
+
+```text
+LLM calls 2, tokens 1906 in + 158 out, estimated $0.00254 (placeholder prices in src/config.py)
+LLM azure (gpt-6-sol): 2 request(s) sent to the service, 0 answered from the disk cache (.llm_cache/azure/, no request)
+```
+
+Run it again and the second line says `0 request(s) sent ..., 2 answered from the disk cache`: same answer, no cost.
+`--strategy multi` on a simple question such as "what is an index fund?" makes no LLM call at all and says so (see the
+table in 1c).
 
 ### 2d. Single agent and multi-agent on the compound set
 
@@ -125,6 +168,11 @@ seed 42). Start with 10:
 python scripts/agent_eval.py --backend azure --confirm-spend --systems single --sets compound --limit 10 --out toy_runs/manual/single_compound.json
 python scripts/agent_eval.py --backend azure --confirm-spend --systems multi  --sets compound --limit 10 --out toy_runs/manual/multi_compound.json
 ```
+
+The first line is the preflight, one tiny uncached call (`preflight: OK: gpt-6-sol answered 'OK' ...`); if it fails
+the run stops there with the reason. The last lines count the requests sent and the answers taken from the cache. If a
+question crashes anyway, the run serves it from the no-LLM baseline and prints `! N of 10 queries crashed ...` with
+the first error, so a `tok=0` row always comes with a reason.
 
 Drop `--limit` for all 100. `--dry-run` prints the token and dollar estimate without calling anything, and `--max-usd`
 (default 2) stops the run before it spends more. `--systems baseline,single,multi --sets plain,compound` is the full
@@ -226,6 +274,24 @@ minilm, and scenario 8's retry and late writes are no-ops.
 Same tests, now through the router at `http://localhost:8000`: every search fans out to 3 shard containers, every
 write goes to the one shard that owns the doc.
 
+Two things about the running stack change what you see here:
+
+* **Which model is active.** The expected ids and numbers below are for `minilm`, the bootstrap default. If you
+  switched the stack to the fine-tuned model (README, "Switching the running stack to the fine-tuned model"),
+  `/admin/status` says `active_model: minilm-ft`, and expect instead: hybrid top 3 for "what is a roth ira?"
+  553031, 214174, 179408; dev hybrid nDCG@10 0.4469 and R@10 0.5141 (p50 ~33 ms). The writes, migration, scenario
+  and shard steps behave the same on either model.
+* **The security toggles.** They are all off after bootstrap. If you ran
+  [demo_security_a2a_memory.md](demo_security_a2a_memory.md) and stopped halfway, some may still be on, and the
+  token-less `curl` calls below would get 401 or 403. Check, and turn them all off:
+
+```bash
+python -m scripts.demo_call GET /admin/security --as admin --brief --pick toggles_on
+python -m scripts.demo_call alloff
+```
+
+The first should print `= toggles_on: []`.
+
 > **All of section 3 in one command.** `./scripts/docker_tour.sh` runs every step below except 3h and 3i against the
 > running stack, checks each result against the numbers in this section, and writes a report with an animated replay
 > per step (`toy_runs/docker_tour/<stamp>/index.html`, opened at the end). It stops and starts shard1, then deletes the docs
@@ -249,7 +315,8 @@ for s in bm25 dense hybrid; do
 done
 ```
 
-Expect `partial False` and the same ids as the single process (hybrid: 553031, 488556, 214174). Add
+Expect `partial False` and the same ids as the single process (hybrid with minilm: 553031, 488556, 214174; with
+minilm-ft: 553031, 214174, 179408). Add
 `"include_text": true` to the body for passage texts. The body also takes `fusion` (`linear`/`rrf`), `alpha` and
 `rerank_k`. Each response has `timings_ms`, the router's split of where the time went.
 
@@ -266,7 +333,7 @@ python src/search.py --url $U --query "what is short selling?" --top-k 10 --stra
 python -m src.eval --mode service --url $U --strategy hybrid --fusion linear --alpha 0.7 --name my-docker-hybrid --out toy_runs/manual/docker_hybrid_dev.json
 ```
 
-Expect nDCG@10 0.4190 and R@10 0.4914, exactly the single-process numbers (global BM25 statistics + a global merge make
+Expect nDCG@10 0.4190 and R@10 0.4914 with minilm (0.4469 and 0.5141 with minilm-ft), exactly the single-process numbers (global BM25 statistics + a global merge make
 3 shards rank like 1). Latency is higher: p50 ~30 ms in my reference run, against ~21 ms in one process. Swap
 `--strategy bm25` or `dense` for the other two. `docker compose --profile tools run --rm eval` does the hybrid run
 inside a container, but it writes `results/runs/docker-hybrid-linear-minilm.json`.
@@ -295,12 +362,13 @@ curl -s -X POST $U/admin/migrate  -H "$J" -d '{"model":"bge-small"}'; echo    # 
 curl -s $U/admin/status | python3 -m json.tool | grep -A3 '"bge-small"'          # repeat until every shard says "ready": true
 curl -s -X POST $U/admin/cutover  -H "$J" -d '{"model":"bge-small"}'; echo    # queries now use bge-small
 curl -s -X POST $U/search -H "$J" -d '{"query":"what is a roth ira?"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['model'])"
-curl -s -X POST $U/admin/rollback -H "$J" -d '{}'; echo                       # back to minilm, instant
+curl -s -X POST $U/admin/rollback -H "$J" -d '{}'; echo                       # back to the model you started on, instant
 curl -s -X POST $U/admin/finalize -H "$J" -d '{"model":"bge-small"}'; echo    # drop the bge-small index
 ```
 
 The build took ~1 s because it reads the cached bge-small vectors from `artifacts/`. Queries keep working the whole
-time and keep using minilm until the cutover. Always end on minilm, as here: that is what the eval numbers assume.
+time and keep using the old model until the cutover. Always end on the model you started on, as here: that is what
+the eval numbers assume.
 `python scripts/migration.py migrate --model bge-small --wait` (then `cutover`, `rollback`, `finalize --model
 bge-small`) does the same, and `python scripts/query_load.py --duration 120` in a second window shows no query fails
 during it.
@@ -312,7 +380,9 @@ python scripts/ask.py "Can stock brokerage firms fail, and can I print my own ch
 python scripts/agent_eval.py --backend azure --confirm-spend --systems single,multi --sets compound --limit 10 --search service --url $U --out toy_runs/manual/agents_docker.json
 ```
 
-The agents' searches now go to the cluster. Quality is the same as in section 2; latency adds the HTTP hops.
+The agents' searches now go to the cluster. Quality is the same as in section 2; latency adds the HTTP hops. Both
+print the same "requests sent / answered from the disk cache" line as in section 2, and `agent_eval.py` starts with
+the preflight call.
 
 ### 3f. A scenario against the cluster
 
@@ -321,7 +391,7 @@ python scripts/scenario.py toy_runs/my_scenario.csv --url $U --open
 ```
 
 This runs against the live Docker stack. My template run: 22 ops, 0 errors, wait_visible 78 to 95 ms (the doc was there on the
-first poll, so that is one search round trip). It deletes the docs it wrote and ends back on minilm, so the index is as it was. `kill_shard` and `restart_shard` only work with `--start-cluster`; for Docker, see
+first poll, so that is one search round trip). It deletes the docs it wrote and ends back on the model it started on, so the index is as it was. `kill_shard` and `restart_shard` only work with `--start-cluster`; for Docker, see
 the next step.
 
 The simple scenarios run against Docker the same way:
@@ -331,8 +401,8 @@ python scripts/scenario.py scenarios/SimpleScenarios/2_SimpleReadAfterWrite.csv 
 ```
 
 Two things differ from `--start-cluster`. Their writes stay in Docker (the doc ids contain the run id, so a rerun never
-collides), and scenarios 4, 5 and 6 end with bge-small active. Put the stack back on minilm afterwards, as at the end
-of 3d:
+collides), and scenarios 4, 5 and 6 end with bge-small active. Put the stack back on the model you started on
+afterwards, as at the end of 3d:
 
 ```bash
 curl -s -X POST $U/admin/rollback -H "$J" -d '{}'; echo
@@ -396,4 +466,11 @@ python -m scripts.api_docs --local --port 8600  # another port, e.g. while Docke
 Ctrl+C stops it. Writes are kept in `artifacts/cluster<N>/` (`--fresh` starts empty). The examples come from
 `scripts/api_docs.py`, which serves the router's own app with the examples added, so the requests behave exactly as
 they do from `curl` or the scripts. The page loads Swagger UI from cdn.jsdelivr.net, so the browser needs internet
-access. As in 3d, end a migration on minilm.
+access. As in 3d, end a migration on the model you started on.
+
+## 5. Security, A2A and agent memory
+
+These have their own guide, [demo_security_a2a_memory.md](demo_security_a2a_memory.md), with every call made
+through `python -m scripts.demo_call`, which prints each request and response in colour. Its Part D runs the security
+cases with a real LLM answer; run `python scripts/llm_check.py --confirm-spend` first (1c), and start the A2A agent
+with `--backend azure --confirm-spend`, which prints its own `azure preflight: ...` line at start-up.

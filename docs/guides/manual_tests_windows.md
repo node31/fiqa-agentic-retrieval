@@ -2,7 +2,8 @@
 
 Step by step: bring the system up, try every retrieval mode in one process, then the same things against the sharded
 Docker cluster. Every command runs in PowerShell 7 from the repo root. The macOS version is
-[manual_tests_mac.md](manual_tests_mac.md).
+[manual_tests_mac.md](manual_tests_mac.md). Security, A2A and agent memory have their own hand-run guide,
+[demo_security_a2a_memory.md](demo_security_a2a_memory.md) (written for zsh; it also runs in Git Bash).
 
 Next to each step is what I got on my laptop, so a result far from it means something is wrong. Everything that writes
 a file writes under `toy_runs\manual\` (gitignored), never over the committed numbers in `results\`.

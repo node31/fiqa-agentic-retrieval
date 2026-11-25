@@ -142,7 +142,8 @@ ready-made examples (`python -m scripts.api_docs --local` gives the same page wi
 hand, step by step with the numbers to expect, follow [docs/guides/manual_tests_windows.md](docs/guides/manual_tests_windows.md) or
 [docs/guides/manual_tests_mac.md](docs/guides/manual_tests_mac.md). Their whole Docker section also runs as one command,
 `.\scripts\docker_tour.ps1` or `./scripts/docker_tour.sh`: it checks every step, writes a report with a replay per step,
-and puts the stack back exactly as it found it.
+and puts the stack back exactly as it found it. To see security, A2A and agent memory work through their APIs with `curl`,
+one block at a time, follow [docs/guides/demo_security_a2a_memory.md](docs/guides/demo_security_a2a_memory.md).
 
 ### Switching the running stack to the fine-tuned model
 

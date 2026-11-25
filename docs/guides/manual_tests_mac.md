@@ -2,7 +2,8 @@
 
 Step by step: bring the system up, try every retrieval mode in one process, then the same things against the sharded
 Docker cluster. Every command runs in Terminal (zsh or bash) from the repo root. The Windows version is
-[manual_tests_windows.md](manual_tests_windows.md).
+[manual_tests_windows.md](manual_tests_windows.md). Security, A2A and agent memory have their own hand-run guide,
+[demo_security_a2a_memory.md](demo_security_a2a_memory.md).
 
 Nothing here has run on a Mac. `bootstrap.sh` ran on a clean Linux box, and the `curl` snippets in section 3 ran in Git
 Bash on Windows against the Docker stack; the rest I checked by reading. Treat the first run as the real test. The expected numbers next to each

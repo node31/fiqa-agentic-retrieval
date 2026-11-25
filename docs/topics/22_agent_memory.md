@@ -7,7 +7,8 @@ A2A server ([21_a2a.md](21_a2a.md)) uses memory, a recorded replay of a session,
 follow-up questions and on a remembered country.
 
 Code: `src/agent/memory.py`, the memory part of `src/a2a/server.py`, `scripts/memory_eval.py` and
-`scripts/memory_replay.py`.
+`scripts/memory_replay.py`. Part C of [demo_security_a2a_memory.md](../guides/demo_security_a2a_memory.md) walks
+through the six duties by hand with `curl`, with the output to expect.
 
 ## 1. Two kinds of memory
 

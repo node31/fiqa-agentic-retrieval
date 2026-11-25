@@ -63,5 +63,12 @@ def heuristic_responder(system: str, user: str) -> str:
             ids = re.findall(r"^\[([^\]]+)\]", user, re.M)[:5]
             return json.dumps({"action": "finish", "doc_ids": ids, "confidence": "high" if len(parts) == 1 else "low"})
         return json.dumps({"action": "finish", "doc_ids": []})  # [] = keep the fused ranking
+    if role == "answer":
+        # The fake "answer": quote the start of the top passage, so a free demo still shows what the LLM was given
+        # (an unredacted email, an injected instruction) without any real model.
+        m = re.search(r"^\[([^\]]+)\] (.*)$", user, re.M)
+        if not m:
+            return f"(fake answer) I have no passages for: {question}"
+        return f"(fake answer) From [{m.group(1)}]: {m.group(2)[:160]}"
     # Fail loudly: a new prompt role needs a matching fake policy.
     raise ValueError(f"fake LLM has no policy for role {role!r}")

@@ -770,10 +770,13 @@ def create_app():
     @app.post("/guardrails/check")
     async def guardrails_check(req: GuardReq, request: Request, cred: Cred = Depends(bearer)):
         """Run the question guardrails without searching. An agent calls this BEFORE its LLM sees the
-        question (scripts/ask.py). Refused -> 403 with the findings, same as /search."""
+        question (scripts/ask.py, the A2A server's LLM skills). Refused -> 403 with the findings, same as
+        /search. ``text`` is the question as the agent's LLM may see it: PII-redacted while pii_redaction is
+        on, unchanged otherwise, so the PII toggle covers the question as well as the passages."""
         async def work(caller, v):
             policy.check_question(req.text, v)
-            return {"allowed": True, "findings": v.findings}
+            text, counts = pii.redact(req.text) if policy.config.on("pii_redaction") else (req.text, {})
+            return {"allowed": True, "findings": v.findings, "text": text, "pii_redacted": counts}
         return await secured("guardrails_check", request, cred, work, query=req.text)
 
     @app.get("/health")

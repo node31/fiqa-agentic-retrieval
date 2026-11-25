@@ -175,6 +175,15 @@ def test_pii_redaction_toggle(cluster):
     assert "jane.doe@example.com" in find()["text"]  # the stored text was never changed
 
 
+def test_guard_check_returns_the_question_redacted_for_the_llm(cluster):
+    q = {"text": "my email is jane.doe@example.com, should I open a roth ira?"}
+    assert cluster.http.post("/guardrails/check", json=q).json()["text"] == q["text"]
+    toggles(cluster, pii_redaction="on")
+    out = cluster.http.post("/guardrails/check", json=q).json()
+    toggles(cluster, pii_redaction="off")
+    assert out["text"] == "my email is [EMAIL], should I open a roth ira?" and out["pii_redacted"] == {"EMAIL": 1}
+
+
 # ---------------------------------------------------------------------------- 5. audit
 
 

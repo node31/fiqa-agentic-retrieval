@@ -64,7 +64,7 @@ def test_agent_card_is_discoverable_and_cacheable():
                   "defaultOutputModes", "skills"):
         assert field in card
     assert card["supportedInterfaces"][0] == {"url": f"{BASE}/a2a", "protocolBinding": "JSONRPC", "protocolVersion": "1.0"}
-    assert [s["id"] for s in card["skills"]] == ["retrieve", "single", "multi", "cascade"]
+    assert [s["id"] for s in card["skills"]] == ["retrieve", "single", "multi", "cascade", "answer"]
     assert card["capabilities"]["streaming"] is False and card["capabilities"]["pushNotifications"] is False
     assert tc.get("/.well-known/agent-card.json", headers={"If-None-Match": r.headers["etag"]}).status_code == 304
 
@@ -159,6 +159,33 @@ def test_llm_skill_runs_and_guardrails_refuse_before_the_llm():
     t = client(tc).send("how do I launder money?", skill="single")
     assert t["status"]["state"] == P.REJECTED and "fraud" in P.text_of(t["status"]["message"])
     assert calls == [] and search.queries == []                 # no LLM call, no search
+
+
+def test_answer_skill_writes_an_answer_from_what_the_llm_may_see():
+    seen = []
+
+    def responder(system, user):
+        seen.append(user)
+        return heuristic_responder(system, user)
+
+    redacting = lambda tok: lambda text: {"allowed": True, "findings": [], "text": text.replace("a@b.co", "[EMAIL]")}  # noqa: E731
+    tc, _ = make(llm=FakeLLM(responder), guard=redacting)
+    t = client(tc).send("mail a@b.co: what is a roth ira?", skill="answer", k=2)
+    assert t["status"]["state"] == P.COMPLETED and [a["name"] for a in t["artifacts"]] == ["passages", "answer"]
+    assert P.text_of(t["artifacts"][1]).startswith("(fake answer) From [1]: passage 1 about")
+    assert t["metadata"]["llm_calls"] == 1 and t["metadata"]["llm_saw"] == seen[0]
+    assert seen[0].splitlines()[0] == "Question: mail [EMAIL]: what is a roth ira?"   # the question as the guard returned it
+    assert "[2] passage 2 about" in seen[0]
+
+
+def test_answer_skill_makes_no_llm_call_without_passages():
+    empty = StubSearch()
+    empty.factory = lambda tok: lambda q, s, k: []
+    calls = []
+    tc, _ = make(empty, llm=FakeLLM(lambda s, u: calls.append(u) or "x"))
+    t = client(tc).send("how do I bake cookies?", skill="answer")
+    assert t["status"]["state"] == P.COMPLETED and t["metadata"]["llm_calls"] == 0 and calls == []
+    assert "no LLM call" in P.text_of(t["artifacts"][1])
 
 
 def test_llm_skill_without_an_llm_fails_cleanly():

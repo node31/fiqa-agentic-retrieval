@@ -16,6 +16,8 @@ SKILLS (one per agent strategy; pick with message metadata {"skill": "..."}, def
     single     the single agent (docs/topics/12_single_agent.md)
     multi      planner + parallel workers + verifier (docs/topics/13_multi_agent_orchestration.md)
     cascade    cheap tier first, strong tier when unsure (docs/topics/19_llm_cost.md)
+    answer     one search, then one LLM call writes a short answer citing the passages (prompts.ANSWER);
+               metadata.llm_saw is the exact text the LLM read, so you can see what each router toggle removed
 
 ONE TASK, STEP BY STEP (``_run_task``)
     1. Identify the caller from the bearer token (none = anonymous: works, but no memory).
@@ -25,6 +27,8 @@ ONE TASK, STEP BY STEP (``_run_task``)
        and the LLM never sees it.
     4. Run the skill. The task's artifact holds the doc ids, scores and snippets as a data part, and a
        short text part; ``metadata`` says what memory changed, the LLM calls and the estimated cost.
+       The "answer" skill adds a second artifact, "answer", and sends the LLM the question as the guard check
+       returned it (PII-redacted while the router's pii_redaction is on).
     5. Memory: store this turn (PII-redacted) under the task's contextId.
     Router 401 -> TASK_STATE_AUTH_REQUIRED, router 403 / 429 -> TASK_STATE_REJECTED, anything else that
     breaks -> TASK_STATE_FAILED with the reason in the status message.
@@ -69,9 +73,12 @@ SKILLS = {
               ["agent", "llm", "multi-agent", "compound"]),
     "cascade": ("Cost-aware agent", "A one-call cheap tier answers first; unsure answers escalate to the "
                 "single agent.", ["agent", "llm", "cost"]),
+    "answer": ("Answer with sources", "Searches once, then one LLM call writes a short answer from the passages "
+               "and cites their ids. The only skill that writes prose.", ["answer", "llm", "finance"]),
 }
 EXAMPLES = {"retrieve": ["what is a roth ira?"], "single": ["should I pay off my mortgage early?"],
-            "multi": ["what is a roth ira, and how do I buy my first home?"], "cascade": ["what is an index fund?"]}
+            "multi": ["what is a roth ira, and how do I buy my first home?"], "cascade": ["what is an index fund?"],
+            "answer": ["should I pay off my mortgage early or invest?"]}
 
 
 def agent_card(base_url: str, skills=SKILLS) -> dict:
@@ -79,7 +86,8 @@ def agent_card(base_url: str, skills=SKILLS) -> dict:
     return {
         "name": "FiQA retrieval agents",
         "description": "Finds the forum passages that answer a personal-finance question, with a plain search or "
-                       "with LLM agents. Returns passage ids, scores and snippets; it does not write answers.",
+                       "with LLM agents. Returns passage ids, scores and snippets; the 'answer' skill also writes a short "
+                       "answer that cites them.",
         "version": "1.0.0",
         "supportedInterfaces": [{"url": f"{base_url.rstrip('/')}/a2a", "protocolBinding": "JSONRPC",
                                  "protocolVersion": P.PROTOCOL_VERSION}],
@@ -158,6 +166,40 @@ def _with_history(task: dict, history_length: int | None) -> dict:
     return t
 
 
+def llm_input(question: str, hits: list[dict], ctx: dict) -> str:
+    """The user prompt of the "answer" skill: everything the LLM reads besides prompts.ANSWER.
+
+    >>> print(llm_input("is it taxed?", [{"doc_id": "7", "text": "TFSA growth is not taxed."}],
+    ...                 {"turn_used": "what is a TFSA?", "facts_used": ["I live in Canada"]}))
+    Question: is it taxed?
+    Earlier in this conversation the user asked: what is a TFSA?
+    What I know about the user: I live in Canada
+    <BLANKLINE>
+    Passages:
+    [7] TFSA growth is not taxed.
+    """
+    lines = [f"Question: {question}"]
+    if ctx.get("turn_used"):
+        lines.append(f"Earlier in this conversation the user asked: {ctx['turn_used']}")
+    if ctx.get("facts_used"):
+        lines.append("What I know about the user: " + "; ".join(ctx["facts_used"]))
+    # 700 characters a passage keeps the prompt near 1k tokens at k=3 (FiQA answers average ~760 characters).
+    lines += ["", "Passages:"] + [f"[{h['doc_id']}] {' '.join(h.get('text', '').split())[:700]}" for h in hits]
+    return "\n".join(lines)
+
+
+def write_answer(question: str, hits: list[dict], ctx: dict, llm):
+    """(answer text, LLMResult or None). No passages = no LLM call: when the router's topic scope blocks an
+    off-topic question, /search returns nothing, so the paid model is never asked."""
+    from src.agent import prompts
+
+    if not hits:
+        return "No passages came back for this question, so no LLM call was made.", None
+    # 1,000 output tokens: reasoning models spend part of max_output_tokens on hidden reasoning first.
+    res = llm.complete(prompts.ANSWER, llm_input(question, hits, ctx), max_output_tokens=1000)
+    return res.text.strip() or "(the model returned no text)", res
+
+
 def create_app(router_url: str | None = None, llm=None, memory: MemoryStore | None = None,
                search_factory: Callable[[str | None], Callable] | None = None,
                guard_factory: Callable[[str | None], Callable] | None = None,
@@ -222,6 +264,7 @@ def create_app(router_url: str | None = None, llm=None, memory: MemoryStore | No
             ctx = contextualize(memory if mem_on else None, caller.tenant, caller.user, task["contextId"], question)
             meta["memory"] = {"enabled": mem_on, "query_searched": ctx["query"],
                               "turn_used": ctx["turn_used"], "facts_used": ctx["facts_used"]}
+            verdict: dict = {}
             if skill not in plain_skills:
                 if llm is None:
                     raise RuntimeError("this server has no LLM configured (start it with --backend)")
@@ -245,6 +288,15 @@ def create_app(router_url: str | None = None, llm=None, memory: MemoryStore | No
                 hits = recording(ctx["query"], "hybrid", k)
                 ids, scores = [h["doc_id"] for h in hits], {h["doc_id"]: h["score"] for h in hits}
                 meta.update(llm_calls=0, usd=0.0)
+            elif skill == "answer":
+                hits = recording(ctx["query"], "hybrid", k)
+                ids, scores = [h["doc_id"] for h in hits], {h["doc_id"]: h["score"] for h in hits}
+                # The router's guard check hands back the question as the LLM may see it (PII-redacted when
+                # pii_redaction is on); the passages are already redacted and de-injected by /search.
+                answer_text, res = write_answer(verdict.get("text", question), hits, ctx, llm)
+                meta.update(llm_calls=1 if res else 0, usd=round(res.cost_usd, 6) if res else 0.0,
+                            input_tokens=res.input_tokens if res else 0, output_tokens=res.output_tokens if res else 0,
+                            llm_saw=llm_input(verdict.get("text", question), hits, ctx) if hits else None)
             else:
                 tool = SearchTool(recording, k=k)
                 if skill == "single":
@@ -271,6 +323,10 @@ def create_app(router_url: str | None = None, llm=None, memory: MemoryStore | No
                           "description": "The FiQA passages that best answer the question, best first.",
                           "parts": [{"data": {"doc_ids": ids, "hits": hits_out}, "mediaType": "application/json"},
                                     {"text": summary, "mediaType": "text/plain"}]}]
+            if skill == "answer":
+                artifacts.append({"artifactId": P.new_id(), "name": "answer",
+                                  "description": "A short answer written by the LLM from the passages above.",
+                                  "parts": [{"text": answer_text, "mediaType": "text/plain"}]})
             if store.complete(task, artifacts) and mem_on:
                 memory.remember_turn(caller.tenant, caller.user, task["contextId"], question, ids)
         except Exception as e:  # noqa: BLE001  - any failure becomes a task state, never a crashed request

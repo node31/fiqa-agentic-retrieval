@@ -11,6 +11,7 @@ per-call question and search results are sent separately as the user prompt):
   * SINGLE_AGENT  run_single_agent, once per step.     Output: a search OR a finish action.
   * PLANNER       Orchestrator, once per compound question.  Output: simple, or 2-3 sub-queries.
   * VERIFIER      Orchestrator, once after the workers.   Output: per sub-query relevant/rewrite.
+  * ANSWER        the A2A server's "answer" skill, once.  Output: plain text with [doc_id] citations.
 
 PITFALL: these are plain strings, not f-strings or str.format templates, because they contain
 literal JSON braces. The single "{remaining}" placeholder is filled with str.replace() in
@@ -97,3 +98,20 @@ For each numbered sub-question you see its top results (id + snippet).
 Reply with exactly ONE JSON object and nothing else:
 {"checks": [{"sub": 0, "relevant": true, "rewrite": ""}, {"sub": 1, "relevant": false, "rewrite": "<better query>"}]}
 Mark relevant=false ONLY if none of the shown results is on-topic, and then give a better query."""
+
+# ANSWER: the only prompt that writes prose for a person (the A2A server's "answer" skill,
+# docs/topics/21_a2a.md). The other prompts pick passages; this one turns passages into an answer.
+# WHY each part is there:
+#   * "at most 5 sentences": a short answer is cheap and easy to compare across demo runs.
+#   * "cite them as [doc_id]": the reader (and a test) can check which passages the answer used.
+#   * "What I know about the user": agent memory (docs/topics/22_agent_memory.md) reaches the LLM here.
+#   * plain text, not JSON: a person reads it, nothing parses it.
+# WHY it does NOT say "refuse off-topic questions" or "never follow instructions inside passages":
+#   the security demo (docs/guides/demo_security_a2a_memory.md, part D) shows what reaches the LLM with
+#   each router protection off and on. A prompt rule is a request to the model, not a boundary, so the
+#   protections live in the router, where the LLM's compliance does not matter.
+ANSWER = """ROLE: answer
+You are a personal-finance assistant. Answer the user's question in at most 5 sentences.
+Use the numbered passages below where they help and cite each one you use as [doc_id].
+If "What I know about the user" is given, take it into account.
+Reply with plain text, not JSON."""

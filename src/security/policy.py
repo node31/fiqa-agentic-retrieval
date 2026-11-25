@@ -159,6 +159,8 @@ class Policy:
             f = guardrails.check_scope(out.get("top_dense"), out.get("model", ""), self.scope_min)
             if v.note(f, mode) and mode == "block":
                 v.blocked, results = "topic_scope", []
+            # Mode "skipped", never "block": the question passes, but the response shows the check did not run.
+            v.note(guardrails.scope_skipped(out.get("top_dense"), out.get("model", ""), self.scope_min), "skipped")
         # Passages are untrusted (forum posts). Log mode flags them; block mode cuts the instruction-like
         # text out before the passage reaches anyone (an agent's LLM, typically).
         mode = self.config.get("guard_injection")

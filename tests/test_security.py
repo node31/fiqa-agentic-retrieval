@@ -129,6 +129,18 @@ def test_scope_needs_a_dense_score():
     assert guardrails.check_scope(0.5, "minilm", minimum=0.3) is None
 
 
+def test_scope_on_an_uncalibrated_model_says_it_did_not_run(tmp_path):
+    # Was silent: guard_scope=block on a model with no threshold let every question through, findings [].
+    p = Policy(SecurityConfig(tmp_path / "s.json"), AuditLog(tmp_path / "a.jsonl"))
+    p.config.set({"guard_scope": "block"})
+    anyone = Caller("anonymous", None, "user")
+    for model, blocked in (("bge-small", "topic_scope"), ("my-new-model", None)):
+        out = p.post_search(anyone, {"results": [{"doc_id": "1"}], "model": model, "top_dense": 0.40}, Verdict())
+        assert out["security"].get("blocked") == blocked
+        assert (out["security"]["findings"][0]["mode"] == "skipped") == (blocked is None)
+        assert bool(out["results"]) == (blocked is None)
+
+
 # ---------------------------------------------------------------------------- toggles + policy
 
 

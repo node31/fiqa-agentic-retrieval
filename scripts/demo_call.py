@@ -55,6 +55,8 @@ GETTING A VALUE OUT
     ('red', 'JSON-RPC error -32001')
     >>> classify(200, {"results": [], "security": {"blocked": "topic_scope", "findings": []}})
     ('red', 'blocked by topic_scope')
+    >>> classify(200, {"results": [{}], "security": {"findings": [{"rule": "topic_scope", "mode": "skipped"}]}})
+    ('yellow', 'allowed, a guardrail could not run (see findings)')
     >>> render({"doc_id": "7", "text": "x" * 300}, full=False)[2][-18:]
     'x... (+140 chars)"'
 """
@@ -197,6 +199,8 @@ def classify(status: int, d) -> tuple[str, str]:
         sec = d.get("security") or {}
         if sec.get("blocked"):
             return "red", f"blocked by {sec['blocked']}"
+        if any(f.get("mode") == "skipped" for f in sec.get("findings") or []):
+            return "yellow", "allowed, a guardrail could not run (see findings)"
         if any(f.get("mode") == "log" for f in sec.get("findings") or []):
             return "yellow", "allowed, finding logged"
         if d.get("partial"):

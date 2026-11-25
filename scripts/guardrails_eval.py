@@ -1,6 +1,6 @@
 """Measure the guardrails: what they catch, what they wrongly refuse, and where the scope threshold sits.
 
-    python scripts/guardrails_eval.py                      # rules + corpus scan + scope (minilm-ft, minilm)
+    python scripts/guardrails_eval.py                      # rules + corpus scan + scope (minilm-ft, minilm, bge-small)
     python scripts/guardrails_eval.py --models minilm      # scope calibration for one model only
 
 Writes results/guardrails_eval.json. docs/topics/17_security.md quotes it.
@@ -156,7 +156,7 @@ def speed(rows: list[dict]) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--models", default="minilm-ft,minilm", help="models to calibrate the scope threshold for")
+    ap.add_argument("--models", default="minilm-ft,minilm,bge-small", help="models to calibrate the scope threshold for")
     ap.add_argument("--no-scope", action="store_true", help="skip the embedding part (rules + corpus only)")
     a = ap.parse_args(argv)
     rows = [json.loads(line) for line in REDTEAM.read_text(encoding="utf-8").splitlines() if line.strip()]

@@ -224,6 +224,66 @@
      "off_topic_caught": 0.867
     }
    ]
+  },
+  "bge-small": {
+   "threshold": 0.6771,
+   "dev_flagged": 0.01,
+   "off_topic_caught": 0.767,
+   "harmful_flagged_off_topic": 0.0,
+   "top_score": {
+    "dev": {
+     "p1": 0.6771,
+     "median": 0.7886,
+     "max": 0.9164
+    },
+    "off_topic": {
+     "p1": 0.6014,
+     "median": 0.6555,
+     "max": 0.7992
+    },
+    "harmful": {
+     "p1": 0.6962,
+     "median": 0.7498,
+     "max": 0.8247
+    },
+    "benign_sensitive": {
+     "p1": 0.6645,
+     "median": 0.7804,
+     "max": 0.8498
+    }
+   },
+   "sweep": [
+    {
+     "dev_percentile": 0.5,
+     "threshold": 0.6637,
+     "dev_flagged": 0.006,
+     "off_topic_caught": 0.633
+    },
+    {
+     "dev_percentile": 1,
+     "threshold": 0.6771,
+     "dev_flagged": 0.01,
+     "off_topic_caught": 0.767
+    },
+    {
+     "dev_percentile": 2,
+     "threshold": 0.6868,
+     "dev_flagged": 0.02,
+     "off_topic_caught": 0.767
+    },
+    {
+     "dev_percentile": 5,
+     "threshold": 0.7172,
+     "dev_flagged": 0.05,
+     "off_topic_caught": 0.833
+    },
+    {
+     "dev_percentile": 10,
+     "threshold": 0.733,
+     "dev_flagged": 0.1,
+     "off_topic_caught": 0.9
+    }
+   ]
   }
  },
  "speed": {

@@ -155,10 +155,12 @@ def check_injection(text: str) -> dict | None:
 # ----------------------------------------------------------------------------- 3. topic scope
 # Best dense cosine below this = off-topic. Calibrated by scripts/guardrails_eval.py as the 1st percentile of
 # the 500 dev questions' best score, so ~1% of real questions get flagged (results/guardrails_eval.json):
-#   minilm-ft 0.4421 -> catches 70% of the off-topic set;  minilm 0.4455 -> 60%.
-# A model with no calibrated value is NOT checked (a guessed threshold would refuse real questions);
-# GUARD_SCOPE_MIN (env) sets one explicitly.
-SCOPE_MIN = {"minilm-ft": 0.4421, "minilm": 0.4455}
+#   minilm-ft 0.4421 -> catches 70% of the off-topic set;  minilm 0.4455 -> 60%;  bge-small 0.6771 -> 77%.
+# The numbers differ because each model spreads its cosines differently (bge-small scores everything higher),
+# so a threshold only means something for the model it was measured on.
+# A model with no calibrated value is NOT checked (a guessed threshold would refuse real questions), and the
+# response says so (scope_skipped below); GUARD_SCOPE_MIN (env) sets one explicitly.
+SCOPE_MIN = {"minilm-ft": 0.4421, "minilm": 0.4455, "bge-small": 0.6771}
 
 
 def check_scope(top_dense: float | None, model: str, minimum: float | None = None) -> dict | None:
@@ -169,3 +171,19 @@ def check_scope(top_dense: float | None, model: str, minimum: float | None = Non
     if top_dense < floor:
         return {"rule": "topic_scope", "top_dense": round(top_dense, 4), "minimum": floor}
     return None
+
+
+def scope_skipped(top_dense: float | None, model: str, minimum: float | None = None) -> dict | None:
+    """A finding that says the scope check could NOT run because the served model has no threshold.
+
+    Without it, guard_scope=block on an uncalibrated model looks switched on and lets everything through.
+
+    >>> scope_skipped(0.5, "my-new-model")["skipped"]
+    "no calibrated threshold for model 'my-new-model' (set GUARD_SCOPE_MIN, or calibrate it with scripts/guardrails_eval.py --models my-new-model)"
+    >>> scope_skipped(0.5, "minilm") is None and scope_skipped(None, "my-new-model") is None
+    True
+    """
+    if top_dense is None or minimum is not None or model in SCOPE_MIN:
+        return None
+    return {"rule": "topic_scope", "skipped": f"no calibrated threshold for model {model!r} (set GUARD_SCOPE_MIN, "
+                                              f"or calibrate it with scripts/guardrails_eval.py --models {model})"}

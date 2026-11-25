@@ -41,3 +41,5 @@ scenarios/SimpleScenarios/results/**/cluster_logs/
 scenarios/SimpleScenarios/results/**/run.json
 # agent memory of the A2A server (personal data: never commit)
 *.sqlite
+# Office lock files (Word / PowerPoint create them while a file is open)
+~$*

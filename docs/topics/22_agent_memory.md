@@ -8,7 +8,7 @@ follow-up questions and on a remembered country.
 
 Code: `src/agent/memory.py`, the memory part of `src/a2a/server.py`, `scripts/memory_eval.py` and
 `scripts/memory_replay.py`. Part C of [demo_security_a2a_memory.md](../guides/demo_security_a2a_memory.md) walks
-through the six duties by hand with `curl`, with the output to expect.
+through the six duties by hand, printing every request and response.
 
 ## 1. Two kinds of memory
 

@@ -8,8 +8,8 @@ number in [DESIGN.md](../../DESIGN.md) still holds.
 
 Code: [src/security/](../../src/security/) (one file per feature, plus `policy.py`, the enforcement point the router
 calls), the tenant-aware shard in [src/service/store.py](../../src/service/store.py), and the HTTP layer in
-`create_app` in [src/service/router.py](../../src/service/router.py). To try every protection with `curl`, step by step
-with the output to expect, see Part A of [demo_security_a2a_memory.md](../guides/demo_security_a2a_memory.md).
+`create_app` in [src/service/router.py](../../src/service/router.py). To try every protection call by call, with each request
+and response printed and the output to expect, see Part A of [demo_security_a2a_memory.md](../guides/demo_security_a2a_memory.md).
 
 Try it on the running stack:
 

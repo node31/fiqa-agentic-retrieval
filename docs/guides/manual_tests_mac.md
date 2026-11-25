@@ -102,6 +102,15 @@ A wrong key, endpoint or deployment no longer hides either: `agent_eval.py` and 
 call first (`preflight: ...`), and `agent_eval.py` stops with the error and its likely cause instead of serving every
 question from the no-LLM baseline.
 
+One error shows up on a Mac more than anywhere else: `UnicodeEncodeError: 'ascii' codec can't encode characters in
+position 78-85`. The key travels in the `Authorization: Bearer <key>` header, and an HTTP header can only carry ASCII,
+so a key pasted with an invisible character (a no-break space from a web page, a curly quote from TextEdit's smart
+quotes) fails before anything is sent. Position 78 in the header is character 71 of the key (`Bearer ` is 7 long).
+`llm_check.py` now names the setting and the characters (`AZURE_OPENAI_API_KEY has 8 non-ASCII characters at
+positions 71, ...: U+00A0 NO-BREAK SPACE`), and the A2A server refuses to start with the same line. Invisible
+characters and quotes at the ends of a value are trimmed for you; ones inside it are not, so re-type or re-paste the
+key with a plain-text editor (`nano .env`, or TextEdit with Format > Make Plain Text and smart quotes off).
+
 ## 2. Single process (no Docker, no HTTP)
 
 Here the whole corpus lives in one Python process (`single_node_router()`): one shard, no network. It is the baseline

@@ -90,6 +90,12 @@ A wrong key, endpoint or deployment no longer hides either: `agent_eval.py` and 
 call first (`preflight: ...`), and `agent_eval.py` stops with the error and its likely cause instead of serving every
 question from the no-LLM baseline.
 
+`UnicodeEncodeError: 'ascii' codec can't encode characters in position N-M` means the key (or another Azure setting)
+contains characters that are not ASCII, usually an invisible space picked up by copy and paste. The key travels in an
+HTTP header, which can only carry ASCII, so nothing is sent. `llm_check.py` names the setting, the positions and the
+characters, and the A2A server refuses to start with the same line. Characters at the ends are trimmed for you;
+re-type or re-paste a key that has them inside.
+
 ## 2. Single process (no Docker, no HTTP)
 
 Here the whole corpus lives in one Python process (`single_node_router()`): one shard, no network. It is the baseline

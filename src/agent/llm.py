@@ -341,48 +341,6 @@ class CopilotLLM(LLM):
         return out.stdout.strip(), estimate_tokens(system + user), estimate_tokens(out.stdout)
 
 
-# Characters a copy and paste (from a web page, a chat app, a rich-text editor) leaves at the ends of a value.
-_INVISIBLE_ENDS = " \t\r\n\u00a0\u200b\u200c\u200d\u2060\ufeff\"'\u201c\u201d\u2018\u2019"
-
-
-def non_ascii(name: str, value: str) -> str | None:
-    """Why ``value`` cannot go into an HTTP request, or None if it can.
-
-    The key travels in the ``Authorization`` header, and HTTP headers carry ASCII only, so httpx refuses a
-    non-ASCII key with "'ascii' codec can't encode characters in position N-M" before anything is sent.
-    The message names the characters (never the key itself).
-
-    >>> non_ascii("KEY", "abc\u2026def\u00a0g")
-    'KEY has 2 non-ASCII characters at positions 3, 7: U+2026 HORIZONTAL ELLIPSIS, U+00A0 NO-BREAK SPACE'
-    >>> non_ascii("KEY", "abc") is None
-    True
-    """
-    import unicodedata
-
-    bad = [(i, ch) for i, ch in enumerate(value) if ord(ch) > 127]
-    if not bad:
-        return None
-    names = ", ".join(dict.fromkeys(f"U+{ord(ch):04X} {unicodedata.name(ch, '?')}" for _, ch in bad))
-    where = ", ".join(str(i) for i, _ in bad[:8]) + (", ..." if len(bad) > 8 else "")
-    return f"{name} has {len(bad)} non-ASCII character{'s' * (len(bad) > 1)} at position{'s' * (len(bad) > 1)} " \
-           f"{where}: {names}"
-
-
-def azure_setting(name: str) -> str:
-    """Read one Azure setting, trim invisible characters and quotes off its ends, and refuse non-ASCII inside it.
-
-    >>> os.environ["_T"] = "\u201cabc123\u201d\u00a0"; azure_setting("_T")
-    'abc123'
-    >>> del os.environ["_T"]
-    """
-    value = os.environ.get(name, "").strip(_INVISIBLE_ENDS)
-    why = non_ascii(name, value)
-    if why:
-        raise ValueError(f"{why}. Re-type or re-paste the value into .env with a plain-text editor "
-                         f"(python scripts/llm_check.py shows where each setting came from)")
-    return value
-
-
 class AzureLLM(LLM):
     """Azure AI Foundry deployment through the OpenAI Responses API. Costs money.
 
@@ -405,10 +363,10 @@ class AzureLLM(LLM):
         from openai import OpenAI
 
         # On Azure the "model" name is the DEPLOYMENT name you chose in Foundry.
-        self.model = azure_setting("AZURE_OPENAI_DEPLOYMENT")
+        self.model = os.environ["AZURE_OPENAI_DEPLOYMENT"]
         # PITFALL: never log or print the key. OpenAI() reads it only from this argument.
-        self.client = OpenAI(base_url=azure_setting("AZURE_OPENAI_ENDPOINT"),
-                             api_key=azure_setting("AZURE_OPENAI_API_KEY"), timeout=60, max_retries=2)
+        self.client = OpenAI(base_url=os.environ["AZURE_OPENAI_ENDPOINT"],
+                             api_key=os.environ["AZURE_OPENAI_API_KEY"], timeout=60, max_retries=2)
         # Reasoning models "think" (hidden tokens) before answering; "low" keeps that cheap.
         self.reasoning = os.environ.get("AZURE_REASONING_EFFORT", "low")
 

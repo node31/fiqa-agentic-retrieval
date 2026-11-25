@@ -11,24 +11,6 @@ def test_problems_names_placeholders_and_a_bad_endpoint():
     assert problems({**good, "AZURE_OPENAI_API_KEY": "<your-key>"}) == ["AZURE_OPENAI_API_KEY still looks like a placeholder: <your-key>"]
 
 
-def test_a_pasted_non_ascii_key_is_named_before_any_request(monkeypatch):
-    # The Mac case: httpx raised "'ascii' codec can't encode characters in position 78-85" on the
-    # Authorization header ("Bearer " + key), so key characters 71-78 were not ASCII.
-    import pytest
-    from src.agent.llm import AzureLLM
-
-    good = {"AZURE_OPENAI_ENDPOINT": "https://r.example/openai/v1/", "AZURE_OPENAI_DEPLOYMENT": "gpt-x"}
-    bad_key = "k" * 71 + "\u00a0" * 8 + "tail"
-    [msg] = problems({**good, "AZURE_OPENAI_API_KEY": bad_key})
-    assert "8 non-ASCII characters at positions 71" in msg and "NO-BREAK SPACE" in msg and "kkk" not in msg
-    assert problems({**good, "AZURE_OPENAI_API_KEY": "k" * 40 + "\u200b\n"}) == []   # trailing junk is trimmed
-
-    for name, value in {**good, "AZURE_OPENAI_API_KEY": bad_key}.items():
-        monkeypatch.setenv(name, value)
-    with pytest.raises(ValueError, match="AZURE_OPENAI_API_KEY has 8 non-ASCII"):
-        AzureLLM(confirm_spend=True)
-
-
 def test_ping_bypasses_the_cache_and_explains_a_401():
     ok, msg = ping(FakeLLM(lambda s, u: "OK"))
     assert ok and msg.startswith("OK:")

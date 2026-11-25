@@ -575,11 +575,7 @@ def main(argv: list[str] | None = None) -> int:
             from src.agent.llm import FakeLLM
             llm = FakeLLM(heuristic_responder)
         else:
-            try:
-                llm = get_llm(a.backend, confirm_spend=a.confirm_spend)
-            except ValueError as e:   # a setting that can never work (azure_setting explains which and why)
-                print(f"cannot start the {a.backend} LLM: {e}", flush=True)
-                return 2
+            llm = get_llm(a.backend, confirm_spend=a.confirm_spend)
             if a.backend == "azure":
                 # One tiny uncached call at start-up, so wrong settings show here, not as failed tasks later.
                 from scripts.llm_check import ping

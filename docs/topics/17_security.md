@@ -656,8 +656,11 @@ search computes anyway. Real finance questions land close to something; off-topi
 
 The threshold is calibrated, not guessed: it is the 1st percentile of the best score over the 500 dev questions, so
 by construction about 1% of real questions fall below it. Each model has its own value (0.4421 for minilm-ft, 0.4455
-for minilm) because cosine scales differ between encoders; after a model migration the threshold must be measured
-again. `GUARD_SCOPE_MIN` overrides it, and a model without a value is not checked. A BM25-only search has no dense
+for minilm, 0.6771 for bge-small) because cosine scales differ between encoders: bge-small scores the cookie question
+0.644, which would pass minilm's threshold easily. After a model migration the threshold must be measured again
+(`python scripts/guardrails_eval.py --models <model>`). `GUARD_SCOPE_MIN` overrides it. A model without a value is
+not checked, and the response says so with a finding in mode `skipped` (`"no calibrated threshold for model ..."`),
+because a block that silently lets everything through is worse than no block. A BM25-only search has no dense
 score, so it is never judged.
 
 In `log` mode the response carries a finding (`{"rule": "topic_scope", "top_dense": 0.3305, "minimum": 0.4421}`)
@@ -750,6 +753,7 @@ Topic scope, threshold at the 1st percentile of the dev questions' best score:
 |---|---|---|---|---|
 | minilm-ft (served) | 0.4421 | 1.0% | 70% | 0.622 / 0.387 |
 | minilm | 0.4455 | 1.0% | 60% | 0.653 / 0.415 |
+| bge-small (after the migration demo) | 0.6771 | 1.0% | 77% | 0.789 / 0.656 |
 
 None of the how-to fraud questions counted as off-topic (they are about finance, so the scope check is no substitute
 for the harmful rule). Raising the threshold to the 10th percentile catches 90% of the off-topic set with the

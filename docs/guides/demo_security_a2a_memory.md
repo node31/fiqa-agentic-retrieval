@@ -3266,6 +3266,86 @@ This is the clearest case. With topic scope off, the three passages are irreleva
 ignores them and writes a full cookie recipe, paid for by the finance service. With it on, the router returns no
 passages because the best one is too far from the question, and the agent never calls the LLM.
 
+"Too far" depends on the model the router serves (`call GET /health` shows `active_model`). The cookie question
+scores 0.403 on minilm-ft, 0.413 on minilm and 0.644 on bge-small, against thresholds of 0.4421, 0.4455 and 0.6771,
+so it is blocked on all three. If the recipe still comes back with `guard_scope=block`, look at the search directly:
+
+```zsh
+call toggle guard_scope=block
+call POST /search '{"query": "give me a recipe for chocolate chip cookies", "k": 3}' --as alice --pick 'model=d["model"]' --pick 'top_dense=d.get("top_dense")' --pick 'findings=d["security"]["findings"]'
+call alloff
+```
+
+<details><summary>Output</summary>
+
+```text
+▶ POST http://127.0.0.1:8000/admin/security   as admin
+  Authorization: Bearer eyJhbGciOiJI...IbTaeE  (admin: sub=admin tenant=* role=admin)
+  Content-Type: application/json
+  {"guard_scope": "block"}
+◀ 200 OK   ok, 13 ms
+  {
+    "changed": {"guard_scope": {"from": "off", "to": "block"}},
+    "now": "identity=off authz=off tenant_filter=off pii_redaction=off audit=off guard_harmful=off guard_injection=off guard_scope=block rate_limit=off web_fallback=off"
+  }
+= now on: guard_scope=block
+
+▶ POST http://127.0.0.1:8000/search   as alice
+  Authorization: Bearer eyJhbGciOiJI...8dduXE  (alice: sub=alice tenant=acme role=user)
+  Content-Type: application/json
+  {"query": "give me a recipe for chocolate chip cookies", "k": 3}
+◀ 200 OK   blocked by topic_scope, 54 ms
+  {
+    "results": [],
+    "partial": false,
+    "missing_shards": [],
+    "model": "minilm",
+    "strategy": "hybrid",
+    "latency_ms": 43.35,
+    "top_dense": 0.41324,
+    "security": {
+      "user": "alice",
+      "tenant": "acme",
+      "filtered_to": null,
+      "removed_by_authz": 0,
+      "pii_redacted": {},
+      "findings": [{"rule": "topic_scope", "top_dense": 0.4132, "minimum": 0.4455, "mode": "block"}],
+      "blocked": "topic_scope"
+    }
+  }
+= model: minilm
+= top_dense: 0.41324
+= findings: [{"rule": "topic_scope", "top_dense": 0.4132, "minimum": 0.4455, "mode": "block"}]
+
+▶ POST http://127.0.0.1:8000/admin/security   as admin
+  Authorization: Bearer eyJhbGciOiJI...Z90EcU  (admin: sub=admin tenant=* role=admin)
+  Content-Type: application/json
+  {
+    "identity": "off",
+    "authz": "off",
+    "tenant_filter": "off",
+    "pii_redaction": "off",
+    "audit": "off",
+    "guard_harmful": "off",
+    "guard_injection": "off",
+    "guard_scope": "off",
+    "rate_limit": "off",
+    "web_fallback": "off"
+  }
+◀ 200 OK   ok, 13 ms
+  {
+    "changed": {"guard_scope": {"from": "block", "to": "off"}},
+    "now": "identity=off authz=off tenant_filter=off pii_redaction=off audit=off guard_harmful=off guard_injection=off guard_scope=off rate_limit=off web_fallback=off"
+  }
+= now on: nothing
+```
+
+</details>
+
+A finding with `"mode": "skipped"` means the served model has no threshold, so nothing is checked (before this
+finding existed, that case was silent). The other usual cause is an A2A agent started with `--router` pointing at a
+different router from `$R`, so the toggle changed one router and the agent searched through another.
+
 ### D8. Memory in the answer
 
 ```zsh

@@ -157,6 +157,15 @@ def main():
     a = ap.parse_args()
 
     llm = get_llm("fake" if a.dry_run else a.backend, confirm_spend=a.confirm_spend)
+    if a.backend == "azure" and not a.dry_run:
+        # WHY a preflight: each query below catches its own errors and serves the baseline instead, so a wrong key
+        # or endpoint would otherwise produce a whole run of calls=0 tok=0 that looks like "Azure was never called".
+        from scripts.llm_check import ping
+
+        ok, msg = ping(llm)
+        print(f"preflight: {msg}", flush=True)
+        if not ok:
+            sys.exit(2)
     if a.search == "local":
         from src.service.router import single_node_router
 
@@ -205,6 +214,10 @@ def main():
                   f"calls={summ['avg_llm_calls']:.2f} tok={summ['avg_tokens']:.0f} "
                   f"$/q={summ['cost_per_query_usd']:.5f} p50/p95={summ['latency_p50_s']:.2f}/{summ['latency_p95_s']:.2f}s "
                   f"errors={summ['queries_with_errors']}", flush=True)
+            crashed = [e for r in results for e in r.errors if "crashed, served baseline" in e]
+            if crashed:
+                print(f"  ! {len(crashed)} of {len(results)} queries crashed and were served by the baseline "
+                      f"(no LLM, 0 tokens); the first: {crashed[0]}", flush=True)
     report["total_estimated_usd"] = round(spend.usd, 4)
     report["wall_s"] = round(time.time() - t_start, 1)
     if a.dry_run:
@@ -215,6 +228,8 @@ def main():
         f"agent_eval_dryrun.json" if a.dry_run else f"agent_eval_dev_{a.backend}.json")
     out = a.out or RESULTS_DIR / name
     out.write_text(json.dumps(report, indent=1))
+    from src.agent.llm import usage_line
+    print(usage_line(llm, *(tiers if cascade else ())))
     print(f"wrote {out}")
 
 

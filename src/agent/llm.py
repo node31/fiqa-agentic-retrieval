@@ -169,6 +169,10 @@ class LLM:
 
     def __init__(self, use_cache: bool = True):
         self.use_cache = use_cache
+        # What actually happened, for the "N requests sent, M from the disk cache" line the CLIs print:
+        # a cached answer costs nothing NOW and sends no request, which is easy to mistake for "Azure was not used".
+        self.requests_sent = self.cache_hits = 0
+        self._count_lock = threading.Lock()
 
     def complete(self, system: str, user: str, max_output_tokens: int = 300,
                  budget: Budget | None = None) -> LLMResult:
@@ -192,9 +196,13 @@ class LLM:
             d = json.loads(path.read_text(encoding="utf-8"))
             res = LLMResult(d["text"], d["input_tokens"], d["output_tokens"], d["latency_s"], cached=True,
                             cached_input_tokens=d.get("cached_input_tokens", 0))
+            with self._count_lock:
+                self.cache_hits += 1
         else:
             # Step c: cache miss -> really call the backend and time it.
             t0 = time.perf_counter()
+            with self._count_lock:
+                self.requests_sent += 1
             text, tin, tout, *extra = self._call(system, user, max_output_tokens)  # extra: provider-cached tokens
             res = LLMResult(text, tin, tout, time.perf_counter() - t0, cached_input_tokens=extra[0] if extra else 0)
             if self.use_cache:
@@ -210,6 +218,24 @@ class LLM:
     def _call(self, system: str, user: str, max_output_tokens: int) -> tuple[str, int, int]:
         """Backend hook: return (reply text, input tokens, output tokens)."""
         raise NotImplementedError
+
+
+def usage_line(*llms) -> str:
+    """One line on what the LLM objects really did, e.g. for the end of a CLI run.
+
+    >>> class L: backend, model, requests_sent, cache_hits = "azure", "gpt-x", 2, 1
+    >>> usage_line(L())
+    'LLM azure (gpt-x): 2 request(s) sent to the service, 1 answered from the disk cache (.llm_cache/azure/, no request)'
+    """
+    seen, parts = set(), []
+    for llm in llms:
+        llm = getattr(llm, "llm", llm)            # cascade tiers wrap the LLM
+        if llm is None or id(llm) in seen:
+            continue
+        seen.add(id(llm))
+        parts.append(f"LLM {llm.backend} ({llm.model or 'scripted'}): {llm.requests_sent} request(s) sent to the service, "
+                     f"{llm.cache_hits} answered from the disk cache (.llm_cache/{llm.backend}/, no request)")
+    return "; ".join(parts)
 
 
 class FakeLLM(LLM):

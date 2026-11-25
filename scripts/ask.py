@@ -167,6 +167,13 @@ def main(argv: list[str] | None = None) -> int:
     show_hits(res.doc_ids, texts)
     print(f"\nLLM calls {res.llm_calls}, tokens {res.input_tokens} in + {res.output_tokens} out, "
           f"estimated ${res.cost_usd:.5f} (placeholder prices in src/config.py)")
+    from src.agent.llm import usage_line
+    print(usage_line(llm))
+    if res.llm_calls == 0:
+        print("no LLM call was needed: " + ("the free gate judged the question simple (short, one clause), so the "
+              "multi-agent searched it as asked with no planner or verifier. Ask a two-topic question (\"what is X, and "
+              "how do I Y?\") or use --strategy single to see the model work." if a.strategy == "multi" else
+              "this strategy answered without the model."))
     for e in res.errors:
         print(f"recovered from: {e}")
     return 0
@@ -185,6 +192,8 @@ def run_cascade_cli(a, tool, texts: dict[str, str]) -> int:
               f"{t['llm_calls']} LLM call(s), {t['input_tokens']} in + {t['output_tokens']} out tokens, ${t['usd']:.5f}{why}")
     print(f"\nfinal top {len(res.doc_ids)} ({res.searches} searches, {res.latency_s:.1f} s, total ${res.cost_usd:.5f}):")
     show_hits(res.doc_ids, texts)
+    from src.agent.llm import usage_line
+    print(usage_line(cheap, strong))
     if corpus_unanswered(res):
         print("\nthe corpus has little on this question", end="")
         if not a.url:

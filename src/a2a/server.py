@@ -573,6 +573,11 @@ def main(argv: list[str] | None = None) -> int:
             llm = FakeLLM(heuristic_responder)
         else:
             llm = get_llm(a.backend, confirm_spend=a.confirm_spend)
+            if a.backend == "azure":
+                # One tiny uncached call at start-up, so wrong settings show here, not as failed tasks later.
+                from scripts.llm_check import ping
+
+                print("azure preflight:", ping(llm)[1], flush=True)
     memory = None if a.memory_db == "off" else MemoryStore(a.memory_db)
     app = create_app(a.router, llm=llm, memory=memory, base_url=a.public_url or f"http://{a.host}:{a.port}",
                      demo_logins=tuple(DEMO_USERS) if a.demo_logins else ())

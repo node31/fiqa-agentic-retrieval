@@ -42,6 +42,7 @@ GETTING A VALUE OUT
         memory    what memory did for an A2A task (metadata.memory)
         llm_saw   the exact text the LLM read in an "answer" task
         answer    the answer an "answer" task wrote
+        toggles_on  the security toggles that are not off (on GET /admin/security)
 
     Long strings and long lists are shortened, and ``timings_ms``, ``history`` and ``artifactId`` are left out of
     responses; ``--full`` shows everything.
@@ -95,6 +96,7 @@ PRESETS = {
     "memory": lambda d: _task(d)["metadata"]["memory"],
     "llm_saw": lambda d: _task(d)["metadata"].get("llm_saw"),
     "answer": lambda d: next(a for a in _task(d)["artifacts"] if a["name"] == "answer")["parts"][0]["text"],
+    "toggles_on": lambda d: [k for k, v in d.items() if isinstance(v, dict) and v.get("value") != "off"],
 }
 
 
@@ -285,7 +287,8 @@ def pick(expr: str, env: dict):
     m = re.match(r"^([A-Za-z_]\w*)=(?!=)(.+)$", expr, re.S)
     label, src = (m.group(1), m.group(2)) if m else (expr if expr in PRESETS else None, expr)
     try:
-        return label, PRESETS[src](env["d"]) if src in PRESETS else eval(src, env)  # noqa: S307  - typed by the user
+        preset = PRESETS.get(src)
+        return label, preset(env["d"]) if preset else eval(src, env)  # noqa: S307  - typed by the user
     except Exception as e:  # noqa: BLE001
         return label, f"(could not evaluate: {type(e).__name__}: {e})"
 

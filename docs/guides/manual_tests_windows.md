@@ -273,7 +273,7 @@ Two things about the running stack change what you see here:
   token-less calls below would get 401 or 403. Check, and turn them all off:
 
 ```powershell
-.\.venv\Scripts\python -m scripts.demo_call GET /admin/security --as admin --brief --pick toggles_on
+.\.venv\Scripts\python -m scripts.demo_call GET /admin/security --as admin --pick toggles_on
 .\.venv\Scripts\python -m scripts.demo_call alloff
 ```
 

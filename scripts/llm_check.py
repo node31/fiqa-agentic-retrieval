@@ -40,14 +40,18 @@ HINTS = {
 
 def problems(values: dict) -> list[str]:
     """Plain-words list of what is wrong with the settings (empty = they look usable)."""
+    from src.agent.llm import _INVISIBLE_ENDS, non_ascii
+
     out = []
     for name in NAMES[:3]:
-        v = values.get(name) or ""
+        v = (values.get(name) or "").strip(_INVISIBLE_ENDS)   # the same trim AzureLLM does
         if not v:
             out.append(f"{name} is empty")
         elif "<" in v or ">" in v:
             out.append(f"{name} still looks like a placeholder: {v}")
-    ep = values.get("AZURE_OPENAI_ENDPOINT") or ""
+        elif non_ascii(name, v):
+            out.append(non_ascii(name, v) + " (an HTTP request can only carry ASCII: re-type or re-paste it)")
+    ep = (values.get("AZURE_OPENAI_ENDPOINT") or "").strip(_INVISIBLE_ENDS)
     if ep and "<" not in ep and not ep.endswith("/openai/v1/"):
         out.insert(0, f"AZURE_OPENAI_ENDPOINT should end with /openai/v1/ (it ends with ...{ep[-9:]})")
     return out
@@ -67,6 +71,9 @@ def ping(llm) -> tuple[bool, str]:
             msg += f"\n  likely cause: {HINTS[status]}"
         elif "Connection" in type(e).__name__:
             msg += "\n  likely cause: the endpoint host cannot be reached (typo in the URL, VPN, or no network)"
+        elif isinstance(e, UnicodeError):
+            msg += ("\n  likely cause: a setting (usually AZURE_OPENAI_API_KEY) contains characters that are not "
+                    "ASCII, such as an invisible space picked up by copy and paste; nothing was sent")
         return False, msg + "\n  python scripts/llm_check.py shows where each setting came from"
     finally:
         llm.use_cache = use_cache

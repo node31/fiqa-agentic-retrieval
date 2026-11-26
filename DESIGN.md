@@ -30,21 +30,21 @@ run once for it too (section 6.12).
 
 ## 2. Requirements
 
-**Functional**
+**Functional** (the slide numbers are in [DesignV3.pptx](docs/design/DesignV3.pptx); its slide 4 is this table, with links)
 
-| area | requirement | what I built |
-|---|---|---|
-| A1 | BM25, two dense models, a hybrid; a CLI | own BM25, all-MiniLM-L6-v2 and bge-small-en-v1.5, hybrid linear fusion; `python src/search.py --query ... --top-k 10 --strategy hybrid` |
-| A2 | nDCG@10, Recall@10, MRR, p50/p95, peak RAM, stratified recall, cold vs warm | `src/eval.py` writes `results/bench.json` |
-| A3 | at least one real ablation | fusion method x weight sweep, cross-encoder rerank depth sweep, dense model, local vs global IDF |
-| A4 | three analysed failures | `results/failures.md` |
-| B1 | ≥ 3 shards, router, ≤ 1% quality gap, timeouts, 1 vs N shard latency | 3 shards, scatter-gather router, 0.0% gap, 0.5 s timeout with partial results |
-| B2 | idempotent versioned upsert/delete, consistent indexes, a tested freshness guarantee | versions + tombstones + WAL; sync mode (searchable on the next query) and async mode (searchable within 1 s) |
-| B3 | zero-downtime model migration with cutover and rollback | dual-write + background backfill, `make migrate`, `make cutover`, `make rollback`; 2,045 queries, 0 failed |
-| C1 | 100 compound questions with half-tracked gold | `data/compound_dev.jsonl` + `data/build_compound.py` |
-| C2 | single agent, one search tool, ≤ 3 steps | `src/agent/single_agent.py` |
-| C3 | orchestrator + ≥ 2 sub-agent roles, shared slots, budgets, partial failure, skip when simple | `src/agent/orchestrator.py`: planner, workers, verifier |
-| C4 | compare baseline, single, multi on plain and compound sets; routing policy; ship calls | `scripts/agent_eval.py`, `results/agent_eval.json` |
+| area | requirement | what I built | deck slides |
+|---|---|---|---|
+| A1 | BM25, two dense models, a hybrid; a CLI | own BM25, all-MiniLM-L6-v2 and bge-small-en-v1.5, hybrid linear fusion; `python src/search.py --query ... --top-k 10 --strategy hybrid` | 9, 56 |
+| A2 | nDCG@10, Recall@10, MRR, p50/p95, peak RAM, stratified recall, cold vs warm | `src/eval.py` writes `results/bench.json` | 10 |
+| A3 | at least one real ablation | fusion method x weight sweep, cross-encoder rerank depth sweep, dense model, local vs global IDF | 11 |
+| A4 | three analysed failures | `results/failures.md` | 12 |
+| B1 | ≥ 3 shards, router, ≤ 1% quality gap, timeouts, 1 vs N shard latency | 3 shards, scatter-gather router, 0.0% gap, 0.5 s timeout with partial results | 13, 14 |
+| B2 | idempotent versioned upsert/delete, consistent indexes, a tested freshness guarantee | versions + tombstones + WAL; sync mode (searchable on the next query) and async mode (searchable within 1 s) | 15 to 17, 25, 27, 28, 31 |
+| B3 | zero-downtime model migration with cutover and rollback | dual-write + background backfill, `make migrate`, `make cutover`, `make rollback`; 2,045 queries, 0 failed | 18, 25, 29, 30 |
+| C1 | 100 compound questions with half-tracked gold | `data/compound_dev.jsonl` + `data/build_compound.py` | 19 |
+| C2 | single agent, one search tool, ≤ 3 steps | `src/agent/single_agent.py` | 20, 21, 23 |
+| C3 | orchestrator + ≥ 2 sub-agent roles, shared slots, budgets, partial failure, skip when simple | `src/agent/orchestrator.py`: planner, workers, verifier | 21, 23 |
+| C4 | compare baseline, single, multi on plain and compound sets; routing policy; ship calls | `scripts/agent_eval.py`, `results/agent_eval.json` | 22 |
 
 **Non-functional**
 
@@ -411,14 +411,14 @@ Results under heavy writes (`results/write_load.json`: real corpus, 3 shards, 8 
 |---|---|---|
 | writes acked per second | 57.8 | 94.2 |
 | ack p50 / p95 ms | 128 / 181 | 78 / 120 |
-| search p50 under this load | 131 ms | 184 ms |
+| search p50 at the same write rate | 131 ms | 123 ms |
 
-Async makes the write ack fast; it was never meant to make search faster. Search p50 rose under async because the
-two runs did not carry the same load: in the same 30 s async accepted 2,835 writes against sync's 1,741, and its 8
+Async makes the write ack fast; it was never meant to make search faster. The recorded async run searched at 184 ms
+p50, higher than sync, because the two runs did not carry the same load: in the same 30 s async accepted 2,835 writes against sync's 1,741, and its 8
 workers embedded every one of them on the same CPU the searches use. A linear estimate from the idle 3-shard p50
 (28.6 ms) puts the cost at 1.77 ms of search p50 per write per second for sync, (131 - 28.6) / 57.8, and 1.64 ms
-for async, (183.5 - 28.6) / 94.2. At sync's write rate, async would then search at about 28.6 + 1.64 x 57.8 = 123 ms,
-slightly faster than sync. That is an estimate from two points, not a measurement. The price of async is freshness:
+for async, (183.5 - 28.6) / 94.2. At sync's write rate, async searches at 28.6 + 1.64 x 57.8 = 123 ms, the
+number in the table, slightly faster than sync. It comes from two runs, not a third run at that rate. The price of async is freshness:
 the visible lag was 466 ms at p95 and 583 ms at worst, inside the 1 s bound; sync has none.
 
 ### 6.7 Model migration (B3)
@@ -673,7 +673,8 @@ below the calibrated 0.4421, the router returns nothing, and the agent makes no 
 
 Every recorded replay is in [replays/](replays/README.md) and opens from disk: the eight scenarios on each of the four
 cluster types, the security replay (14 cases, each protection off and on), the A2A replay (two agents and an LLM,
-one arrow per message) and the memory replay (16 steps with what the LLM read and answered).
+one arrow per message) the memory replay (16 steps with what the LLM read and answered) and the ways-to-call replay (one question
+through Swagger, demo_call, search.py and ask.py, with every HTTP call the router received).
 
 ## 7. API design
 
@@ -701,6 +702,21 @@ Every endpoint accepts `Authorization: Bearer <token>` ([scripts/mint_token.py](
 needed for, and what each security toggle adds to the requests and responses above (401, 403 and 429, a `security`
 block and a `tenant` per hit), is in [docs/topics/17_security.md](docs/topics/17_security.md). With every toggle off, the
 default, the API is exactly as in this table.
+
+### Ways to call the router
+
+The same API has four front doors. All of them end as HTTP requests to the router, so the same question gets the
+same passages: [replays/ways_to_call.html](replays/ways_to_call.html) sends "what is short selling?" through each one
+with a logging proxy in between, and all four get 336018, 127585 and 409350 as their top 3.
+
+| way | what you run | good for |
+|---|---|---|
+| router docs | open `http://127.0.0.1:8000/docs`, pick an endpoint, Try it out, Execute | exploring; every endpoint has named example bodies, checked by `tests/test_api_docs.py` |
+| SDK | `python -m scripts.demo_call POST /search '{"query": "...", "k": 3}' --as alice` | scripted, repeatable calls: it signs tokens, prints the request and the response in colour, and `--pick` pulls out one value ([the demo guide](docs/guides/demo_security_a2a_memory.md)) |
+| CLI `search.py` | `python src/search.py --query "..." --top-k 10 --strategy hybrid` | the A1 CLI: ranked passages with scores |
+| CLI `ask.py` | `python scripts/ask.py "..." --url http://127.0.0.1:8000 --strategy single` | an LLM agent on top: a guardrail check, then as many searches as it decides on (3 calls in the recording) |
+
+In code the same call is `http_search_fn(url, token)` in `src/agent/tools.py`, which is what the agents use.
 
 ### Shard (`src/service/shard_server.py`, port 8101 in Docker, 8101 to 8103 locally)
 

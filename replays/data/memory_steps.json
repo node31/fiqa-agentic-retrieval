@@ -1,0 +1,1432 @@
+{
+ "steps": [
+  {
+   "n": 1,
+   "duty": "attribution",
+   "who": "anonymous",
+   "title": "An anonymous caller states a fact",
+   "note": "No token, so nobody to attribute memory to (and nobody who could later ask to see or delete it). The question is answered; nothing is stored.",
+   "ms": 6062.2,
+   "kind": "ask",
+   "message": "I live in Canada. how do I file my income taxes?",
+   "context": "98652832",
+   "memory_flag": true,
+   "state": "COMPLETED",
+   "status_text": "",
+   "searched": "I live in Canada. how do I file my income taxes?",
+   "memory_enabled": false,
+   "turn_used": null,
+   "facts_used": [],
+   "llm_saw": "Question: I live in Canada. how do I file my income taxes?\n\nPassages:\n[228445] Yes, you have to file a tax return in Canada. Non residents that have earned employment income in Canada are required to file a Canadian personal income tax return. Usually, your employer will have deducted sufficient taxes from your pay-cheques, resulting in a tax refund upon filing your Canadian tax return. You will also receive a tax credit on your US tax return for taxes paid in Canada.\n[25762] You are not required to file a tax return in Canada if you have no taxable income. If you do not file a return you may be requested to by Canada Revenue Agency, and then you'll need to file one. There are hundreds of thousands of Canadian residents who do not file tax returns. The Minister who overlooks the CRA may assess any amount of taxes on any resident whether they file a return or not. There are penalties for failing to file a return or filing late. The penalties are based on a percentage of the taxes owed. If you owe no taxes, then the penalties are meaningless.\n[282844] If you have non Residency status in Canada you don't need to file Canadian tax return. To confirm your status you need to contact Canada Revenue (send them letter, probably to complete some form).\n[416511] \"As a Canadian resident, the simple answer to your question is \"\"yes\"\" Having worked as a tax auditor and as a Certified Financial Planner, you are required to file an income tax return because you have taxable employment income. All the employer is doing is deducting it at source and remitting it on your behalf. That does not alleviate your need to file. In fact, if you don't file you will be subject to a no filing penalty. The one aspect you are missing is that taxpayers may be entitled to tax credits that may result in a refund to you depending on your personal situation (e.g spousal or minor dependents). I hope this helps.\"\n[527776] For tax purposes you will need to file as an employee (T4 slips and tax withheld automatically), but also as an entrepreneur. I had the same situation myself last year. Employee and self-employed is a publication from Revenue Canada that will help you. You need to fill out the statement of business activity form and keep detailed records of all your deductible expenses. Make photocopies and keep them 7 years. May I suggest you take an accountant to file your income tax form. More expensive but makes you less susceptible to receive Revenue Canada inspectors for a check-in. If you can read french, you can use this simple spreadsheet for your expenses. Your accountant will be happy.",
+   "answer": "To file your Canadian income taxes, gather your T4 slips, other income slips, and receipts for deductions or credits, then complete a personal tax return using CRA-certified software, a tax preparer, or paper forms. If you have both employment and self-employment income, report both and complete the statement of business activities for your business income and expenses [527776]. Most people must file and pay any balance by April 30 following the tax year; self-employed people generally have until June 15 to file, but any balance is still due April 30. If you live in Quebec, you also file a separate provincial return. Even if tax was deducted from your pay, filing may get you a refund or credits [416511].",
+   "answer_canada": true,
+   "llm": {
+    "calls": 1,
+    "in": 615,
+    "out": 199,
+    "usd": 0.001411
+   },
+   "hits": [
+    {
+     "doc_id": "228445",
+     "snippet": "Yes, you have to file a tax return in Canada. Non residents that have earned employment income in Canada are required to file a Canadian personal inco",
+     "canada": true
+    },
+    {
+     "doc_id": "25762",
+     "snippet": "You are not required to file a tax return in Canada if you have no taxable income. If you do not file a return you may be requested to by Canada Reven",
+     "canada": true
+    },
+    {
+     "doc_id": "282844",
+     "snippet": "If you have non Residency status in Canada you don't need to file Canadian tax return. To confirm your status you need to contact Canada Revenue (send",
+     "canada": true
+    },
+    {
+     "doc_id": "416511",
+     "snippet": "\"As a Canadian resident, the simple answer to your question is \"\"yes\"\" Having worked as a tax auditor and as a Certified Financial Planner, you are re",
+     "canada": true
+    },
+    {
+     "doc_id": "527776",
+     "snippet": "For tax purposes you will need to file as an employee (T4 slips and tax withheld automatically), but also as an entrepreneur. I had the same situation",
+     "canada": true
+    }
+   ],
+   "memory_after": [],
+   "added": [],
+   "removed": []
+  },
+  {
+   "n": 2,
+   "duty": "attribution",
+   "who": "alice",
+   "title": "alice's first question, memory still empty",
+   "note": "Searched as typed, so the LLM gets whatever the corpus ranks first. This is the baseline for step 6.",
+   "ms": 3479.5,
+   "kind": "ask",
+   "message": "how do I file my income taxes?",
+   "context": "9d075c4b",
+   "memory_flag": true,
+   "state": "COMPLETED",
+   "status_text": "",
+   "searched": "how do I file my income taxes?",
+   "memory_enabled": true,
+   "turn_used": null,
+   "facts_used": [],
+   "llm_saw": "Question: how do I file my income taxes?\n\nPassages:\n[585356] \"In the U.S., Form 1040 is known as the tax return. This is the form that is filed annually to calculate your tax due for the year, and you either claim a refund if you have overpaid your taxes or send in a payment if you have underpaid. The form is generally due on April 15 each year, but this year the due date is April 18, 2016. When it comes to filing your taxes, there are two questions you need to ask yourself: \"\"Am I required to file?\"\" and \"\"Should I file?\"\" Am I required to file? The 1040 instructions has a section called \"\"Do I have to file?\"\" with several charts that determine if you are legally required to file. It depends on your status and your gross income. If you are single, un\n[284085] You need to file IRS Form 1040-NR. The IRS's website provides instructions.\n[38227] You must file an FBAR when doing your taxes.\n[251649] \"The Form 1040 (U.S. tax return form) Instructions has a section called \"\"Do You Have To File?\"\". Below a certain income, you are not required to file a tax return and pay any tax. This amount of income at which you are required to file depends on several things, including your dependency status (you are a dependent of your parents), your marital status, and other factors. The instructions have charts that show what these numbers are. You would fall under Chart B. Assuming that you are under age 65, unmarried, and not blind, you only have to file when you reach the following conditions: Your unearned income was over $1,050. Your earned income was over $6,300. Your gross income was more than \n[416511] \"As a Canadian resident, the simple answer to your question is \"\"yes\"\" Having worked as a tax auditor and as a Certified Financial Planner, you are required to file an income tax return because you have taxable employment income. All the employer is doing is deducting it at source and remitting it on your behalf. That does not alleviate your need to file. In fact, if you don't file you will be subject to a no filing penalty. The one aspect you are missing is that taxpayers may be entitled to tax credits that may result in a refund to you depending on your personal situation (e.g spousal or minor dependents). I hope this helps.\"",
+   "answer": "What country are you filing in? The forms and rules depend on where you live and earn income.\n\nIf you’re filing in the U.S., start by checking the current Form 1040 instructions to see whether you’re required to file; the answer depends on factors such as your income and filing status [585356]. Then gather your income and tax documents, complete Form 1040 using tax software, a tax professional, or the IRS instructions, and file it by the current deadline; the return calculates whether you owe tax or are due a refund [585356].",
+   "answer_canada": false,
+   "llm": {
+    "calls": 1,
+    "in": 600,
+    "out": 137,
+    "usd": 0.001148
+   },
+   "hits": [
+    {
+     "doc_id": "585356",
+     "snippet": "\"In the U.S., Form 1040 is known as the tax return. This is the form that is filed annually to calculate your tax due for the year, and you either cla",
+     "canada": false
+    },
+    {
+     "doc_id": "284085",
+     "snippet": "You need to file IRS Form 1040-NR. The IRS's website provides instructions.",
+     "canada": false
+    },
+    {
+     "doc_id": "38227",
+     "snippet": "You must file an FBAR when doing your taxes.",
+     "canada": false
+    },
+    {
+     "doc_id": "251649",
+     "snippet": "\"The Form 1040 (U.S. tax return form) Instructions has a section called \"\"Do You Have To File?\"\". Below a certain income, you are not required to file",
+     "canada": false
+    },
+    {
+     "doc_id": "416511",
+     "snippet": "\"As a Canadian resident, the simple answer to your question is \"\"yes\"\" Having worked as a tax auditor and as a Certified Financial Planner, you are re",
+     "canada": true
+    }
+   ],
+   "memory_after": [
+    {
+     "id": "16eee0e7940c",
+     "kind": "turn",
+     "text": "how do I file my income taxes?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    }
+   ],
+   "added": [
+    {
+     "id": "16eee0e7940c",
+     "kind": "turn",
+     "text": "how do I file my income taxes?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    }
+   ],
+   "removed": []
+  },
+  {
+   "n": 3,
+   "duty": "attribution",
+   "who": "alice",
+   "title": "alice states where she lives",
+   "note": "The rule-based extractor finds the country in the message and stores it as a fact under (acme, alice). This question already names Canada, so the fact adds nothing to its search.",
+   "ms": 3228.6,
+   "kind": "ask",
+   "message": "I live in Canada. How are capital gains taxed?",
+   "context": "9d075c4b",
+   "memory_flag": true,
+   "state": "COMPLETED",
+   "status_text": "",
+   "searched": "I live in Canada. How are capital gains taxed?",
+   "memory_enabled": true,
+   "turn_used": null,
+   "facts_used": [],
+   "llm_saw": "Question: I live in Canada. How are capital gains taxed?\n\nPassages:\n[182374] If you're a non resident then you owe no capital gains tax to Canada. Most banks won't let you make trades if you're a non-resident. They may not have your correct address on file so they don't realize this. This is not tax law but just OSC (or equivalent) regulations. You do have to fill out paperwork for withholding tax on OAS/CPP payments. This is something you probably already do but here's a link . It's complicated and depends on the country you live in. Of course you may owe tax in Thailand, I don't know their laws.\n[86621] Residents of Canada must pay Canadian income tax on their worldwide income (source: Wikipedia). However, there is a tax treaty between the U.S. and Canada; I haven't read it, but my guess is that it will allow you to claim a tax credit in Canada for the capital gains tax you have paid to the U.S.\n[431676] In Canada, it is similarly taxed as CQM states. Mining is considered business income and you need to file a T1 form. Capital appreciation is no different than treating gains from stock.\n[558867] I'm not sure where you are, but in the United States capital gains are taxed at a lower rate than other types of income. On the 1040, captial gains income is separated from earned income, and income tax is calculated just on earned income. Then capital gains tax is calculated on capital gains income, and then added to income tax afterward.\n[216827] You pay taxes on capital gains when you realize your gains by selling the investment property. Also, in the US, taxes on capital gains are computed at special rates depending on your current income level, and so when you realize your gains two years from now, you will pay taxes on the gains at the special rate then applicable to your income level for the year of sale. Remember also that the US Congress can change the tax laws at any time between now and the time you sell your stocks, and so the rates you are looking at now may have changed too.",
+   "answer": "If you’re a Canadian tax resident, you generally report capital gains from investments worldwide on your Canadian tax return. [86621] A gain is usually triggered when you sell or otherwise dispose of an asset for more than its adjusted cost base, after accounting for eligible selling costs; simply rising in value generally doesn’t create a taxable gain. [216827] Generally, 50% of a capital gain is included in your taxable income and taxed at your applicable federal and provincial or territorial income-tax rates. Capital losses can generally offset capital gains, while special rules or exemptions may apply—for example, to a qualifying principal residence or investments held in a TFSA.",
+   "answer_canada": true,
+   "llm": {
+    "calls": 1,
+    "in": 513,
+    "out": 184,
+    "usd": 0.001249
+   },
+   "hits": [
+    {
+     "doc_id": "182374",
+     "snippet": "If you're a non resident then you owe no capital gains tax to Canada. Most banks won't let you make trades if you're a non-resident. They may not have",
+     "canada": true
+    },
+    {
+     "doc_id": "86621",
+     "snippet": "Residents of Canada must pay Canadian income tax on their worldwide income (source: Wikipedia). However, there is a tax treaty between the U.S. and Ca",
+     "canada": true
+    },
+    {
+     "doc_id": "431676",
+     "snippet": "In Canada, it is similarly taxed as CQM states. Mining is considered business income and you need to file a T1 form. Capital appreciation is no differ",
+     "canada": true
+    },
+    {
+     "doc_id": "558867",
+     "snippet": "I'm not sure where you are, but in the United States capital gains are taxed at a lower rate than other types of income. On the 1040, captial gains in",
+     "canada": false
+    },
+    {
+     "doc_id": "216827",
+     "snippet": "You pay taxes on capital gains when you realize your gains by selling the investment property. Also, in the US, taxes on capital gains are computed at",
+     "canada": false
+    }
+   ],
+   "memory_after": [
+    {
+     "id": "16eee0e7940c",
+     "kind": "turn",
+     "text": "how do I file my income taxes?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "bf373c4fbf88",
+     "kind": "fact",
+     "text": "I live in Canada",
+     "context": "",
+     "days_left": 30.0
+    },
+    {
+     "id": "3e3413bea07b",
+     "kind": "turn",
+     "text": "I live in Canada. How are capital gains taxed?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    }
+   ],
+   "added": [
+    {
+     "id": "bf373c4fbf88",
+     "kind": "fact",
+     "text": "I live in Canada",
+     "context": "",
+     "days_left": 30.0
+    },
+    {
+     "id": "3e3413bea07b",
+     "kind": "turn",
+     "text": "I live in Canada. How are capital gains taxed?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    }
+   ],
+   "removed": []
+  },
+  {
+   "n": 4,
+   "duty": "attribution",
+   "who": "alice",
+   "title": "a follow-up in the same conversation",
+   "note": "\"what about dividends?\" points back (it starts with \"what about\"), so the last turn of this contextId is searched with it and shown to the LLM. Without it the LLM would not know what \"what about\" refers to.",
+   "ms": 3132.2,
+   "kind": "ask",
+   "message": "what about dividends?",
+   "context": "9d075c4b",
+   "memory_flag": true,
+   "state": "COMPLETED",
+   "status_text": "",
+   "searched": "I live in Canada. How are capital gains taxed? what about dividends?",
+   "memory_enabled": true,
+   "turn_used": "I live in Canada. How are capital gains taxed?",
+   "facts_used": [],
+   "llm_saw": "Question: what about dividends?\nEarlier in this conversation the user asked: I live in Canada. How are capital gains taxed?\n\nPassages:\n[321114] If you receive dividends on an investment, those are taxed.\n[459953] As far as I read in many articles, all earnings (capital gains and dividends) from Canadian stocks will be always tax-free. Right? There's no withholding tax, ie. a $100 dividend means you get $100. There's no withholding for capital gains in shares for anybody. You will still have to pay taxes on the amounts, but that's only due at tax time and it could be very minor (or even a refund) for eligible Canadian dividends. That's because the company has already paid tax on those dividends. In contrast, holding U.S. or any foreign stock that yields dividends in a TFSA will pay 15% withholding tax and it is not recoverable. Correct, but the 15% is a special rate for regular shares and you need to \n[212783] \"Federal taxes are generally lower in Canada. Canada's top federal income tax rate is 29%; the US rate is 35% and will go to 39.6% when Bush tax cuts expire. The healthcare surcharge will kick in in a few years, pushing the top bracket by a few more points and over 40%. State/provincial taxes are lower in the US. You may end up in the 12% bracket in New York City or around 10% in California or other \"\"bad\"\" income-tax states. But Alberta is considered a tax haven in Canada and has a 10% flat tax. Ontario's top rate is about 11%, but there are surtaxes that can push the effective rate to about 17%. Investment income taxes: Canada wins, narrowly. Income from capital gains counts as half, so if\n[307688] \"Summary: The corporation pays 33.3% tax on dividends it receives and gets a tax refund at the same rate when it pays dividends out. According to http://www.kpmg.com/Ca/en/IssuesAndInsights/ArticlesPublications/TaxRates/Federal-and-Provincial-Territorial-Tax-Rates-for-Income-Earned-CCPC-2015-Dec-31.pdf the corporate tax rates for 2015 are: According to page 3: The federal and provincial tax rates shown in the tables apply to investment income earned by a CCPC, other than capital gains and dividends received from Canadian corporations. The rates that apply to capital gains are one-half of the rates shown in the tables. Dividends received from Canadian corporations are deductible in computing \n[102443] You don't generally pay capital gains taxes until you sell the stock. If you bought it in 2013 and the price goes up in 2014 but you just hold on to the stock, you won't have to pay any taxes on it. If you then sold it in 2015 for a profit, you'd have to pay capital gains taxes on the profit. Note that this excludes dividends. Dividends may complicate the matter somewhat. I'm also assuming you are in the U.S. or Canada, or a country like one of those two. It's possible some other country does taxes differently, though it'd surprise me.",
+   "answer": "Dividends are different from capital gains: in a taxable account, you generally report dividends in the year you receive them, even if you don’t sell the shares. [321114] Eligible dividends from Canadian corporations get a dividend tax credit, so they can be taxed more favourably than ordinary income—but they aren’t automatically tax-free. [459953] Dividends and gains earned inside a TFSA are generally tax-free in Canada, though foreign dividends may face withholding tax that you can’t recover. [459953]",
+   "answer_canada": true,
+   "llm": {
+    "calls": 1,
+    "in": 748,
+    "out": 128,
+    "usd": 0.00126
+   },
+   "hits": [
+    {
+     "doc_id": "321114",
+     "snippet": "If you receive dividends on an investment, those are taxed.",
+     "canada": false
+    },
+    {
+     "doc_id": "459953",
+     "snippet": "As far as I read in many articles, all earnings (capital gains and dividends) from Canadian stocks will be always tax-free. Right? There's no withhold",
+     "canada": true
+    },
+    {
+     "doc_id": "212783",
+     "snippet": "\"Federal taxes are generally lower in Canada. Canada's top federal income tax rate is 29%; the US rate is 35% and will go to 39.6% when Bush tax cuts ",
+     "canada": true
+    },
+    {
+     "doc_id": "307688",
+     "snippet": "\"Summary: The corporation pays 33.3% tax on dividends it receives and gets a tax refund at the same rate when it pays dividends out. According to http",
+     "canada": true
+    },
+    {
+     "doc_id": "102443",
+     "snippet": "You don't generally pay capital gains taxes until you sell the stock. If you bought it in 2013 and the price goes up in 2014 but you just hold on to t",
+     "canada": true
+    }
+   ],
+   "memory_after": [
+    {
+     "id": "16eee0e7940c",
+     "kind": "turn",
+     "text": "how do I file my income taxes?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "bf373c4fbf88",
+     "kind": "fact",
+     "text": "I live in Canada",
+     "context": "",
+     "days_left": 30.0
+    },
+    {
+     "id": "3e3413bea07b",
+     "kind": "turn",
+     "text": "I live in Canada. How are capital gains taxed?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "774dab26c69c",
+     "kind": "turn",
+     "text": "what about dividends?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    }
+   ],
+   "added": [
+    {
+     "id": "774dab26c69c",
+     "kind": "turn",
+     "text": "what about dividends?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    }
+   ],
+   "removed": []
+  },
+  {
+   "n": 5,
+   "duty": "attribution",
+   "who": "alice",
+   "title": "a new topic, no pointer back",
+   "note": "No pronoun or \"what about\": the last turn is not added. The fact still is.",
+   "ms": 3262.0,
+   "kind": "ask",
+   "message": "should I pay off my mortgage early?",
+   "context": "9d075c4b",
+   "memory_flag": true,
+   "state": "COMPLETED",
+   "status_text": "",
+   "searched": "should I pay off my mortgage early? Canada",
+   "memory_enabled": true,
+   "turn_used": null,
+   "facts_used": [
+    "I live in Canada"
+   ],
+   "llm_saw": "Question: should I pay off my mortgage early?\nWhat I know about the user: I live in Canada\n\nPassages:\n[466778] Considering that it's common for the monthly mortgage payment to be 25% of one's income, it's an obvious advantage for that monthly burden to be eliminated. The issue, as I see it, is that this is the last thing one should do in the list of priorities: The idea of 'no mortgage' is great. But. You might pay early and have just a few years of payments left on the mortgage and if you are unemployed, those payments are still due. It's why I'd suggest loading up retirement accounts and other savings before paying the mortgage sooner. Your point, that rates are low, and your expected return is higher, is well presented. I feel no compulsion to prepay my 3.5% mortgage. As the OP is in Canada, land \n[498881] Paying off your mortgage early being good is a myth. It is great for the chronic overspenders to have their mortgage paid off so when they rack up credit card bills and get behind, well they still hae a place to stay. But for those who are more logical with their money paying off your mortgage early in current conditions makes no sense. You can get a 30 year loan well below 4%. Discounting taxes for your average family you would have a rate floating below 3%. So reasons that paying off your mortgage should be almost LAST (given current low long-term interest rates): The first thing you should do is take care of any high interest debt. I would say that anything more than 7-8%, including all c\n[559539] The answer depends entirely on your mortgage terms - is the interest rate low, how many years left? Questions like this are about Cost of Capital. If your mortgage has a low interest for a lot of years, you have a low cost of capital. By paying it off early, you are dumping that low cost of capital. Use the extra money to start a business, invest in something or even buy another property (rental). Whenever you have a low cost of capital, don't rush to get rid of it. Of course, if there are no other investment/business opportunities available and the extra money is going into a low return savings account, you might as well pay down your debt. Or if you lack the self discipline to use the extr\n[559370] First, what country are you in? Canada doesn't offer a mortgage interest tax deduction, the US does. This changes the math a bit, and in the US, the current after tax cost of a mortgage is below our long term inflation rate. Is the mortgage your only debt? I've seen people religiously pay extra each month to their 6% mortgage while carrying 18% interest debt on credit cards. Next, there are company matched retirement plans, in the US, a 401(k) plan, where if you put up to 6% or so of your pay into the account, it's effectively doubled upon deposit. I'd be sure not to miss such an opportunity. After these considerations, prepaying is equal to buying a risk free fixed instrument. If that appea\n[78447] This is opinion, no right or wrong. Two schools of thought, one saying you should aim to be debt free, ASAP, the other suggests that when your borrowing expense is so much lower than expected market return, just keep investing. With your mortgage, a variable, I trust the payment is recalculated so if you pay down half the loan, it will drop to half when the rate changes and new payment calculated, right? If not, you still have a high payment due until it's paid in full. Me, I like the flexibility of going with the full term, and saving the money as long as rates are low. Even moderate inflation will make that payment fell like less over time, and there are funds whose dividends are above the",
+   "answer": "Maybe—but I wouldn’t make it your first priority. Keep an emergency fund, pay off higher-interest debt, and take advantage of any employer retirement match before making extra mortgage payments [466778][559370]. In Canada, mortgage interest on your home generally isn’t tax-deductible, so prepaying gives you a guaranteed return equal to the interest you avoid; weigh that against what you could earn elsewhere, your need for accessible savings, and any prepayment penalties [559370][559539]. If you share your mortgage rate, remaining balance and term, and other debts, I can help you compare the options.",
+   "answer_canada": true,
+   "llm": {
+    "calls": 1,
+    "in": 882,
+    "out": 129,
+    "usd": 0.001398
+   },
+   "hits": [
+    {
+     "doc_id": "466778",
+     "snippet": "Considering that it's common for the monthly mortgage payment to be 25% of one's income, it's an obvious advantage for that monthly burden to be elimi",
+     "canada": true
+    },
+    {
+     "doc_id": "498881",
+     "snippet": "Paying off your mortgage early being good is a myth. It is great for the chronic overspenders to have their mortgage paid off so when they rack up cre",
+     "canada": false
+    },
+    {
+     "doc_id": "559539",
+     "snippet": "The answer depends entirely on your mortgage terms - is the interest rate low, how many years left? Questions like this are about Cost of Capital. If ",
+     "canada": false
+    },
+    {
+     "doc_id": "559370",
+     "snippet": "First, what country are you in? Canada doesn't offer a mortgage interest tax deduction, the US does. This changes the math a bit, and in the US, the c",
+     "canada": true
+    },
+    {
+     "doc_id": "78447",
+     "snippet": "This is opinion, no right or wrong. Two schools of thought, one saying you should aim to be debt free, ASAP, the other suggests that when your borrowi",
+     "canada": false
+    }
+   ],
+   "memory_after": [
+    {
+     "id": "16eee0e7940c",
+     "kind": "turn",
+     "text": "how do I file my income taxes?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "bf373c4fbf88",
+     "kind": "fact",
+     "text": "I live in Canada",
+     "context": "",
+     "days_left": 30.0
+    },
+    {
+     "id": "3e3413bea07b",
+     "kind": "turn",
+     "text": "I live in Canada. How are capital gains taxed?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "774dab26c69c",
+     "kind": "turn",
+     "text": "what about dividends?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "28ea124555e9",
+     "kind": "turn",
+     "text": "should I pay off my mortgage early?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    }
+   ],
+   "added": [
+    {
+     "id": "28ea124555e9",
+     "kind": "turn",
+     "text": "should I pay off my mortgage early?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    }
+   ],
+   "removed": []
+  },
+  {
+   "n": 6,
+   "duty": "attribution",
+   "who": "alice",
+   "title": "step 2's question again, in a new conversation",
+   "note": "A new contextId has no turns, but facts outlive conversations: compare the passages and the answer with step 2.",
+   "ms": 3144.6,
+   "kind": "ask",
+   "message": "how do I file my income taxes?",
+   "context": "57e1e624",
+   "memory_flag": true,
+   "state": "COMPLETED",
+   "status_text": "",
+   "searched": "how do I file my income taxes? Canada",
+   "memory_enabled": true,
+   "turn_used": null,
+   "facts_used": [
+    "I live in Canada"
+   ],
+   "llm_saw": "Question: how do I file my income taxes?\nWhat I know about the user: I live in Canada\n\nPassages:\n[228445] Yes, you have to file a tax return in Canada. Non residents that have earned employment income in Canada are required to file a Canadian personal income tax return. Usually, your employer will have deducted sufficient taxes from your pay-cheques, resulting in a tax refund upon filing your Canadian tax return. You will also receive a tax credit on your US tax return for taxes paid in Canada.\n[25762] You are not required to file a tax return in Canada if you have no taxable income. If you do not file a return you may be requested to by Canada Revenue Agency, and then you'll need to file one. There are hundreds of thousands of Canadian residents who do not file tax returns. The Minister who overlooks the CRA may assess any amount of taxes on any resident whether they file a return or not. There are penalties for failing to file a return or filing late. The penalties are based on a percentage of the taxes owed. If you owe no taxes, then the penalties are meaningless.\n[282844] If you have non Residency status in Canada you don't need to file Canadian tax return. To confirm your status you need to contact Canada Revenue (send them letter, probably to complete some form).\n[416511] \"As a Canadian resident, the simple answer to your question is \"\"yes\"\" Having worked as a tax auditor and as a Certified Financial Planner, you are required to file an income tax return because you have taxable employment income. All the employer is doing is deducting it at source and remitting it on your behalf. That does not alleviate your need to file. In fact, if you don't file you will be subject to a no filing penalty. The one aspect you are missing is that taxpayers may be entitled to tax credits that may result in a refund to you depending on your personal situation (e.g spousal or minor dependents). I hope this helps.\"\n[527776] For tax purposes you will need to file as an employee (T4 slips and tax withheld automatically), but also as an entrepreneur. I had the same situation myself last year. Employee and self-employed is a publication from Revenue Canada that will help you. You need to fill out the statement of business activity form and keep detailed records of all your deductible expenses. Make photocopies and keep them 7 years. May I suggest you take an accountant to file your income tax form. More expensive but makes you less susceptible to receive Revenue Canada inspectors for a check-in. If you can read french, you can use this simple spreadsheet for your expenses. Your accountant will be happy.",
+   "answer": "To file in Canada, gather your income slips (such as T4s), receipts for deductions and credits, and records of any self-employment income and expenses [527776]. Complete a personal income tax return using CRA-certified tax software, a paper return, or a tax professional; if you live in Quebec, you generally also file a separate provincial return. Most people must file and pay any balance by April 30 of the following year; self-employed people generally have until June 15 to file, but still must pay any balance by April 30. Even if you don’t owe tax, filing may get you a refund or make you eligible for benefits [416511].",
+   "answer_canada": true,
+   "llm": {
+    "calls": 1,
+    "in": 622,
+    "out": 180,
+    "usd": 0.001342
+   },
+   "hits": [
+    {
+     "doc_id": "228445",
+     "snippet": "Yes, you have to file a tax return in Canada. Non residents that have earned employment income in Canada are required to file a Canadian personal inco",
+     "canada": true
+    },
+    {
+     "doc_id": "25762",
+     "snippet": "You are not required to file a tax return in Canada if you have no taxable income. If you do not file a return you may be requested to by Canada Reven",
+     "canada": true
+    },
+    {
+     "doc_id": "282844",
+     "snippet": "If you have non Residency status in Canada you don't need to file Canadian tax return. To confirm your status you need to contact Canada Revenue (send",
+     "canada": true
+    },
+    {
+     "doc_id": "416511",
+     "snippet": "\"As a Canadian resident, the simple answer to your question is \"\"yes\"\" Having worked as a tax auditor and as a Certified Financial Planner, you are re",
+     "canada": true
+    },
+    {
+     "doc_id": "527776",
+     "snippet": "For tax purposes you will need to file as an employee (T4 slips and tax withheld automatically), but also as an entrepreneur. I had the same situation",
+     "canada": true
+    }
+   ],
+   "memory_after": [
+    {
+     "id": "16eee0e7940c",
+     "kind": "turn",
+     "text": "how do I file my income taxes?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "bf373c4fbf88",
+     "kind": "fact",
+     "text": "I live in Canada",
+     "context": "",
+     "days_left": 30.0
+    },
+    {
+     "id": "3e3413bea07b",
+     "kind": "turn",
+     "text": "I live in Canada. How are capital gains taxed?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "774dab26c69c",
+     "kind": "turn",
+     "text": "what about dividends?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "28ea124555e9",
+     "kind": "turn",
+     "text": "should I pay off my mortgage early?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "af3cce3d5b1d",
+     "kind": "turn",
+     "text": "how do I file my income taxes?",
+     "context": "57e1e624",
+     "days_left": 30.0
+    }
+   ],
+   "added": [
+    {
+     "id": "af3cce3d5b1d",
+     "kind": "turn",
+     "text": "how do I file my income taxes?",
+     "context": "57e1e624",
+     "days_left": 30.0
+    }
+   ],
+   "removed": []
+  },
+  {
+   "n": 7,
+   "duty": "opt-out",
+   "who": "alice",
+   "title": "the same question with memory: false",
+   "note": "Message metadata {\"memory\": false}: memory is neither read (no Canada) nor written (no new turn).",
+   "ms": 551.4,
+   "kind": "ask",
+   "message": "how do I file my income taxes?",
+   "context": "57e1e624",
+   "memory_flag": false,
+   "state": "COMPLETED",
+   "status_text": "",
+   "searched": "how do I file my income taxes?",
+   "memory_enabled": false,
+   "turn_used": null,
+   "facts_used": [],
+   "llm_saw": "Question: how do I file my income taxes?\n\nPassages:\n[585356] \"In the U.S., Form 1040 is known as the tax return. This is the form that is filed annually to calculate your tax due for the year, and you either claim a refund if you have overpaid your taxes or send in a payment if you have underpaid. The form is generally due on April 15 each year, but this year the due date is April 18, 2016. When it comes to filing your taxes, there are two questions you need to ask yourself: \"\"Am I required to file?\"\" and \"\"Should I file?\"\" Am I required to file? The 1040 instructions has a section called \"\"Do I have to file?\"\" with several charts that determine if you are legally required to file. It depends on your status and your gross income. If you are single, un\n[284085] You need to file IRS Form 1040-NR. The IRS's website provides instructions.\n[38227] You must file an FBAR when doing your taxes.\n[251649] \"The Form 1040 (U.S. tax return form) Instructions has a section called \"\"Do You Have To File?\"\". Below a certain income, you are not required to file a tax return and pay any tax. This amount of income at which you are required to file depends on several things, including your dependency status (you are a dependent of your parents), your marital status, and other factors. The instructions have charts that show what these numbers are. You would fall under Chart B. Assuming that you are under age 65, unmarried, and not blind, you only have to file when you reach the following conditions: Your unearned income was over $1,050. Your earned income was over $6,300. Your gross income was more than \n[416511] \"As a Canadian resident, the simple answer to your question is \"\"yes\"\" Having worked as a tax auditor and as a Certified Financial Planner, you are required to file an income tax return because you have taxable employment income. All the employer is doing is deducting it at source and remitting it on your behalf. That does not alleviate your need to file. In fact, if you don't file you will be subject to a no filing penalty. The one aspect you are missing is that taxpayers may be entitled to tax credits that may result in a refund to you depending on your personal situation (e.g spousal or minor dependents). I hope this helps.\"",
+   "answer": "What country are you filing in? The forms and rules depend on where you live and earn income.\n\nIf you’re filing in the U.S., start by checking the current Form 1040 instructions to see whether you’re required to file; the answer depends on factors such as your income and filing status [585356]. Then gather your income and tax documents, complete Form 1040 using tax software, a tax professional, or the IRS instructions, and file it by the current deadline; the return calculates whether you owe tax or are due a refund [585356].",
+   "answer_canada": false,
+   "llm": {
+    "calls": 1,
+    "in": 600,
+    "out": 137,
+    "usd": 0.001148
+   },
+   "hits": [
+    {
+     "doc_id": "585356",
+     "snippet": "\"In the U.S., Form 1040 is known as the tax return. This is the form that is filed annually to calculate your tax due for the year, and you either cla",
+     "canada": false
+    },
+    {
+     "doc_id": "284085",
+     "snippet": "You need to file IRS Form 1040-NR. The IRS's website provides instructions.",
+     "canada": false
+    },
+    {
+     "doc_id": "38227",
+     "snippet": "You must file an FBAR when doing your taxes.",
+     "canada": false
+    },
+    {
+     "doc_id": "251649",
+     "snippet": "\"The Form 1040 (U.S. tax return form) Instructions has a section called \"\"Do You Have To File?\"\". Below a certain income, you are not required to file",
+     "canada": false
+    },
+    {
+     "doc_id": "416511",
+     "snippet": "\"As a Canadian resident, the simple answer to your question is \"\"yes\"\" Having worked as a tax auditor and as a Certified Financial Planner, you are re",
+     "canada": true
+    }
+   ],
+   "memory_after": [
+    {
+     "id": "16eee0e7940c",
+     "kind": "turn",
+     "text": "how do I file my income taxes?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "bf373c4fbf88",
+     "kind": "fact",
+     "text": "I live in Canada",
+     "context": "",
+     "days_left": 30.0
+    },
+    {
+     "id": "3e3413bea07b",
+     "kind": "turn",
+     "text": "I live in Canada. How are capital gains taxed?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "774dab26c69c",
+     "kind": "turn",
+     "text": "what about dividends?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "28ea124555e9",
+     "kind": "turn",
+     "text": "should I pay off my mortgage early?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "af3cce3d5b1d",
+     "kind": "turn",
+     "text": "how do I file my income taxes?",
+     "context": "57e1e624",
+     "days_left": 30.0
+    }
+   ],
+   "added": [],
+   "removed": []
+  },
+  {
+   "n": 8,
+   "duty": "redaction",
+   "who": "alice",
+   "title": "alice shares an email address",
+   "note": "The turn is PII-redacted before it is written, so memory never holds the address. (With the router's pii_redaction toggle on, the LLM would read [EMAIL] too; here every toggle is off.)",
+   "ms": 2933.2,
+   "kind": "ask",
+   "message": "my email is jane.doe@example.com, how do I report a phishing scam?",
+   "context": "57e1e624",
+   "memory_flag": true,
+   "state": "COMPLETED",
+   "status_text": "",
+   "searched": "my email is jane.doe@example.com, how do I report a phishing scam? Canada",
+   "memory_enabled": true,
+   "turn_used": null,
+   "facts_used": [
+    "I live in Canada"
+   ],
+   "llm_saw": "Question: my email is jane.doe@example.com, how do I report a phishing scam?\nWhat I know about the user: I live in Canada\n\nPassages:\n[57685] \"First note that Standard Chartered Bank's domain is \"\"sc.com\"\", not \"\"scb.com\"\". The \"\"scb.com\"\" site appears to be an architecture company \"\"of sorts\"\". The \"\"yandex\"\" email address is for a Russian search company which offers free email services. The \"\"standardchartered.X10.bz\"\" email address is clearly a spoof use of the standard chartered name, and is registered in Belize - a small central American country and tax haven. The \"\"yilmazguneadana.org\"\" is not recognised by internet DNS, so appears to be an email only service. This is clearly a phishing scam. Do not respond to this email. Of the many thousands of people that have received this email, sadly some will be dumb enough to respond\n[567031] This is a scam. Delete the email and don't talk to the person or keep any contact.\n[424274] If this 'scam' has a name, address and/or phone number, I forward it to the FBI anonymously. That is my advice. You may also wish to consult a lawyer.\n[352291] \"You need to talk to your bank. If you're unable to contact your bank until Monday, then wait until Monday. Don't fixate on the idea that the transaction may \"\"hard post\"\" on Monday. If it happens, it happens, but it's not the end of the world. Even if the transaction posts, it's not the end of the world. If the retailer is legit, they will refund your money, although it may take some time for things to get sorted out. Even if the transaction posts and the retailer is not legit, it's still not the end of the world. Your bank may help you in trying to recover the funds. That's why you need to talk to your bank. As you have realized, blindly calling the number in the email is not a good idea, \n[571097] To boil down what mgkrebbs said: Yes, you should send back the form, provided that it doesn't ask for any more information than address, current telephone number, and email address. Don't ever, ever provide any bank account information. Nor social security number unless you're absolutely positive of the validity of the requestor. Phishing via regular mail is very rare. It's way expensive compared to email, which is basically free, plus the U.S. Postal Service takes mail fraud fairly seriously (and has the legal statutes to prosecute). So: don't obsess; send the form back.",
+   "answer": "Don’t reply to the message, click its links, or call any number in it; mark it as phishing in your email app instead. [57685] You can also forward the email to the Canadian Anti-Fraud Centre at report@antifraudcentre.ca and report it at antifraudcentre-centreantifraude.ca. If it impersonates your bank or another organization, report it through a contact method you find independently—not one in the email. [352291] If you entered a password or banking details, change the password and contact your bank promptly. [352291]",
+   "answer_canada": true,
+   "llm": {
+    "calls": 1,
+    "in": 622,
+    "out": 122,
+    "usd": 0.00111
+   },
+   "hits": [
+    {
+     "doc_id": "57685",
+     "snippet": "\"First note that Standard Chartered Bank's domain is \"\"sc.com\"\", not \"\"scb.com\"\". The \"\"scb.com\"\" site appears to be an architecture company \"\"of sort",
+     "canada": false
+    },
+    {
+     "doc_id": "567031",
+     "snippet": "This is a scam. Delete the email and don't talk to the person or keep any contact.",
+     "canada": false
+    },
+    {
+     "doc_id": "424274",
+     "snippet": "If this 'scam' has a name, address and/or phone number, I forward it to the FBI anonymously. That is my advice. You may also wish to consult a lawyer.",
+     "canada": false
+    },
+    {
+     "doc_id": "352291",
+     "snippet": "\"You need to talk to your bank. If you're unable to contact your bank until Monday, then wait until Monday. Don't fixate on the idea that the transact",
+     "canada": false
+    },
+    {
+     "doc_id": "571097",
+     "snippet": "To boil down what mgkrebbs said: Yes, you should send back the form, provided that it doesn't ask for any more information than address, current telep",
+     "canada": false
+    }
+   ],
+   "memory_after": [
+    {
+     "id": "16eee0e7940c",
+     "kind": "turn",
+     "text": "how do I file my income taxes?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "bf373c4fbf88",
+     "kind": "fact",
+     "text": "I live in Canada",
+     "context": "",
+     "days_left": 30.0
+    },
+    {
+     "id": "3e3413bea07b",
+     "kind": "turn",
+     "text": "I live in Canada. How are capital gains taxed?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "774dab26c69c",
+     "kind": "turn",
+     "text": "what about dividends?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "28ea124555e9",
+     "kind": "turn",
+     "text": "should I pay off my mortgage early?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "af3cce3d5b1d",
+     "kind": "turn",
+     "text": "how do I file my income taxes?",
+     "context": "57e1e624",
+     "days_left": 30.0
+    },
+    {
+     "id": "f618e7a21ad4",
+     "kind": "turn",
+     "text": "my email is [EMAIL], how do I report a phishing scam?",
+     "context": "57e1e624",
+     "days_left": 30.0
+    }
+   ],
+   "added": [
+    {
+     "id": "f618e7a21ad4",
+     "kind": "turn",
+     "text": "my email is [EMAIL], how do I report a phishing scam?",
+     "context": "57e1e624",
+     "days_left": 30.0
+    }
+   ],
+   "removed": []
+  },
+  {
+   "n": 9,
+   "duty": "isolation",
+   "who": "bob",
+   "title": "bob sends alice's contextId with a follow-up",
+   "note": "A contextId is only a conversation label: the client sends it back, and bob sends alice's on purpose. Memory is read by (tenant, user, contextId), and tenant and user come from bob's signed token, so alice's conversation does not exist for him: no turn, no Canada.",
+   "ms": 3312.9,
+   "kind": "ask",
+   "message": "what about dividends?",
+   "context": "9d075c4b",
+   "memory_flag": true,
+   "state": "COMPLETED",
+   "status_text": "",
+   "searched": "what about dividends?",
+   "memory_enabled": true,
+   "turn_used": null,
+   "facts_used": [],
+   "llm_saw": "Question: what about dividends?\n\nPassages:\n[222921] You can buy dividend stocks, just buy and hold. you will get cash or extra stock every quarter. You can also sell covered calls on your dividend stocks, this will give you even more cash. you can also... actually this rabbit hole goes very deep. just stick with my first sentence.\n[415511] Dividends. There are blue chip companies that have paid and raised their dividends for 20 or more years. As an example: Altria (MO). There are also ETFs that specialize in such stocks such as SDY.\n[164895] DRiPs come to mind as something that may be worth examining. If you take the Microsoft example, consider what would happen if you bought additional shares each year by re-investing the dividends and the stock also went up over the years. A combination of capital appreciation in the share price plus the additional shares purchased over time can produce a good income stream over time. The key is to consider how long are you contributing, how much are you contributing and what end result are you expecting as some companies can have larger dividends if you look at REITs for example.\n[542667] There are strategies based on yields. Dogs of the Dow being a specific example while Miller Howard has a few studies around dividends that may be of use if you additional material. Selling off a portion of the holding can run into problems as how could one hold 10 shares, selling a non-zero whole number every year for over 20 years if the stock doesn't ever pay a dividend in additional shares or cash?\n[422876] I would prefer a dividend paying company, rather than share appreciation. And I would prefer that the dividends increase over time.",
+   "answer": "Dividends can provide regular cash income, and you can reinvest them to buy more shares if you don’t need the cash now [222921] [164895]. Some companies have long histories of raising dividends, and dividend-focused ETFs offer a way to invest in a basket of them [415511]. But a dividend isn’t guaranteed, and a high yield alone doesn’t make a stock a good investment—consider the company’s financial health and your overall return, including changes in share price.",
+   "answer_canada": false,
+   "llm": {
+    "calls": 1,
+    "in": 429,
+    "out": 104,
+    "usd": 0.000845
+   },
+   "hits": [
+    {
+     "doc_id": "222921",
+     "snippet": "You can buy dividend stocks, just buy and hold. you will get cash or extra stock every quarter. You can also sell covered calls on your dividend stock",
+     "canada": false
+    },
+    {
+     "doc_id": "415511",
+     "snippet": "Dividends. There are blue chip companies that have paid and raised their dividends for 20 or more years. As an example: Altria (MO). There are also ET",
+     "canada": false
+    },
+    {
+     "doc_id": "164895",
+     "snippet": "DRiPs come to mind as something that may be worth examining. If you take the Microsoft example, consider what would happen if you bought additional sh",
+     "canada": false
+    },
+    {
+     "doc_id": "542667",
+     "snippet": "There are strategies based on yields. Dogs of the Dow being a specific example while Miller Howard has a few studies around dividends that may be of u",
+     "canada": false
+    },
+    {
+     "doc_id": "422876",
+     "snippet": "I would prefer a dividend paying company, rather than share appreciation. And I would prefer that the dividends increase over time.",
+     "canada": false
+    }
+   ],
+   "memory_after": [
+    {
+     "id": "97533dff4079",
+     "kind": "turn",
+     "text": "what about dividends?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    }
+   ],
+   "added": [
+    {
+     "id": "97533dff4079",
+     "kind": "turn",
+     "text": "what about dividends?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    }
+   ],
+   "removed": []
+  },
+  {
+   "n": 10,
+   "duty": "isolation",
+   "who": "bob",
+   "title": "bob states his own fact",
+   "note": "Stored under (globex, bob). alice's memory is untouched.",
+   "ms": 4155.9,
+   "kind": "ask",
+   "message": "I'm from the UK. how do I file my income taxes?",
+   "context": "e92d6a90",
+   "memory_flag": true,
+   "state": "COMPLETED",
+   "status_text": "",
+   "searched": "I'm from the UK. how do I file my income taxes?",
+   "memory_enabled": true,
+   "turn_used": null,
+   "facts_used": [],
+   "llm_saw": "Question: I'm from the UK. how do I file my income taxes?\n\nPassages:\n[1011] \"You will be filing the exact same form you've been filing until now (I hope...) which is called form 1040. Attached to it, you'll add a \"\"Schedule C\"\" form and \"\"Schedule SE\"\" form. Keep in mind the potential effect of the tax and totalization treaties the US has with the UK which may affect your filings. I suggest you talk to a licensed EA/CPA who works with expats in the UK and is familiar with all the issues. There are several prominent offices you can find by Googling.\"\n[104128] Short answer: it's complicated. The UK govt pages on foreign income are probably your best starting point: http://www.direct.gov.uk/en/MoneyTaxAndBenefits/Taxes/LeavingOrComingIntoTheUK/DG_10027480 As you can see, it depends on your precise residence status here. (There is a tax treaty between the UK and the US so you wouldn't be double taxed on the income either way. But there might still be reporting obligations).\n[519321] Are you being paid through a limited company or an umbrella company ? Are you self employed If not what they are doing is illegal. If you are being paid a salary, then the employer has to contribute their part of National Insurance. I believe they are treating you as self employed, hence asking you to generate invoices. Check your contract wordings properly. Or get help from Citizens Advice. Call them or visit their local office. Or else do call up HMRC. But if you are invoicing them, I would assume you are self employed and you have to do your self assessment. Get in contact with HMRC and ask them to generate your Unique Taxpayer Reference (UTR). THey will send you the UTR and using this yo\n[243939] This taxation guide may be helpful in sorting out some of your questions. I'm not entirely versatile with UK tax, so my answer will stay broad. I think the answer may be to consult a professional advisor. You may become non-resident but remain UK domiciled. Everybody has exactly one domicile and it is essentially their permanent home (the place where they intend to one day return and live. The test is based on your intent - do you intend to return to the UK or do you intend to make another land your permanent home? Simply traveling about the world will not establish a new domicile for you. So you may owe some taxes on your worldwide income or capital gains while a UK-domiciled non-resident, \n[467781] I would talk to your HMRC tax office they do have guidance on this issue here http://www.hmrc.gov.uk/working/intro/employed-selfemployed.htm",
+   "answer": "If you live and work in the UK, your nationality alone doesn’t determine how you file; your tax residence and how you earn your income matter. If you’re an employee, your employer normally deducts Income Tax through PAYE, so you may not need to file a return. If you’re self-employed, you’ll generally need to register with HMRC, get a Unique Taxpayer Reference (UTR), and file a Self Assessment return [519321]. If you have income from another country or are unsure whether you count as employed or self-employed, check with HMRC, as the rules depend on your circumstances [467781]. Are you living in the UK, and is your income from a job, self-employment, or both?",
+   "answer_canada": false,
+   "llm": {
+    "calls": 1,
+    "in": 644,
+    "out": 201,
+    "usd": 0.001448
+   },
+   "hits": [
+    {
+     "doc_id": "1011",
+     "snippet": "\"You will be filing the exact same form you've been filing until now (I hope...) which is called form 1040. Attached to it, you'll add a \"\"Schedule C\"",
+     "canada": false
+    },
+    {
+     "doc_id": "104128",
+     "snippet": "Short answer: it's complicated. The UK govt pages on foreign income are probably your best starting point: http://www.direct.gov.uk/en/MoneyTaxAndBene",
+     "canada": false
+    },
+    {
+     "doc_id": "519321",
+     "snippet": "Are you being paid through a limited company or an umbrella company ? Are you self employed If not what they are doing is illegal. If you are being pa",
+     "canada": false
+    },
+    {
+     "doc_id": "243939",
+     "snippet": "This taxation guide may be helpful in sorting out some of your questions. I'm not entirely versatile with UK tax, so my answer will stay broad. I thin",
+     "canada": false
+    },
+    {
+     "doc_id": "467781",
+     "snippet": "I would talk to your HMRC tax office they do have guidance on this issue here http://www.hmrc.gov.uk/working/intro/employed-selfemployed.htm",
+     "canada": false
+    }
+   ],
+   "memory_after": [
+    {
+     "id": "97533dff4079",
+     "kind": "turn",
+     "text": "what about dividends?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "33d1347bebec",
+     "kind": "fact",
+     "text": "I live in UK",
+     "context": "",
+     "days_left": 30.0
+    },
+    {
+     "id": "a200640e56f0",
+     "kind": "turn",
+     "text": "I'm from the UK. how do I file my income taxes?",
+     "context": "e92d6a90",
+     "days_left": 30.0
+    }
+   ],
+   "added": [
+    {
+     "id": "33d1347bebec",
+     "kind": "fact",
+     "text": "I live in UK",
+     "context": "",
+     "days_left": 30.0
+    },
+    {
+     "id": "a200640e56f0",
+     "kind": "turn",
+     "text": "I'm from the UK. how do I file my income taxes?",
+     "context": "e92d6a90",
+     "days_left": 30.0
+    }
+   ],
+   "removed": []
+  },
+  {
+   "n": 11,
+   "duty": "access",
+   "who": "alice",
+   "title": "alice asks what is kept about her",
+   "note": "GET /memory: every entry, oldest first, with the days until it expires. The email shows as [EMAIL].",
+   "ms": 17.0,
+   "kind": "rest",
+   "message": "GET /memory",
+   "status": 200,
+   "response": {
+    "user": "alice",
+    "tenant": "acme",
+    "entries": [
+     {
+      "id": "16eee0e7940c",
+      "kind": "turn",
+      "context_id": "9d075c4b-3390-4022-b0d9-b738f09e8cf6",
+      "text": "how do I file my income taxes?",
+      "data": {
+       "doc_ids": [
+        "585356",
+        "284085",
+        "38227",
+        "251649",
+        "416511"
+       ]
+      },
+      "created": 1795668240.943382,
+      "expires": 1798260240.943382
+     },
+     {
+      "id": "bf373c4fbf88",
+      "kind": "fact",
+      "context_id": null,
+      "text": "I live in Canada",
+      "data": {
+       "type": "country",
+       "value": "Canada",
+       "text": "I live in Canada"
+      },
+      "created": 1795668240.9669292,
+      "expires": 1798260240.9669292
+     },
+     {
+      "id": "3e3413bea07b",
+      "kind": "turn",
+      "context_id": "9d075c4b-3390-4022-b0d9-b738f09e8cf6",
+      "text": "I live in Canada. How are capital gains taxed?",
+      "data": {
+       "doc_ids": [
+        "182374",
+        "86621",
+        "431676",
+        "558867",
+        "216827"
+       ]
+      },
+      "created": 1795668244.1785917,
+      "expires": 1798260244.1785917
+     },
+     {
+      "id": "774dab26c69c",
+      "kind": "turn",
+      "context_id": "9d075c4b-3390-4022-b0d9-b738f09e8cf6",
+      "text": "what about dividends?",
+      "data": {
+       "doc_ids": [
+        "321114",
+        "459953",
+        "212783",
+        "307688",
+        "102443"
+       ]
+      },
+      "created": 1795668247.3162708,
+      "expires": 1798260247.3162708
+     },
+     {
+      "id": "28ea124555e9",
+      "kind": "turn",
+      "context_id": "9d075c4b-3390-4022-b0d9-b738f09e8cf6",
+      "text": "should I pay off my mortgage early?",
+      "data": {
+       "doc_ids": [
+        "466778",
+        "498881",
+        "559539",
+        "559370",
+        "78447"
+       ]
+      },
+      "created": 1795668250.582762,
+      "expires": 1798260250.582762
+     },
+     {
+      "id": "af3cce3d5b1d",
+      "kind": "turn",
+      "context_id": "57e1e624-0d18-439b-ab3a-981318344ab1",
+      "text": "how do I file my income taxes?",
+      "data": {
+       "doc_ids": [
+        "228445",
+        "25762",
+        "282844",
+        "416511",
+        "527776"
+       ]
+      },
+      "created": 1795668253.7334383,
+      "expires": 1798260253.7334383
+     },
+     {
+      "id": "f618e7a21ad4",
+      "kind": "turn",
+      "context_id": "57e1e624-0d18-439b-ab3a-981318344ab1",
+      "text": "my email is [EMAIL], how do I report a phishing scam?",
+      "data": {
+       "doc_ids": [
+        "57685",
+        "567031",
+        "424274",
+        "352291",
+        "571097"
+       ]
+      },
+      "created": 1795668257.2296245,
+      "expires": 1798260257.2296245
+     }
+    ]
+   },
+   "memory_after": [
+    {
+     "id": "16eee0e7940c",
+     "kind": "turn",
+     "text": "how do I file my income taxes?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "bf373c4fbf88",
+     "kind": "fact",
+     "text": "I live in Canada",
+     "context": "",
+     "days_left": 30.0
+    },
+    {
+     "id": "3e3413bea07b",
+     "kind": "turn",
+     "text": "I live in Canada. How are capital gains taxed?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "774dab26c69c",
+     "kind": "turn",
+     "text": "what about dividends?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "28ea124555e9",
+     "kind": "turn",
+     "text": "should I pay off my mortgage early?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "af3cce3d5b1d",
+     "kind": "turn",
+     "text": "how do I file my income taxes?",
+     "context": "57e1e624",
+     "days_left": 30.0
+    },
+    {
+     "id": "f618e7a21ad4",
+     "kind": "turn",
+     "text": "my email is [EMAIL], how do I report a phishing scam?",
+     "context": "57e1e624",
+     "days_left": 30.0
+    }
+   ],
+   "added": [],
+   "removed": []
+  },
+  {
+   "n": 12,
+   "duty": "deletion",
+   "who": "alice",
+   "title": "alice deletes one entry",
+   "note": "DELETE /memory/{id} removes the turn with the (redacted) email; the rest stays.",
+   "ms": 11.1,
+   "kind": "rest",
+   "message": "DELETE /memory/f618e7a21ad4",
+   "status": 200,
+   "response": {
+    "deleted": 1
+   },
+   "memory_after": [
+    {
+     "id": "16eee0e7940c",
+     "kind": "turn",
+     "text": "how do I file my income taxes?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "bf373c4fbf88",
+     "kind": "fact",
+     "text": "I live in Canada",
+     "context": "",
+     "days_left": 30.0
+    },
+    {
+     "id": "3e3413bea07b",
+     "kind": "turn",
+     "text": "I live in Canada. How are capital gains taxed?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "774dab26c69c",
+     "kind": "turn",
+     "text": "what about dividends?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "28ea124555e9",
+     "kind": "turn",
+     "text": "should I pay off my mortgage early?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "af3cce3d5b1d",
+     "kind": "turn",
+     "text": "how do I file my income taxes?",
+     "context": "57e1e624",
+     "days_left": 30.0
+    }
+   ],
+   "added": [],
+   "removed": [
+    {
+     "id": "f618e7a21ad4",
+     "kind": "turn",
+     "text": "my email is [EMAIL], how do I report a phishing scam?",
+     "context": "57e1e624",
+     "days_left": 30.0
+    }
+   ]
+  },
+  {
+   "n": 13,
+   "duty": "deletion",
+   "who": "alice",
+   "title": "alice deletes everything",
+   "note": "DELETE /memory removes every entry kept about her.",
+   "ms": 11.2,
+   "kind": "rest",
+   "message": "DELETE /memory",
+   "status": 200,
+   "response": {
+    "deleted": 6
+   },
+   "memory_after": [],
+   "added": [],
+   "removed": [
+    {
+     "id": "16eee0e7940c",
+     "kind": "turn",
+     "text": "how do I file my income taxes?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "bf373c4fbf88",
+     "kind": "fact",
+     "text": "I live in Canada",
+     "context": "",
+     "days_left": 30.0
+    },
+    {
+     "id": "3e3413bea07b",
+     "kind": "turn",
+     "text": "I live in Canada. How are capital gains taxed?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "774dab26c69c",
+     "kind": "turn",
+     "text": "what about dividends?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "28ea124555e9",
+     "kind": "turn",
+     "text": "should I pay off my mortgage early?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "af3cce3d5b1d",
+     "kind": "turn",
+     "text": "how do I file my income taxes?",
+     "context": "57e1e624",
+     "days_left": 30.0
+    }
+   ]
+  },
+  {
+   "n": 14,
+   "duty": "deletion",
+   "who": "alice",
+   "title": "the follow-up again, after the deletion",
+   "note": "Same contextId as steps 2 to 5, but its turns and the Canada fact are gone: searched as typed, and the LLM has no idea what \"what about\" refers to.",
+   "ms": 566.3,
+   "kind": "ask",
+   "message": "what about dividends?",
+   "context": "9d075c4b",
+   "memory_flag": true,
+   "state": "COMPLETED",
+   "status_text": "",
+   "searched": "what about dividends?",
+   "memory_enabled": true,
+   "turn_used": null,
+   "facts_used": [],
+   "llm_saw": "Question: what about dividends?\n\nPassages:\n[222921] You can buy dividend stocks, just buy and hold. you will get cash or extra stock every quarter. You can also sell covered calls on your dividend stocks, this will give you even more cash. you can also... actually this rabbit hole goes very deep. just stick with my first sentence.\n[415511] Dividends. There are blue chip companies that have paid and raised their dividends for 20 or more years. As an example: Altria (MO). There are also ETFs that specialize in such stocks such as SDY.\n[164895] DRiPs come to mind as something that may be worth examining. If you take the Microsoft example, consider what would happen if you bought additional shares each year by re-investing the dividends and the stock also went up over the years. A combination of capital appreciation in the share price plus the additional shares purchased over time can produce a good income stream over time. The key is to consider how long are you contributing, how much are you contributing and what end result are you expecting as some companies can have larger dividends if you look at REITs for example.\n[542667] There are strategies based on yields. Dogs of the Dow being a specific example while Miller Howard has a few studies around dividends that may be of use if you additional material. Selling off a portion of the holding can run into problems as how could one hold 10 shares, selling a non-zero whole number every year for over 20 years if the stock doesn't ever pay a dividend in additional shares or cash?\n[422876] I would prefer a dividend paying company, rather than share appreciation. And I would prefer that the dividends increase over time.",
+   "answer": "Dividends can provide regular cash income, and you can reinvest them to buy more shares if you don’t need the cash now [222921] [164895]. Some companies have long histories of raising dividends, and dividend-focused ETFs offer a way to invest in a basket of them [415511]. But a dividend isn’t guaranteed, and a high yield alone doesn’t make a stock a good investment—consider the company’s financial health and your overall return, including changes in share price.",
+   "answer_canada": false,
+   "llm": {
+    "calls": 1,
+    "in": 429,
+    "out": 104,
+    "usd": 0.000845
+   },
+   "hits": [
+    {
+     "doc_id": "222921",
+     "snippet": "You can buy dividend stocks, just buy and hold. you will get cash or extra stock every quarter. You can also sell covered calls on your dividend stock",
+     "canada": false
+    },
+    {
+     "doc_id": "415511",
+     "snippet": "Dividends. There are blue chip companies that have paid and raised their dividends for 20 or more years. As an example: Altria (MO). There are also ET",
+     "canada": false
+    },
+    {
+     "doc_id": "164895",
+     "snippet": "DRiPs come to mind as something that may be worth examining. If you take the Microsoft example, consider what would happen if you bought additional sh",
+     "canada": false
+    },
+    {
+     "doc_id": "542667",
+     "snippet": "There are strategies based on yields. Dogs of the Dow being a specific example while Miller Howard has a few studies around dividends that may be of u",
+     "canada": false
+    },
+    {
+     "doc_id": "422876",
+     "snippet": "I would prefer a dividend paying company, rather than share appreciation. And I would prefer that the dividends increase over time.",
+     "canada": false
+    }
+   ],
+   "memory_after": [
+    {
+     "id": "6dcc924327db",
+     "kind": "turn",
+     "text": "what about dividends?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    }
+   ],
+   "added": [
+    {
+     "id": "6dcc924327db",
+     "kind": "turn",
+     "text": "what about dividends?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    }
+   ],
+   "removed": []
+  },
+  {
+   "n": 15,
+   "duty": "expiry",
+   "who": "bob",
+   "title": "31 days pass",
+   "note": "Every entry lives MEMORY_TTL_DAYS (30) days.",
+   "ms": 7.3,
+   "kind": "clock",
+   "message": "the memory's clock moves forward 31 days",
+   "memory_after": [],
+   "added": [],
+   "removed": [
+    {
+     "id": "97533dff4079",
+     "kind": "turn",
+     "text": "what about dividends?",
+     "context": "9d075c4b",
+     "days_left": 30.0
+    },
+    {
+     "id": "33d1347bebec",
+     "kind": "fact",
+     "text": "I live in UK",
+     "context": "",
+     "days_left": 30.0
+    },
+    {
+     "id": "a200640e56f0",
+     "kind": "turn",
+     "text": "I'm from the UK. how do I file my income taxes?",
+     "context": "e92d6a90",
+     "days_left": 30.0
+    }
+   ]
+  },
+  {
+   "n": 16,
+   "duty": "expiry",
+   "who": "bob",
+   "title": "bob asks again",
+   "note": "His UK fact and his turns have expired: never returned after their end date, and purged on this step's write. The search and the answer are generic again.",
+   "ms": 567.9,
+   "kind": "ask",
+   "message": "how do I file my income taxes?",
+   "context": "e92d6a90",
+   "memory_flag": true,
+   "state": "COMPLETED",
+   "status_text": "",
+   "searched": "how do I file my income taxes?",
+   "memory_enabled": true,
+   "turn_used": null,
+   "facts_used": [],
+   "llm_saw": "Question: how do I file my income taxes?\n\nPassages:\n[585356] \"In the U.S., Form 1040 is known as the tax return. This is the form that is filed annually to calculate your tax due for the year, and you either claim a refund if you have overpaid your taxes or send in a payment if you have underpaid. The form is generally due on April 15 each year, but this year the due date is April 18, 2016. When it comes to filing your taxes, there are two questions you need to ask yourself: \"\"Am I required to file?\"\" and \"\"Should I file?\"\" Am I required to file? The 1040 instructions has a section called \"\"Do I have to file?\"\" with several charts that determine if you are legally required to file. It depends on your status and your gross income. If you are single, un\n[284085] You need to file IRS Form 1040-NR. The IRS's website provides instructions.\n[38227] You must file an FBAR when doing your taxes.\n[251649] \"The Form 1040 (U.S. tax return form) Instructions has a section called \"\"Do You Have To File?\"\". Below a certain income, you are not required to file a tax return and pay any tax. This amount of income at which you are required to file depends on several things, including your dependency status (you are a dependent of your parents), your marital status, and other factors. The instructions have charts that show what these numbers are. You would fall under Chart B. Assuming that you are under age 65, unmarried, and not blind, you only have to file when you reach the following conditions: Your unearned income was over $1,050. Your earned income was over $6,300. Your gross income was more than \n[416511] \"As a Canadian resident, the simple answer to your question is \"\"yes\"\" Having worked as a tax auditor and as a Certified Financial Planner, you are required to file an income tax return because you have taxable employment income. All the employer is doing is deducting it at source and remitting it on your behalf. That does not alleviate your need to file. In fact, if you don't file you will be subject to a no filing penalty. The one aspect you are missing is that taxpayers may be entitled to tax credits that may result in a refund to you depending on your personal situation (e.g spousal or minor dependents). I hope this helps.\"",
+   "answer": "What country are you filing in? The forms and rules depend on where you live and earn income.\n\nIf you’re filing in the U.S., start by checking the current Form 1040 instructions to see whether you’re required to file; the answer depends on factors such as your income and filing status [585356]. Then gather your income and tax documents, complete Form 1040 using tax software, a tax professional, or the IRS instructions, and file it by the current deadline; the return calculates whether you owe tax or are due a refund [585356].",
+   "answer_canada": false,
+   "llm": {
+    "calls": 1,
+    "in": 600,
+    "out": 137,
+    "usd": 0.001148
+   },
+   "hits": [
+    {
+     "doc_id": "585356",
+     "snippet": "\"In the U.S., Form 1040 is known as the tax return. This is the form that is filed annually to calculate your tax due for the year, and you either cla",
+     "canada": false
+    },
+    {
+     "doc_id": "284085",
+     "snippet": "You need to file IRS Form 1040-NR. The IRS's website provides instructions.",
+     "canada": false
+    },
+    {
+     "doc_id": "38227",
+     "snippet": "You must file an FBAR when doing your taxes.",
+     "canada": false
+    },
+    {
+     "doc_id": "251649",
+     "snippet": "\"The Form 1040 (U.S. tax return form) Instructions has a section called \"\"Do You Have To File?\"\". Below a certain income, you are not required to file",
+     "canada": false
+    },
+    {
+     "doc_id": "416511",
+     "snippet": "\"As a Canadian resident, the simple answer to your question is \"\"yes\"\" Having worked as a tax auditor and as a Certified Financial Planner, you are re",
+     "canada": true
+    }
+   ],
+   "memory_after": [
+    {
+     "id": "c68ee4706c86",
+     "kind": "turn",
+     "text": "how do I file my income taxes?",
+     "context": "e92d6a90",
+     "days_left": 30.0
+    }
+   ],
+   "added": [
+    {
+     "id": "c68ee4706c86",
+     "kind": "turn",
+     "text": "how do I file my income taxes?",
+     "context": "e92d6a90",
+     "days_left": 30.0
+    }
+   ],
+   "removed": []
+  }
+ ],
+ "summary": {
+  "canada_in_top_k": {
+   "step 2": 1,
+   "step 6": 5,
+   "step 7": 1
+  },
+  "answer_mentions_canada": {
+   "step 2": false,
+   "step 6": true,
+   "step 7": false
+  },
+  "router": "http://127.0.0.1:8000",
+  "backend": "azure",
+  "k": 5,
+  "llm_calls": 12,
+  "usd": 0.01435,
+  "model": "gpt-6-sol"
+ },
+ "recorded": "2026-11-26"
+}

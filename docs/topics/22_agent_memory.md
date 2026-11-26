@@ -151,7 +151,7 @@ With the stack and the A2A server running (see [21_a2a.md](21_a2a.md#2-quick-sta
 | tell it a fact about me | `python -m src.a2a.client --remember "I live in Canada" --token $(python -m scripts.mint_token alice)` |
 | see / delete my memory | `curl -H "Authorization: Bearer $TOKEN" localhost:8300/memory`, `curl -X DELETE ...` |
 | measure memory | `python scripts/memory_eval.py` (`--confirm-spend --llm-rewrite` for the LLM variant) |
-| record the memory replay | `python scripts/memory_replay.py` (no LLM calls; section 6) |
+| record the memory replay | `python scripts/memory_replay.py --confirm-spend` (12 Azure calls, about $0.015; section 6) |
 | try it in a browser | the A2A chat page's memory panel ([21_a2a.md](21_a2a.md), section 7) |
 
 | option / variable | default | what it sets |
@@ -186,11 +186,18 @@ only ever touches that user's entries:
 
 ## 6. The memory replay
 
-`scripts/memory_replay.py` runs the real A2A server in-process with a fresh memory, against the Docker router, and
-records 16 steps. Before and after each step it exports the caller's memory, so the page shows which entries the
-step added or removed next to the query the agent actually searched:
-[scenarios/SimpleScenarios/results/MemoryReplay/replay.html](../../scenarios/SimpleScenarios/results/MemoryReplay/replay.html).
-The memory's clock is a function the script controls, so "31 days later" is one step.
+`scripts/memory_replay.py --confirm-spend` runs the real A2A server in-process with a fresh memory, against the
+Docker router, and records 16 steps. Every question goes to the `answer` skill, so each step has one real LLM call
+(12 calls on gpt-6-sol, $0.014 in total). Before and after each step it exports the caller's memory, so the page
+shows four things per step: what retrieval saw (the query the agent searched, with memory's additions highlighted,
+and the passages), what the LLM read (the exact prompt), what the LLM answered, and which entries the step added or
+removed: [replays/memory.html](../../replays/memory.html). The memory's clock is a function the script controls, so
+"31 days later" is one step.
+
+What the LLM made of it is the clearest part. At step 2 (no fact yet) it answered "What country are you filing
+in?" and started on the US Form 1040. At step 6, with "I live in Canada" in memory and five Canadian passages, it
+answered with T4 slips, CRA-certified software and the April 30 deadline. At step 7 (`memory: false`) it asked for
+the country again.
 
 ![The memory replay, one card per step](../assets/gifs/memory_replay.gif)
 
@@ -204,17 +211,18 @@ The memory's clock is a function the script controls, so "31 days later" is one 
 | 6 | alice | step 2's question, in a new conversation | " Canada" is added; 5 of the top 5 are about Canada |
 | 7 | alice | the same, with `memory: false` | searched as typed (1 of 5 about Canada again); nothing stored |
 | 8 | alice | "my email is jane.doe@example.com, how do I report a phishing scam?" | stored as "my email is [EMAIL], ..." |
-| 9 | bob | "what about dividends?" with alice's `contextId` | nothing of alice's: searched as typed |
+| 9 | bob | "what about dividends?" with alice's `contextId` | nothing of alice's: searched as typed. A contextId is a label the client sends back, so bob can send anyone's; memory is keyed by (tenant, user, contextId) and the first two come from the signed token |
 | 10 | bob | "I'm from the UK. how do I file my income taxes?" | his own UK fact, under (globex, bob) |
 | 11 | alice | `GET /memory` | 7 entries: 1 fact and 6 turns |
 | 12, 13 | alice | delete the email turn, then everything | 1, then the other 6 |
 | 14 | alice | "what about dividends?" in the first conversation again | searched as typed: its turns and the fact are gone |
 | 15, 16 | bob | 31 days pass, then he asks again | his 3 entries have expired; searched as typed |
 
-Step 8 also shows a limit: memory stores the email redacted, but the search for that question still sends the
-address to the router as typed. The router redacts the passages it returns when its `pii_redaction` toggle is on,
-and always stores the question redacted in its audit log ([17_security.md](17_security.md)), but it searches the
-question as it arrives.
+Step 8 also shows a limit: memory stores the email redacted, but with every toggle off the search and the LLM prompt
+for that question still carry the address as typed. With the router's `pii_redaction` toggle on, the agent works
+from the redacted question instead (the router's `/guardrails/check` returns it), so neither its searches nor its
+LLM see the address, and the router always stores the question redacted in its audit log
+([17_security.md](17_security.md)).
 
 ## 7. Results
 
@@ -265,7 +273,7 @@ I open?" with Canada, the top 4 hardly change, and the Canadian posts come in fu
 |---|---|
 | memory: follow-up and fact change the search; bob and anonymous get nothing of alice's; per-message opt-out (no read, no write); export is redacted; forget one and all; expiry; a new country replaces the old; no identity, no memory | `tests/test_a2a.py`, doctests in `src/agent/memory.py` |
 | a forgotten entry's text is no longer in the SQLite file | `tests/test_a2a.py` (`test_forget_removes_the_text_from_the_file`) |
-| every duty on the live stack, step by step | `scripts/memory_replay.py` (`results/MemoryReplay/`) |
+| every duty on the live stack, step by step | `scripts/memory_replay.py` (`replays/memory.html`) |
 | follow-up recall and the country shift on the real corpus | `scripts/memory_eval.py` (`results/memory_eval.json`) |
 
 ## 9. Pitfalls and what I would do next

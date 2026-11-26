@@ -1,15 +1,21 @@
-"""Record a conversation with the A2A agent and show what its memory did at every step, as an HTML replay.
+"""Record a conversation with the A2A agent, answered by a real LLM, and show what memory did at every step.
 
-    python scripts/memory_replay.py                  # needs the router on 127.0.0.1:8000; no LLM calls
-    python scripts/memory_replay.py --render-only    # rebuild replay.html from steps.json
+    python scripts/memory_replay.py --confirm-spend   # needs the router on 127.0.0.1:8000; about 13 Azure calls (~$0.02)
+    python scripts/memory_replay.py --backend fake    # the same steps with the scripted fake LLM (free, for a dry run)
+    python scripts/memory_replay.py --render-only     # rebuild the page from the recorded data
 
-Writes scenarios/SimpleScenarios/results/MemoryReplay/{steps.json, replay.html}.
+Writes replays/data/memory_steps.json and replays/memory.html.
 
 WHAT RUNS
     The real A2A server (src/a2a/server.py) in this process, with a fresh in-RAM MemoryStore, searching the
-    Docker router with each caller's token. Every step is one A2A message or one /memory call. Before and after
-    each step the script exports the caller's memory, so the page can show exactly which entries were added
-    or removed, next to the query the agent actually searched (task metadata ``memory.query_searched``).
+    Docker router with each caller's token. Every question goes to the ``answer`` skill: one search, then ONE LLM
+    call that writes a short answer from the passages and cites them. Before and after each step the script
+    exports the caller's memory, so the page can show, for every step:
+
+        what retrieval saw   the query the agent searched (memory's additions highlighted) and the passages
+        what the LLM read    the exact user prompt (task metadata ``llm_saw``): question, memory, passages
+        what the LLM wrote   the answer, its tokens and its cost
+        what memory did      the entries added or removed, and everything kept about the caller afterwards
 
     The memory's clock is a function the script controls (``MemoryStore(now=...)``), so "31 days later" is
     one line instead of a month of waiting. Everything else is the code the server runs.
@@ -17,11 +23,17 @@ WHAT RUNS
 THE SIX DUTIES (docs/topics/22_agent_memory.md) and the steps that show each one
     attribution  only an identified caller gets memory: the anonymous step stores nothing
     isolation    bob, even sending alice's contextId, gets none of alice's turns or facts
-    expiry       after 31 days bob's entries are gone and his search is plain again
+    expiry       after 31 days bob's entries are gone and his answer is generic again
     access       alice exports everything kept about her (with the email already redacted)
     deletion     alice deletes one entry, then everything
     opt-out      a message with ``memory: false`` neither reads nor writes memory
     (and redaction, which is not one of the six but goes with them: an email in a message is stored as [EMAIL])
+
+WHY BOB CAN SEND ALICE'S contextId (step 9)
+    A contextId is a conversation label. The server makes one up for a first message, and the client sends it back
+    to continue that conversation; nothing stops a client from sending any label it likes, including one it saw
+    elsewhere. So the label cannot be what protects alice. Memory is stored and read under (tenant, user,
+    contextId), and tenant and user come from the signed token, so bob's lookup with alice's label finds nothing.
 """
 from __future__ import annotations
 
@@ -39,23 +51,32 @@ if str(ROOT) not in sys.path:
 from fastapi.testclient import TestClient  # noqa: E402
 
 from scripts.mint_token import token_for  # noqa: E402
+from scripts.replay_style import CATEGORIES, NAV_CSS, nav_html  # noqa: E402
 from src.a2a.client import A2AClient  # noqa: E402
 from src.a2a.server import create_app  # noqa: E402
 from src.agent.memory import COUNTRIES, MemoryStore  # noqa: E402
-from src.agent.tools import http_search_fn  # noqa: E402
+from src.agent.tools import http_guardrail_check, http_search_fn  # noqa: E402
 
-OUT = ROOT / "scenarios" / "SimpleScenarios" / "results" / "MemoryReplay"
+OUT = ROOT / "replays"
+DATA = OUT / "data" / "memory_steps.json"
+PAGE = OUT / "memory.html"
 BASE = "http://agent"
 TAXES = "how do I file my income taxes?"
+K = 5
 
 
 def mentions_canada(text: str) -> bool:
-    words = text.lower().replace(",", " ").replace(".", " ").split()
+    """True if the text names Canada or a Canadian tax term.
+
+    >>> mentions_canada("Put it in your RRSP first."), mentions_canada("File a 1040 with the IRS.")
+    (True, False)
+    """
+    words = text.lower().replace(",", " ").replace(".", " ").replace("(", " ").replace(")", " ").split()
     return any(w in words for w in COUNTRIES["Canada"])
 
 
 class Session:
-    def __init__(self, router: str):
+    def __init__(self, router: str, llm):
         self.clock = {"offset": 0.0}
         self.memory = MemoryStore(":memory:", now=lambda: time.time() + self.clock["offset"])
         self.texts: dict[str, str] = {}     # doc id -> full passage, to mark Canada on more than the snippet
@@ -65,11 +86,12 @@ class Session:
 
             def fn(q, strategy, k):
                 hits = raw(q, strategy, k)
-                self.texts.update({h['doc_id']: h.get('text', '') for h in hits})
+                self.texts.update({h["doc_id"]: h.get("text") or "" for h in hits})
                 return hits
             return fn
 
-        self.tc = TestClient(create_app(memory=self.memory, search_factory=search_factory, base_url=BASE))
+        self.tc = TestClient(create_app(llm=llm, memory=self.memory, search_factory=search_factory, base_url=BASE,
+                                        guard_factory=lambda tok: http_guardrail_check(router, tok)))
         self.tokens = {u: token_for(u) for u in ("alice", "bob")}
         self.steps: list[dict] = []
         self.contexts: dict[str, str] = {}
@@ -94,23 +116,31 @@ class Session:
              "added": [e for e in after if e["id"] not in ids_before],
              "removed": [e for e in before if e["id"] not in ids_after]}
         self.steps.append(s)
-        print(f"{s['n']:2d} {duty:11s} {s['who']:9s} {title}")
+        print(f"{s['n']:2d} {duty:11s} {s['who']:9s} {title}", flush=True)
         return s
 
     def ask(self, who: str | None, question: str, context: str | None = None, memory: bool = True):
-        """One A2A SendMessage (skill retrieve, k=5). ``context`` names a conversation: same name = same contextId."""
+        """One A2A SendMessage to the answer skill. ``context`` names a conversation: same name = same contextId."""
         def action():
             client = A2AClient(BASE, self.tokens.get(who) if who else None, http=self.tc)
             ctx_id = self.contexts.get(context) if context else None
-            task = client.send(question, context_id=ctx_id, k=5, memory=memory)
+            task = client.send(question, context_id=ctx_id, skill="answer", k=K, memory=memory)
             if context and context not in self.contexts:
                 self.contexts[context] = task["contextId"]
-            meta = task["metadata"].get("memory", {})
-            hits = task["artifacts"][0]["parts"][0]["data"]["hits"] if task.get("artifacts") else []
+            meta = task["metadata"]
+            mem = meta.get("memory", {})
+            arts = {a["name"]: a for a in task.get("artifacts") or []}
+            hits = arts["passages"]["parts"][0]["data"]["hits"] if "passages" in arts else []
+            answer = arts["answer"]["parts"][0]["text"] if "answer" in arts else ""
+            status = task["status"]
             return {"kind": "ask", "message": question, "context": task["contextId"][:8], "memory_flag": memory,
-                    "state": task["status"]["state"].replace("TASK_STATE_", ""),
-                    "searched": meta.get("query_searched", question), "memory_enabled": meta.get("enabled", False),
-                    "turn_used": meta.get("turn_used"), "facts_used": meta.get("facts_used", []),
+                    "state": status["state"].replace("TASK_STATE_", ""),
+                    "status_text": " ".join(p.get("text", "") for p in (status.get("message") or {}).get("parts", [])),
+                    "searched": mem.get("query_searched", question), "memory_enabled": mem.get("enabled", False),
+                    "turn_used": mem.get("turn_used"), "facts_used": mem.get("facts_used", []),
+                    "llm_saw": meta.get("llm_saw"), "answer": answer, "answer_canada": mentions_canada(answer),
+                    "llm": {"calls": meta.get("llm_calls", 0), "in": meta.get("input_tokens", 0),
+                            "out": meta.get("output_tokens", 0), "usd": meta.get("usd", 0.0)},
                     "hits": [{"doc_id": h["doc_id"], "snippet": h["snippet"][:150],
                               "canada": mentions_canada(self.texts.get(h["doc_id"], h["snippet"]))} for h in hits]}
         return action
@@ -129,39 +159,42 @@ class Session:
         return action
 
 
-def record(router: str) -> dict:
-    s = Session(router)
+def record(router: str, llm, backend: str) -> dict:
+    s = Session(router, llm)
     s.step("attribution", None, "An anonymous caller states a fact",
            "No token, so nobody to attribute memory to (and nobody who could later ask to see or delete it). "
            "The question is answered; nothing is stored.",
            s.ask(None, "I live in Canada. " + TAXES))
     s.step("attribution", "alice", "alice's first question, memory still empty",
-           "Searched as typed. This is the baseline for step 6.", s.ask("alice", TAXES, "chat-1"))
+           "Searched as typed, so the LLM gets whatever the corpus ranks first. This is the baseline for step 6.",
+           s.ask("alice", TAXES, "chat-1"))
     s.step("attribution", "alice", "alice states where she lives",
            "The rule-based extractor finds the country in the message and stores it as a fact under "
            "(acme, alice). This question already names Canada, so the fact adds nothing to its search.",
            s.ask("alice", "I live in Canada. How are capital gains taxed?", "chat-1"))
     s.step("attribution", "alice", "a follow-up in the same conversation",
            "\"what about dividends?\" points back (it starts with \"what about\"), so the last turn of this "
-           "contextId is searched with it. That turn already says Canada, so the fact is not added twice.",
+           "contextId is searched with it and shown to the LLM. Without it the LLM would not know what \"what about\" "
+           "refers to.",
            s.ask("alice", "what about dividends?", "chat-1"))
     s.step("attribution", "alice", "a new topic, no pointer back",
            "No pronoun or \"what about\": the last turn is not added. The fact still is.",
            s.ask("alice", "should I pay off my mortgage early?", "chat-1"))
     s.step("attribution", "alice", "step 2's question again, in a new conversation",
-           "A new contextId has no turns, but facts outlive conversations: compare the passages with step 2.",
+           "A new contextId has no turns, but facts outlive conversations: compare the passages and the answer "
+           "with step 2.",
            s.ask("alice", TAXES, "chat-2"))
     s.step("opt-out", "alice", "the same question with memory: false",
            "Message metadata {\"memory\": false}: memory is neither read (no Canada) nor written (no new turn).",
            s.ask("alice", TAXES, "chat-2", memory=False))
     s.step("redaction", "alice", "alice shares an email address",
-           "The turn is PII-redacted before it is written, so memory never holds the address. The search "
-           "itself still sends the address to the router, which searches the question as it arrives (its audit "
-           "log stores the question redacted, 17_security.md).",
+           "The turn is PII-redacted before it is written, so memory never holds the address. (With the router's "
+           "pii_redaction toggle on, the LLM would read [EMAIL] too; here every toggle is off.)",
            s.ask("alice", "my email is jane.doe@example.com, how do I report a phishing scam?", "chat-2"))
     s.step("isolation", "bob", "bob sends alice's contextId with a follow-up",
-           "Memory is read by (tenant, user, contextId). bob is another user, so alice's conversation does not "
-           "exist for him: no turn, no Canada.",
+           "A contextId is only a conversation label: the client sends it back, and bob sends alice's on purpose. "
+           "Memory is read by (tenant, user, contextId), and tenant and user come from bob's signed token, so "
+           "alice's conversation does not exist for him: no turn, no Canada.",
            s.ask("bob", "what about dividends?", "chat-1"))
     s.step("isolation", "bob", "bob states his own fact",
            "Stored under (globex, bob). alice's memory is untouched.",
@@ -176,142 +209,178 @@ def record(router: str) -> dict:
     s.step("deletion", "alice", "alice deletes everything",
            "DELETE /memory removes every entry kept about her.", s.rest("alice", "DELETE", "/memory"))
     s.step("deletion", "alice", "the follow-up again, after the deletion",
-           "Same contextId as steps 2 to 5, but its turns and the Canada fact are gone: searched as typed.",
+           "Same contextId as steps 2 to 5, but its turns and the Canada fact are gone: searched as typed, and the "
+           "LLM has no idea what \"what about\" refers to.",
            s.ask("alice", "what about dividends?", "chat-1"))
     s.step("expiry", "bob", "31 days pass", "Every entry lives MEMORY_TTL_DAYS (30) days.", s.wait_days(31))
     s.step("expiry", "bob", "bob asks again",
            "His UK fact and his turns have expired: never returned after their end date, and purged on this "
-           "step's write. The search is plain again.", s.ask("bob", TAXES, "bob-1"))
+           "step's write. The search and the answer are generic again.", s.ask("bob", TAXES, "bob-1"))
     by_n = {x["n"]: x for x in s.steps}
-    summary = {"canada_in_top5": {"step 2 (no fact)": sum(h["canada"] for h in by_n[2]["hits"]),
-                                  "step 6 (Canada fact)": sum(h["canada"] for h in by_n[6]["hits"]),
-                                  "step 7 (opt-out)": sum(h["canada"] for h in by_n[7]["hits"])},
-               "router": router, "llm_calls": 0}
-    return {"steps": s.steps, "summary": summary}
+    asks = [x for x in s.steps if x["kind"] == "ask"]
+    summary = {"canada_in_top_k": {f"step {n}": sum(h["canada"] for h in by_n[n]["hits"]) for n in (2, 6, 7)},
+               "answer_mentions_canada": {f"step {n}": by_n[n]["answer_canada"] for n in (2, 6, 7)},
+               "router": router, "backend": backend, "k": K,
+               "llm_calls": sum(x["llm"]["calls"] for x in asks),
+               "usd": round(sum(x["llm"]["usd"] for x in asks), 5),
+               "model": getattr(s.tc.app, "llm_model", None)}
+    return {"steps": s.steps, "summary": summary, "recorded": time.strftime("%Y-%m-%d")}
 
 
 # ---------------------------------------------------------------------- rendering
+CSS = """
+body{margin:0;font:14px/1.45 Segoe UI,system-ui,sans-serif;color:#1d2430;background:#f4f5f7}
+header.top{position:sticky;top:0;z-index:2;background:#1e2a3a;color:#fff;padding:10px 22px;display:flex;justify-content:space-between;align-items:center}
+header.top h1{font-size:19px;margin:0} header.top button{margin-left:6px;padding:6px 14px;border:0;border-radius:4px;background:#3b82f6;color:#fff;cursor:pointer}
+.wrap{display:flex} main{flex:1;padding:14px 22px;min-width:0}
+.q{background:#fff;border:1px solid #ddd;border-left:6px solid #db2777;border-radius:6px;padding:10px 16px;margin-bottom:12px}
+.q h2{font-size:17px;margin:2px 0} .q .note{color:#555;margin:4px 0 0}
+.pill{display:inline-block;color:#fff;border-radius:10px;padding:1px 9px;font-size:12px;margin-right:6px}
+.msg{display:inline-block;background:#dbeafe;border-radius:12px;padding:6px 12px;margin:8px 0 2px;font-size:15px}
+.msg.clock{background:#fdf2d0}
+.muted{color:#667085;font-size:12.5px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.panel{background:#fff;border:1px solid #ddd;border-radius:6px;overflow:hidden;min-width:0}
+.panel h3{font-size:13px;margin:0;padding:8px 12px;border-bottom:1px solid #e5e7eb;text-transform:uppercase;letter-spacing:.03em}
+.panel .b{padding:8px 12px}
+.p-ret h3{background:#e0f2fe;color:#075985} .p-llm h3{background:#ede9fe;color:#5b21b6}
+.p-ans h3{background:#dcfce7;color:#166534} .p-mem h3{background:#fce7f3;color:#9d174d}
+mark{background:#fff3a3} code{font-family:Consolas,monospace;font-size:12.5px}
+ol.hits{margin:6px 0 0 18px;padding:0;font-size:12.5px} ol.hits li{margin:3px 0}
+.ca{background:#0f766e;color:#fff;border-radius:4px;padding:0 4px;font-size:11px}
+pre{background:#0f172a;color:#e2e8f0;padding:8px 10px;border-radius:6px;font-size:11.5px;white-space:pre-wrap;word-break:break-word;max-height:330px;overflow:auto;margin:0}
+.answer{font-size:14.5px;line-height:1.5;white-space:pre-wrap}
+.add{color:#15803d} .rem{color:#b91c1c;text-decoration:line-through}
+table{border-collapse:collapse;width:100%;font-size:12px} td,th{border-bottom:1px solid #eee;padding:3px 5px;text-align:left;vertical-align:top}
+.sum{background:#fff;border:1px solid #ddd;border-radius:6px;padding:8px 14px;margin-top:12px;font-size:13px}
+"""
 DUTY_COLOR = {"attribution": "#1f6feb", "isolation": "#8250df", "expiry": "#9a6700", "access": "#1a7f37",
-              "deletion": "#c62828", "opt-out": "#57606a", "redaction": "#0e7490"}
+              "deletion": "#b91c1c", "opt-out": "#57606a", "redaction": "#0e7490"}
 
 
-def _searched_html(step: dict) -> str:
+def searched_html(step: dict) -> str:
     q, msg = step["searched"], step["message"]
     if q == msg:
         return f"<code>{html.escape(q)}</code> <span class='muted'>(as typed)</span>"
     i = q.find(msg)
     if i < 0:
         return f"<code>{html.escape(q)}</code>"
-    return (f"<code><mark>{html.escape(q[:i])}</mark>{html.escape(msg)}<mark>{html.escape(q[i + len(msg):])}</mark></code>")
+    return f"<code><mark>{html.escape(q[:i])}</mark>{html.escape(msg)}<mark>{html.escape(q[i + len(msg):])}</mark></code>"
+
+
+def step_html(s: dict) -> str:
+    color = DUTY_COLOR[s["duty"]]
+    head = (f"<div class='q'><span class='pill' style='background:{color}'>{s['duty']}</span>"
+            f"<span class='muted'>step {s['n']} &middot; {html.escape(s['who'])}</span>"
+            f"<h2>{html.escape(s['title'])}</h2><p class='note'>{html.escape(s['note'])}</p>")
+    if s["kind"] == "clock":
+        head += f"<div class='msg clock'>&#9201; {html.escape(s['message'])}</div>"
+    else:
+        head += f"<div class='msg'><b>{html.escape(s['who'])}</b>: {html.escape(s['message'])}</div>"
+    if s["kind"] == "ask":
+        extra = ([] if s["memory_flag"] else ["metadata memory: false"]) + [f"contextId {s['context']}",
+                                                                            f"task {s['state']}", f"{s['ms']:.0f} ms"]
+        head += f"<div class='muted'>{' &middot; '.join(extra)}</div>"
+    head += "</div>"
+    diff = "".join(f"<div class='add'>+ {e['kind']}: {html.escape(e['text'])}</div>" for e in s["added"]) + \
+        "".join(f"<div class='rem'>&minus; {e['kind']}: {html.escape(e['text'])}</div>" for e in s["removed"])
+    rows = "".join(f"<tr><td>{e['kind']}</td><td>{html.escape(e['text'])}</td><td>{e['context'] or '-'}</td>"
+                   f"<td>{e['days_left']}</td></tr>" for e in s["memory_after"])
+    mem = (f"<div class='panel p-mem'><h3>What memory did</h3><div class='b'>{diff or '<div class=muted>no change</div>'}"
+           f"<div class='muted' style='margin-top:8px'>{html.escape(s['who'])}'s memory after this step</div>"
+           + (f"<table><tr><th>kind</th><th>text</th><th>context</th><th>days left</th></tr>{rows}</table>"
+              if rows else "<div class='muted'>empty</div>") + "</div></div>")
+    if s["kind"] == "ask":
+        reads = []
+        if s["turn_used"]:
+            reads.append(f"last turn: &ldquo;{html.escape(s['turn_used'])}&rdquo;")
+        if s["facts_used"]:
+            reads.append("facts: " + ", ".join(html.escape(f) for f in s["facts_used"]))
+        read = "; ".join(reads) if reads else ("nothing" if s["memory_enabled"] else "memory off for this caller / message")
+        hits = "".join(f"<li><code>{h['doc_id']}</code>{' <span class=ca>Canada</span>' if h['canada'] else ''} "
+                       f"{html.escape(h['snippet'])}</li>" for h in s["hits"])
+        ret = (f"<div class='panel p-ret'><h3>What retrieval saw</h3><div class='b'><div><span class='muted'>memory "
+               f"read:</span> {read}</div><div><span class='muted'>searched as:</span> {searched_html(s)}</div>"
+               f"<ol class='hits'>{hits}</ol></div></div>")
+        llm = (f"<div class='panel p-llm'><h3>What the LLM read (one call)</h3><div class='b'>"
+               + (f"<pre>{html.escape(s['llm_saw'])}</pre>" if s.get("llm_saw") else "<div class='muted'>no LLM call</div>")
+               + "</div></div>")
+        cost = s["llm"]
+        ans = (f"<div class='panel p-ans'><h3>What the LLM answered</h3><div class='b'><div class='answer'>"
+               f"{html.escape(s['answer'] or s.get('status_text') or '')}</div><div class='muted' style='margin-top:6px'>"
+               f"{cost['calls']} call, {cost['in']} tokens in, {cost['out']} out, ${cost['usd']}"
+               + (" &middot; <span class=ca>mentions Canada</span>" if s["answer_canada"] else "") + "</div></div></div>")
+        return head + f"<div class='grid'>{ret}{llm}{ans}{mem}</div>"
+    if s["kind"] == "rest":
+        resp = (f"<div class='panel p-ret'><h3>The request and its response</h3><div class='b'><div class='muted'>"
+                f"HTTP {s['status']}</div><pre>{html.escape(json.dumps(s['response'], indent=1))}</pre></div></div>")
+        return head + f"<div class='grid'>{resp}{mem}</div>"
+    return head + f"<div class='grid'>{mem}</div>"
 
 
 def render(rec: dict) -> str:
-    cards = []
-    for s in rec["steps"]:
-        color = DUTY_COLOR[s["duty"]]
-        body = [f"<div class='msg clock'>&#9201; {html.escape(s['message'])}</div>" if s["kind"] == "clock" else
-                f"<div class='msg'><b>{html.escape(s['who'])}</b>: {html.escape(s['message'])}</div>"]
-        if s["kind"] == "ask":
-            extra = []
-            if not s["memory_flag"]:
-                extra.append("metadata memory: false")
-            extra.append(f"contextId {s['context']}")
-            body.append(f"<div class='muted'>{' &middot; '.join(extra)} &middot; task {s['state']} &middot; {s['ms']} ms</div>")
-            reads = []
-            if s["turn_used"]:
-                reads.append(f"last turn: \"{html.escape(s['turn_used'])}\"")
-            if s["facts_used"]:
-                reads.append("facts: " + ", ".join(html.escape(f) for f in s["facts_used"]))
-            body.append("<div><span class='lbl'>memory read</span> "
-                        + ("; ".join(reads) if reads else ("<span class='muted'>nothing</span>" if s["memory_enabled"]
-                                                            else "<span class='muted'>memory off for this caller / message</span>"))
-                        + "</div>")
-            body.append(f"<div><span class='lbl'>searched as</span> {_searched_html(s)}</div>")
-            body.append("<ol class='hits'>" + "".join(
-                f"<li><code>{h['doc_id']}</code>{' <span class=ca>Canada</span>' if h['canada'] else ''} "
-                f"{html.escape(h['snippet'])}</li>" for h in s["hits"][:5]) + "</ol>")
-        elif s["kind"] == "rest":
-            body.append(f"<div class='muted'>HTTP {s['status']}</div><pre>{html.escape(json.dumps(s['response'], indent=1))}</pre>")
-        diff = "".join(f"<div class='add'>+ {e['kind']}: {html.escape(e['text'])}</div>" for e in s["added"]) + \
-               "".join(f"<div class='rem'>&minus; {e['kind']}: {html.escape(e['text'])}</div>" for e in s["removed"])
-        mem = "".join(f"<tr><td>{e['kind']}</td><td>{html.escape(e['text'])}</td><td>{e['context'] or '-'}</td>"
-                      f"<td>{e['days_left']}</td></tr>" for e in s["memory_after"])
-        side = (f"<div class='lbl'>memory changes</div>{diff or '<div class=muted>none</div>'}"
-                f"<div class='lbl' style='margin-top:8px'>{html.escape(s['who'])}'s memory after this step</div>"
-                + (f"<table><tr><th>kind</th><th>text</th><th>context</th><th>days left</th></tr>{mem}</table>"
-                   if mem else "<div class='muted'>empty</div>"))
-        cards.append(f"""<section class="step" id="s{s['n']}">
-  <header><span class="n">{s['n']}</span><span class="duty" style="background:{color}">{s['duty']}</span>
-  <h3>{html.escape(s['title'])}</h3></header>
-  <p class="note">{html.escape(s['note'])}</p>
-  <div class="grid"><div>{''.join(body)}</div><div class="side">{side}</div></div>
-</section>""")
-    sm = rec["summary"]["canada_in_top5"]
-    legend = "".join(f"<span class='duty' style='background:{c}'>{d}</span> " for d, c in DUTY_COLOR.items())
+    steps = rec["steps"]
+    nav = nav_html([{"title": s["title"], "category": "extensions", "group": s["duty"]} for s in steps])
+    sm = rec["summary"]
+    ck, ac = sm["canada_in_top_k"], sm["answer_mentions_canada"]
+    yes = lambda b: "yes" if b else "no"  # noqa: E731
+    summary = (f"Passages that mention Canada in the top {sm['k']} for &ldquo;{TAXES}&rdquo;: {ck['step 2']} before "
+               f"alice's fact (step 2), {ck['step 6']} with it (step 6), {ck['step 7']} with <code>memory: false</code> "
+               f"(step 7). Does the LLM's answer talk about Canada? step 2: {yes(ac['step 2'])}, step 6: "
+               f"{yes(ac['step 6'])}, step 7: {yes(ac['step 7'])}. {sm['llm_calls']} LLM calls ({sm['backend']}), "
+               f"${sm['usd']} in total, recorded {html.escape(rec.get('recorded', ''))}.")
+    data = json.dumps([step_html(s) for s in steps], ensure_ascii=False).replace("</", "<\\/")
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Memory replay</title>
-<style>
-body {{ margin:0; font:14px/1.45 system-ui, Segoe UI, sans-serif; color:#1d2430; background:#f6f7f9; }}
-.top {{ position:sticky; top:0; z-index:2; background:#1d2430; color:#fff; padding:10px 18px; display:flex; gap:10px; align-items:center; }}
-.top h1 {{ font-size:17px; margin:0 14px 0 0; }}
-.top button {{ background:#2f81f7; color:#fff; border:0; border-radius:5px; padding:5px 11px; cursor:pointer; font:inherit; }}
-.intro {{ max-width:1250px; margin:14px auto 4px; padding:0 18px; }}
-.step {{ max-width:1250px; margin:12px auto; background:#fff; border:1px solid #d9dde3; border-radius:8px; padding:10px 16px; }}
-.step.hidden {{ display:none; }} .step.current {{ box-shadow:0 0 0 3px #2f81f7; }}
-header {{ display:flex; align-items:center; gap:10px; }} h3 {{ margin:0; font-size:15px; }}
-.n {{ background:#1d2430; color:#fff; border-radius:50%; width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; font-size:12px; }}
-.duty {{ color:#fff; border-radius:9px; padding:1px 8px; font-size:12px; }}
-.note {{ color:#57606a; margin:6px 0 8px; }}
-.grid {{ display:grid; grid-template-columns: 1.35fr 1fr; gap:16px; }}
-.msg.clock {{ background:#fdf2d0; }}
-.msg {{ background:#dbeafe; border-radius:10px; padding:6px 10px; margin-bottom:4px; display:inline-block; }}
-.muted {{ color:#667085; font-size:12.5px; }} .lbl {{ font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:#667085; margin-right:6px; }}
-mark {{ background:#fff3a3; }} code {{ font-family:Consolas, monospace; font-size:12.5px; }}
-.hits {{ margin:6px 0 0 18px; padding:0; font-size:12.5px; }} .hits li {{ margin:2px 0; }}
-.ca {{ background:#d1242f; color:#fff; border-radius:4px; padding:0 4px; font-size:11px; }}
-.side {{ border-left:1px solid #e5e7eb; padding-left:14px; font-size:12.5px; }}
-.add {{ color:#1a7f37; }} .rem {{ color:#c62828; text-decoration:line-through; }}
-table {{ border-collapse:collapse; width:100%; font-size:12px; }} td, th {{ border-bottom:1px solid #eee; padding:2px 4px; text-align:left; vertical-align:top; }}
-pre {{ background:#0f172a; color:#e2e8f0; padding:8px; border-radius:6px; font-size:11.5px; white-space:pre-wrap; max-height:260px; overflow:auto; }}
-</style></head><body>
-<div class="top"><h1>Memory replay</h1><button onclick="play()">&#9654; Play</button><button onclick="step()">Step</button>
-<button onclick="showAll()">Show all</button><button onclick="reset()">Reset</button><span id="pos"></span></div>
-<div class="intro">
-<p>One recorded session with the FiQA A2A agent (<code>src/a2a/server.py</code>), searching the Docker router, with
-no LLM calls. Each card is one A2A message or one <code>/memory</code> call. On the left: what memory read and the
-query the agent actually searched (the parts memory added are <mark>highlighted</mark>), then the top passages
-(<span class="ca">Canada</span> marks a passage whose full text says Canada, Canadian, RRSP, TFSA or CRA). On the right: the entries
-added or removed by the step, and everything kept about the caller afterwards.</p>
-<p>Passages mentioning Canada in the top 5 for "{TAXES}": {sm['step 2 (no fact)']} before alice's fact (step 2),
-{sm['step 6 (Canada fact)']} with it (step 6), {sm['step 7 (opt-out)']} with <code>memory: false</code> (step 7).
-Duties: {legend}. Explained in <code>docs/topics/22_agent_memory.md</code>.</p></div>
-{''.join(cards)}
+<style>{CSS}{NAV_CSS}</style></head><body>
+<header class="top"><h1 id="h">Memory replay</h1><div><button onclick="go(cur-1)">&larr; prev</button>
+<button onclick="go(cur+1)">next &rarr;</button></div></header>
+<div class="wrap"><aside>{nav}</aside><main><div id="m"></div>
+<div class="sum">{summary} One recorded session with the A2A agent (<code>src/a2a/server.py</code>, skill
+<code>answer</code>), searching the Docker router. Explained in <code>docs/topics/22_agent_memory.md</code>.
+Colour: {CATEGORIES['extensions']['label']} (memory). Arrow keys move between steps.</div></main></div>
 <script>
-const steps = [...document.querySelectorAll('.step')]; let i = 0, timer = null;
-function show() {{ steps.forEach((s, k) => {{ s.classList.toggle('hidden', k >= i); s.classList.toggle('current', k === i - 1); }});
-  document.getElementById('pos').textContent = i + ' / ' + steps.length;
-  if (i > 0) steps[i - 1].scrollIntoView({{behavior: 'smooth', block: 'center'}}); }}
-function step() {{ if (i < steps.length) {{ i++; show(); }} else clearInterval(timer); }}
-function play() {{ clearInterval(timer); if (i >= steps.length) i = 0; timer = setInterval(step, 2500); step(); }}
-function showAll() {{ clearInterval(timer); i = steps.length; show(); window.scrollTo(0, 0); }}
-function reset() {{ clearInterval(timer); i = 0; show(); }}
-showAll();
+const S = {data};
+let cur = 0;
+function go(i) {{
+  if (i < 0 || i >= S.length) return;
+  document.querySelectorAll("aside li").forEach(l => l.classList.remove("cur"));
+  document.getElementById("l" + i).classList.add("cur");
+  cur = i; document.getElementById("m").innerHTML = S[i];
+  document.getElementById("h").textContent = `Memory replay · step ${{i + 1}} of ${{S.length}}`;
+  location.hash = i + 1;
+}}
+document.addEventListener("keydown", e => {{ if (e.key === "ArrowRight") go(cur + 1); if (e.key === "ArrowLeft") go(cur - 1); }});
+go(Math.max(0, (parseInt(location.hash.slice(1)) || 1) - 1));
 </script></body></html>"""
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--router", default="http://127.0.0.1:8000")
+    ap.add_argument("--backend", default="azure", choices=["azure", "fake"])
+    ap.add_argument("--confirm-spend", action="store_true", help="needed for --backend azure")
     ap.add_argument("--render-only", action="store_true")
     a = ap.parse_args(argv)
-    OUT.mkdir(parents=True, exist_ok=True)
+    DATA.parent.mkdir(parents=True, exist_ok=True)
     if a.render_only:
-        rec = json.loads((OUT / "steps.json").read_text(encoding="utf-8"))
+        rec = json.loads(DATA.read_text(encoding="utf-8"))
     else:
-        rec = record(a.router)
-        (OUT / "steps.json").write_text(json.dumps(rec, indent=1, ensure_ascii=False), encoding="utf-8")
-    (OUT / "replay.html").write_text(render(rec), encoding="utf-8")
-    print("canada in top 5:", rec["summary"]["canada_in_top5"])
-    print(f"wrote {(OUT / 'replay.html').relative_to(ROOT)}")
+        if a.backend == "azure":
+            if not a.confirm_spend:
+                ap.error("--backend azure spends money: add --confirm-spend (or use --backend fake)")
+            from src.agent.llm import get_llm
+            llm = get_llm("azure", confirm_spend=True)
+        else:
+            from src.agent.fake_policies import heuristic_responder
+            from src.agent.llm import FakeLLM
+            llm = FakeLLM(heuristic_responder)
+        rec = record(a.router, llm, a.backend)
+        rec["summary"]["model"] = getattr(llm, "model", None)
+        DATA.write_text(json.dumps(rec, indent=1, ensure_ascii=False), encoding="utf-8")
+    PAGE.write_text(render(rec), encoding="utf-8")
+    print("canada in top k:", rec["summary"]["canada_in_top_k"], "| answer mentions canada:",
+          rec["summary"]["answer_mentions_canada"], "| usd:", rec["summary"]["usd"])
+    print(f"wrote {PAGE.relative_to(ROOT)}")
     return 0
 
 

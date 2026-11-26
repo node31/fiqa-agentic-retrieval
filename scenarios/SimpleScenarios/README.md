@@ -107,13 +107,15 @@ router's toggles afterwards); `--render-only` rebuilds the page from `messages.j
 
 ## Memory replay
 
-[results/MemoryReplay/replay.html](results/MemoryReplay/replay.html) is one recorded session with the A2A agent's
-memory, 16 cards, one per A2A message or `/memory` call. Each card shows what memory read, the query the agent
-actually searched (with the words memory added highlighted), the top passages, and the entries the step added or
-removed. The cards are tagged with the duty they show: attribution (an anonymous caller gets no memory), isolation
-(bob sending alice's contextId gets nothing of hers), opt-out (`memory: false`), redaction (an email is stored as
-`[EMAIL]`), access (`GET /memory`), deletion (one entry, then all) and expiry (the memory's clock moved 31 days).
-For "how do I file my income taxes?" alice's top 5 had 1 passage about Canada before she said she lives there and
-5 after. `python scripts/memory_replay.py` records it again against the running stack (no LLM calls);
-`--render-only` rebuilds the page from `steps.json`. Memory is explained in
+[replays/memory.html](../../replays/memory.html) is one recorded session with the A2A agent's memory, 16 steps,
+one per A2A message or `/memory` call, with a nav on the left. Every question goes to the `answer` skill on Azure,
+so each step shows what retrieval saw (what memory read, the query the agent searched with memory's words
+highlighted, the top passages), what the LLM read, what it answered, and the entries the step added or removed. The
+steps are grouped by the duty they show: attribution (an anonymous caller gets no memory), isolation (bob sending
+alice's contextId gets nothing of hers), opt-out (`memory: false`), redaction (an email is stored as `[EMAIL]`),
+access (`GET /memory`), deletion (one entry, then all) and expiry (the memory's clock moved 31 days). For "how do I
+file my income taxes?" alice's top 5 had 1 passage about Canada before she said she lives there and 5 after, and
+the LLM went from asking which country she files in to answering about T4 slips and the CRA.
+`python scripts/memory_replay.py --confirm-spend` records it again against the running stack (12 Azure calls,
+about $0.015); `--render-only` rebuilds the page from `replays/data/memory_steps.json`. Memory is explained in
 [docs/topics/22_agent_memory.md](../../docs/topics/22_agent_memory.md).

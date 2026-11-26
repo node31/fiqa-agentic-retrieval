@@ -934,8 +934,10 @@ The agents also run as an A2A (Agent2Agent 1.0) service with conversation and us
 **BM25** (`src/retrieval/bm25.py`, k1 = 1.2, b = 0.75). Rewards a word that appears often in this doc but rarely in
 the corpus, with diminishing returns for repeats and a penalty for long docs.
 
-    score(q, d) = Σ_t IDF(t) · tf(t,d) · (k1 + 1) / (tf(t,d) + k1 · (1 - b + b · |d| / avgdl))
-    IDF(t)      = ln(1 + (N - df(t) + 0.5) / (df(t) + 0.5))
+```text
+score(q, d) = Σ_t IDF(t) · tf(t,d) · (k1 + 1) / (tf(t,d) + k1 · (1 - b + b · |d| / avgdl))
+IDF(t)      = ln(1 + (N - df(t) + 0.5) / (df(t) + 0.5))
+```
 
 tf is how often t appears in d, |d| the doc's length, avgdl the average length, N the number of docs and df(t) how
 many contain t. Sharded, N, the lengths and df are summed over every shard first (the DFS phase), so the score is the
@@ -947,7 +949,9 @@ is the dot product, which is what faiss's inner-product index computes: cos(q, d
 **Min-max normalisation and linear fusion** (`src/retrieval/hybrid.py`, α = 0.7). Puts both lists on 0 to 1, then
 blends them, weighting dense more because it is stronger on FiQA.
 
-    norm(s) = (s - min) / (max - min)          fused(d) = α · norm_dense(d) + (1 - α) · norm_bm25(d)
+```text
+norm(s) = (s - min) / (max - min)          fused(d) = α · norm_dense(d) + (1 - α) · norm_bm25(d)
+```
 
 **Reciprocal rank fusion, RRF** (c = 60). Joins ranked lists by rank, not by score, so scales don't matter: each list
 gives a doc 1 / (c + rank), and a doc high in several lists wins. RRF(d) = Σ_lists 1 / (c + rank_list(d)).
@@ -958,7 +962,9 @@ k. Coverage@k, for compound questions, is 1 only if the top k holds at least one
 **DCG, IDCG and nDCG@10.** Rewards putting relevant passages near the top: each hit is discounted by its rank, and the
 sum is divided by the best possible sum, so a perfect ranking scores 1.
 
-    DCG@k  = Σ_{i=1..k} (2^rel_i - 1) / log2(i + 1)      IDCG@k = DCG@k of the ideal order      nDCG@k = DCG@k / IDCG@k
+```text
+DCG@k  = Σ_{i=1..k} (2^rel_i - 1) / log2(i + 1)      IDCG@k = DCG@k of the ideal order      nDCG@k = DCG@k / IDCG@k
+```
 
 **MRR@10.** One over the rank of the first relevant passage (0 if none in the top 10), averaged over questions.
 

@@ -33,6 +33,8 @@
   h2 { font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:4px 0 8px; }
   .col { display:flex; flex-direction:column; gap:12px; min-height:0; }
   .skill { border-top:1px solid var(--line); padding:6px 0; }
+  .answer { background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:6px 9px; margin:6px 0; line-height:1.45; }
+  .answer b { display:block; font-size:11px; text-transform:uppercase; color:#166534; letter-spacing:.04em; }
   .skill b { font-family:Consolas, monospace; }
   .ex { color:var(--acc); cursor:pointer; display:block; font-size:12.5px; }
   .ex:hover { text-decoration:underline; }
@@ -218,6 +220,8 @@ function renderTask(box, task, seen) {
       (mem.turn_used ? ` (follow-up of "${esc(mem.turn_used)}")` : "") +
       (mem.facts_used?.length ? ` (facts: ${mem.facts_used.map(esc).join(", ")})` : "") + `</div>`;
   if (task.status.message) html += `<div class="err">${esc(task.status.message.parts?.[0]?.text)}</div>`;
+  const answer = task.artifacts?.find((a) => a.name === "answer")?.parts?.[0]?.text;
+  if (answer) html += `<div class="answer"><b>LLM answer</b> ${esc(answer)}</div>`;
   if (data) html += data.hits.map((h) => `<div class="hit"><code>${esc(h.doc_id)}</code>` +
     (h.score !== undefined ? ` <span class="note">${h.score}</span>` : "") + ` ${esc(h.snippet)}</div>`).join("");
   if (s === "COMPLETED")

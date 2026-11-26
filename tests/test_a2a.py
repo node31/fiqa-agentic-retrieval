@@ -197,6 +197,41 @@ def test_every_llm_skill_works_from_the_redacted_question():
         assert t["metadata"]["pii_redacted"] == {"EMAIL": 1} and "[EMAIL]" in t["metadata"]["memory"]["query_searched"]
 
 
+def test_answer_skill_reads_web_results_when_asked():
+    from src.agent.tools import Hits
+
+    asked, seen = [], []
+    pages = [{"title": "Chair of the Federal Reserve", "url": "https://en.wikipedia.org/wiki/Chair_of_the_Federal_Reserve",
+            "snippet": "The chair is the head of the Board of Governors.", "source": "web"}]
+
+    def factory(tok):
+        def fn(query, strategy, k, web=False):
+            asked.append(web)
+            hits = [{"doc_id": "1", "score": 0.5, "text": "an old forum passage"}]
+            return Hits(hits, pages if web else [], {"reason": "requested"} if web else None)
+        return fn
+
+    stub = StubSearch()
+    stub.factory = factory
+
+    def responder(system, user):
+        seen.append(user)
+        return heuristic_responder(system, user)
+
+    tc, _ = make(stub, llm=FakeLLM(responder))
+    t = client(tc).send("who chairs the Fed?", skill="answer", k=1)          # no web: same as before
+    assert asked == [False] and [a["name"] for a in t["artifacts"]] == ["passages", "answer"] and "web" not in t["metadata"]
+    out = rpc(tc, "SendMessage", {"message": P.user_message("who chairs the Fed?",
+                                                            metadata={"skill": "answer", "k": 1, "web": True})})
+    t = out["result"]["task"]
+    assert asked == [False, True] and [a["name"] for a in t["artifacts"]] == ["passages", "answer", "web"]
+    assert seen[-1] == t["metadata"]["llm_saw"] and "[W1] Chair of the Federal Reserve: The chair is the head" in seen[-1]
+    assert t["metadata"]["web"]["fallback"] == {"reason": "requested"}
+    assert t["metadata"]["web"]["results"][0]["title"] == "Chair of the Federal Reserve"
+    for bad in ({"skill": "retrieve", "web": True}, {"skill": "answer", "web": "yes"}):     # only answer reads the web
+        assert rpc(tc, "SendMessage", {"message": P.user_message("x", metadata=bad)})["error"]["code"] == P.INVALID_PARAMS
+
+
 def test_answer_skill_makes_no_llm_call_without_passages():
     empty = StubSearch()
     empty.factory = lambda tok: lambda q, s, k: []

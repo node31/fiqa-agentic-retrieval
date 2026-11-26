@@ -69,6 +69,10 @@ def heuristic_responder(system: str, user: str) -> str:
         m = re.search(r"^\[([^\]]+)\] (.*)$", user, re.M)
         if not m:
             return f"(fake answer) I have no passages for: {question}"
-        return f"(fake answer) From [{m.group(1)}]: {m.group(2)[:160]}"
+        w = re.search(r"^\[(W\d+)\] (.*)$", user, re.M)    # the router's web results, when it sent any
+        if w and w.group(1) == m.group(1):
+            return f"(fake answer) From [{w.group(1)}]: {w.group(2)[:160]}"
+        return f"(fake answer) From [{m.group(1)}]: {m.group(2)[:160]}" + (
+            f" Web: [{w.group(1)}] {w.group(2)[:80]}" if w else "")
     # Fail loudly: a new prompt role needs a matching fake policy.
     raise ValueError(f"fake LLM has no policy for role {role!r}")

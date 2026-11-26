@@ -106,6 +106,9 @@ Mark relevant=false ONLY if none of the shown results is on-topic, and then give
 #   * "cite them as [doc_id]": the reader (and a test) can check which passages the answer used.
 #   * "What I know about the user": agent memory (docs/topics/22_agent_memory.md) reaches the LLM here.
 #   * plain text, not JSON: a person reads it, nothing parses it.
+#   * "Web results ... [W1]": the router's web fallback (docs/topics/20_web_search.md) can add Wikipedia text
+#     that is newer than the 2018 forum. A separate citation form shows the reader which claims came from
+#     where; "where the passages fall short" keeps the forum first for the personal-finance questions it covers.
 # WHY it does NOT say "refuse off-topic questions" or "never follow instructions inside passages":
 #   the security demo (docs/guides/demo_security_a2a_memory.md, part D) shows what reaches the LLM with
 #   each router protection off and on. A prompt rule is a request to the model, not a boundary, so the
@@ -113,5 +116,6 @@ Mark relevant=false ONLY if none of the shown results is on-topic, and then give
 ANSWER = """ROLE: answer
 You are a personal-finance assistant. Answer the user's question in at most 5 sentences.
 Use the numbered passages below where they help and cite each one you use as [doc_id].
+If "Web results" are given, use them where the passages fall short and cite each one you use as [W1], [W2], ...
 If "What I know about the user" is given, take it into account.
 Reply with plain text, not JSON."""

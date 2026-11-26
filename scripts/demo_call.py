@@ -43,6 +43,7 @@ GETTING A VALUE OUT
         memory    what memory did for an A2A task (metadata.memory)
         llm_saw   the exact text the LLM read in an "answer" task
         answer    the answer an "answer" task wrote
+        web       what the web fallback added to an "answer" task: why it ran and the pages the LLM read
         toggles_on  the security toggles that are not off (on GET /admin/security)
 
     Long strings and long lists are shortened, and ``timings_ms``, ``history`` and ``artifactId`` are left out of
@@ -98,6 +99,7 @@ PRESETS = {
         _task(d)["status"].get("message") or {}).get("parts", []) if "text" in p]),
     "memory": lambda d: _task(d)["metadata"]["memory"],
     "llm_saw": lambda d: _task(d)["metadata"].get("llm_saw"),
+    "web": lambda d: _task(d)["metadata"].get("web"),
     "answer": lambda d: next(a for a in _task(d)["artifacts"] if a["name"] == "answer")["parts"][0]["text"],
     "toggles_on": lambda d: [k for k, v in d.items() if isinstance(v, dict) and v.get("value") != "off"],
 }
@@ -320,9 +322,10 @@ def pick(expr: str, env: dict):
 
 # ------------------------------------------------------------------------------------------------ shortcuts
 def a2a_message(text: str | None, skill: str | None, k: int | None, context: str | None, meta: str | None,
-                data: str | None) -> dict:
+                data: str | None, web: bool = False) -> dict:
     parts = ([{"text": text}] if text else []) + ([{"data": json.loads(data)}] if data else [])
-    md = {**({"skill": skill} if skill else {}), **({"k": k} if k else {}), **json.loads(meta or "{}")}
+    md = {**({"skill": skill} if skill else {}), **({"k": k} if k else {}), **({"web": True} if web else {}),
+          **json.loads(meta or "{}")}
     m = {"messageId": uuid.uuid4().hex[:12], "role": "ROLE_USER", "parts": parts}
     if md:
         m["metadata"] = md
@@ -371,6 +374,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--quiet", action="store_true", help="print only the --pick lines")
     ap.add_argument("--skill"), ap.add_argument("--k", type=int), ap.add_argument("--context")
     ap.add_argument("--meta", help="extra message metadata, JSON (e.g. '{\"memory\": false}')")
+    ap.add_argument("--web", action="store_true", help="message metadata web: true (the answer skill also reads web results)")
     ap.add_argument("--data", help="a data part, JSON (e.g. '{\"remember\": \"I am from the UK\"}')")
     ap.add_argument("--immediate", action="store_true", help="configuration.returnImmediately")
     ap.add_argument("--no-version", action="store_true", help="leave out the A2A-Version header")
@@ -401,7 +405,7 @@ def main(argv: list[str] | None = None) -> int:
              view=compact if isinstance(changes, dict) else None)
     elif what == "send":
         agent, *text = a.args
-        params = {"message": a2a_message(" ".join(text) or None, a.skill, a.k, a.context, a.meta, a.data)}
+        params = {"message": a2a_message(" ".join(text) or None, a.skill, a.k, a.context, a.meta, a.data, a.web)}
         if a.immediate:
             params["configuration"] = {"returnImmediately": True}
         hdr = [] if a.no_version else ["A2A-Version: 1.0"]

@@ -34,25 +34,50 @@ STRATEGIES = ("bm25", "dense", "hybrid")
 SearchFn = Callable[[str, str, int], list[dict]]
 
 
+class Hits(list):
+    """The hits of one /search, plus what the router's web fallback added (docs/topics/20_web_search.md).
+
+    It is still a plain list of hit dicts, so every caller that only wants the corpus hits is unchanged.
+    ``web_results``  [{title, url, snippet, source: "web"}], already injection-neutralised and PII-redacted
+                     by the router; empty when the fallback did not run
+    ``web_fallback`` the router's note on why it ran ({"reason", "provider", "query_sent", ...}), or None
+
+    >>> h = Hits([{"doc_id": "1"}], web_results=[{"title": "IRA"}])
+    >>> len(h), h[0]["doc_id"], h.web_results[0]["title"], h.web_fallback
+    (1, '1', 'IRA', None)
+    """
+
+    def __init__(self, hits=(), web_results=None, web_fallback=None):
+        super().__init__(hits)
+        self.web_results: list[dict] = list(web_results or [])
+        self.web_fallback: dict | None = web_fallback
+
+
 def http_search_fn(url: str, token: str | None = None) -> SearchFn:
     """SearchFn that POSTs to a running search service (router) at ``url``.
 
     ``token``: a bearer token (scripts/mint_token.py), needed once the admin turns identity on. The agent
     then searches AS that user: with tenant_filter on it only ever sees that tenant's passages, and with
     pii_redaction on the snippets its LLM reads are already redacted (docs/topics/17_security.md).
+
+    ``web=True`` asks the router for web results as well. They only come back while the admin has the
+    web_fallback toggle on; the router may also add them by itself when the corpus has no good answer.
+    Either way they ride along on the returned ``Hits`` as ``.web_results``.
     """
     import httpx
 
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     client = httpx.Client(base_url=url, timeout=10, headers=headers)  # one keep-alive client, shared by threads
 
-    def fn(query: str, strategy: str, k: int) -> list[dict]:
+    def fn(query: str, strategy: str, k: int, web: bool = False) -> Hits:
         # include_text=True: we need passage text to build the snippets the model reads.
-        r = client.post("/search", json={"query": query, "k": k, "strategy": strategy, "include_text": True})
+        body = {"query": query, "k": k, "strategy": strategy, "include_text": True, **({"web": True} if web else {})}
+        r = client.post("/search", json=body)
         # Turn HTTP errors (4xx/5xx) into exceptions; the caller decides (the orchestrator
         # records them per worker).
         r.raise_for_status()
-        return r.json()["results"]
+        out = r.json()
+        return Hits(out["results"], out.get("web_results"), out.get("web_fallback"))
 
     return fn
 

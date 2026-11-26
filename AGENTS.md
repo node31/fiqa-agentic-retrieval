@@ -96,6 +96,9 @@ client ◄── top k, partial, missing_shards, model, timings_ms, security ─
   searches and prompts with the redacted question. A plain `/search` uses the real words (shards store no questions).
 - **Topic scope needs a calibrated threshold per model** (`guardrails.SCOPE_MIN`). A model without one is not
   checked, and the response carries a finding in mode `skipped`.
+- **Web results reach an LLM only through the `answer` skill**, as `[W1]` lines after the passages, and only while
+  the admin toggle `web_fallback` is on. They are already neutralised and redacted by the router. `"web"` in A2A
+  metadata is refused on every other skill.
 - **LLM spend is opt-in.** `AzureLLM` cannot be constructed without `confirm_spend=True`; budgets reserve the
   worst case before a call. The disk cache key is (backend, model, system, user, max tokens) and does not include
   the endpoint, so cached prompts succeed even with broken settings: `scripts/llm_check.py` bypasses the cache.

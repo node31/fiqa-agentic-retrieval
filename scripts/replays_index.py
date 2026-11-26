@@ -57,6 +57,12 @@ def build() -> str:
                       f'its nav.</span></a>')
         cats.append(f'<section><h2 style="background:{meta["light"]};color:{meta["color"]}">{html.escape(meta["label"])}'
                     f'<small>{html.escape(meta["what"])}</small></h2><div class="cards">{cards}</div></section>')
+    cats.append('<section><h2 style="background:#e2e8f0;color:#475569">Using the system<small>how a person, a script, '
+                'a terminal or an agent calls the router</small></h2><div class="cards">'
+                '<a class="card" href="ways_to_call.html" style="border-left-color:#475569"><b>Ways to call the router: '
+                'Swagger, demo_call, search.py, ask.py</b><span>The same question four ways, with every HTTP call '
+                'captured on its way to the router; all four get the same top 3.</span>'
+                '<code>python scripts/ways_to_call_replay.py</code></a></div></section>')
     return f"""<!doctype html><html><head><meta charset="utf-8"><title>Replays</title><style>
 body{{margin:0;font-family:Segoe UI,Arial,sans-serif;background:#f4f5f7;color:#1f2328}}
 header{{background:#1e2a3a;color:#fff;padding:16px 28px}} header h1{{margin:0;font-size:22px}}

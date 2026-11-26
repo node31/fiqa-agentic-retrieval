@@ -1,0 +1,287 @@
+{
+ "recorded": "2026-11-26 23:20",
+ "router": "http://127.0.0.1:8000",
+ "question": "what is short selling?",
+ "ways": [
+  {
+   "id": "swagger",
+   "kind": "Router docs",
+   "name": "Swagger at /docs",
+   "typed": "Open /docs in a browser, expand POST /search, Try it out, paste the body, Execute",
+   "body_typed": "{\"query\": \"what is short selling?\", \"k\": 3}",
+   "output": null,
+   "calls": [
+    {
+     "method": "POST",
+     "path": "/search",
+     "headers": {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/158.0.0.0 Safari/537.36 Edg/158.0.0.0",
+      "accept": "*/*",
+      "Content-Type": "application/json"
+     },
+     "body": {
+      "query": "what is short selling?",
+      "k": 3
+     },
+     "status": 200,
+     "ms": 280.3,
+     "response": {
+      "results": [
+       {
+        "doc_id": "336018",
+        "score": 0.903582
+       },
+       {
+        "doc_id": "127585",
+        "score": 0.857037
+       },
+       {
+        "doc_id": "409350",
+        "score": 0.748472
+       }
+      ],
+      "partial": false,
+      "missing_shards": [],
+      "model": "minilm-ft",
+      "strategy": "hybrid",
+      "latency_ms": 231.91
+     }
+    }
+   ],
+   "shot": "data/ways_swagger.png",
+   "about": "The router describes its own API (OpenAPI) and serves Swagger UI on top of it. Every endpoint has named example bodies; Try it out sends a real request from the browser and shows the curl command, the response and how long it took. Good for exploring: nothing to install, and the examples are checked by tests/test_api_docs.py.",
+   "top3": [
+    "336018",
+    "127585",
+    "409350"
+   ]
+  },
+  {
+   "id": "demo_call",
+   "kind": "SDK",
+   "name": "demo_call (Python)",
+   "typed": "python -m scripts.demo_call POST /search '{\"query\": \"what is short selling?\", \"k\": 3}' --pick doc_ids",
+   "output": "▶ POST http://127.0.0.1:8000/search   as none\n  Content-Type: application/json\n  {\"query\": \"what is short selling?\", \"k\": 3}\n◀ 200 OK   ok, 77 ms\n  {\n    \"results\": [\n      {\"doc_id\": \"336018\", \"score\": 0.903582},\n      {\"doc_id\": \"127585\", \"score\": 0.857037},\n      {\"doc_id\": \"409350\", \"score\": 0.748472}\n    ],\n    \"partial\": false,\n    \"missing_shards\": [],\n    \"model\": \"minilm-ft\",\n    \"strategy\": \"hybrid\",\n    \"latency_ms\": 57.78\n  }\n= doc_ids: [\"336018\", \"127585\", \"409350\"]",
+   "calls": [
+    {
+     "method": "POST",
+     "path": "/search",
+     "headers": {
+      "Accept": "*/*",
+      "User-Agent": "python-httpx/0.28.1",
+      "Content-Type": "application/json"
+     },
+     "body": {
+      "query": "what is short selling?",
+      "k": 3
+     },
+     "status": 200,
+     "ms": 62.4,
+     "response": {
+      "results": [
+       {
+        "doc_id": "336018",
+        "score": 0.903582
+       },
+       {
+        "doc_id": "127585",
+        "score": 0.857037
+       },
+       {
+        "doc_id": "409350",
+        "score": 0.748472
+       }
+      ],
+      "partial": false,
+      "missing_shards": [],
+      "model": "minilm-ft",
+      "strategy": "hybrid",
+      "latency_ms": 57.78
+     }
+    }
+   ],
+   "about": "A thin Python layer over HTTP for scripted, repeatable calls: it signs tokens for alice, bob or admin (--as), prints the request it sent and the response it got, colours them by outcome, and --pick pulls one value out of the answer. The demo guide is written in it. In code, the same call is http_search_fn(url, token) in src/agent/tools.py.",
+   "top3": [
+    "336018",
+    "127585",
+    "409350"
+   ]
+  },
+  {
+   "id": "search_py",
+   "kind": "CLI",
+   "name": "search.py",
+   "typed": "python src/search.py --query \"what is short selling?\" --top-k 3",
+   "output": "query: 'what is short selling?'  strategy=hybrid model=minilm-ft server_latency=61.48ms\n 1. [0.9036] doc 336018: \"Learn something new every day... I found this interesting and thought I'd throw my 2c in. Good description (I hope) from Short Selling: What is Short Selling First, let's describe what short selling means when you [...]\n 2. [0.8570] doc 127585: \"In India the Short is what is called in other markets call as \"\"Naked Short\"\" [I think I got the right term]. It means that you can only short sell intra day and by the end of the day you have to buy back the [...]\n 3. [0.7485] doc 409350: Shorting is the term used when someone borrows a stock and sells it at the current price to then buy it back later at hopefully a lower price. There are rules about this as noted in the link that begins this answer [...]",
+   "calls": [
+    {
+     "method": "POST",
+     "path": "/search",
+     "headers": {
+      "Accept": "*/*",
+      "User-Agent": "python-httpx/0.28.1",
+      "Content-Type": "application/json"
+     },
+     "body": {
+      "query": "what is short selling?",
+      "k": 3,
+      "strategy": "hybrid",
+      "fusion": "linear",
+      "alpha": 0.7,
+      "rerank_k": 0,
+      "include_text": true
+     },
+     "status": 200,
+     "ms": 68.0,
+     "response": {
+      "results": [
+       {
+        "doc_id": "336018",
+        "score": 0.903582,
+        "text": "\"Learn something new every day... I found this interesting and thought I'd throw my 2c in. Good description (I hope) from Short Selling: What is Short Selling First, let's describe what short selling ... (+1955 chars)"
+       },
+       {
+        "doc_id": "127585",
+        "score": 0.857037,
+        "text": "\"In India the Short is what is called in other markets call as \"\"Naked Short\"\" [I think I got the right term]. It means that you can only short sell intra day and by the end of the day you have to buy... (+416 chars)"
+       },
+       {
+        "doc_id": "409350",
+        "score": 0.748472,
+        "text": "Shorting is the term used when someone borrows a stock and sells it at the current price to then buy it back later at hopefully a lower price. There are rules about this as noted in the link that begi... (+274 chars)"
+       }
+      ],
+      "partial": false,
+      "missing_shards": [],
+      "model": "minilm-ft",
+      "strategy": "hybrid",
+      "latency_ms": 61.48
+     }
+    }
+   ],
+   "about": "The command line the assignment asks for (A1): one POST /search with the shipped fusion settings spelled out, then rank, score, doc id and a snippet per passage. It never touches an index; all the searching happens in the router and its shards.",
+   "top3": [
+    "336018",
+    "127585",
+    "409350"
+   ]
+  },
+  {
+   "id": "ask_py",
+   "kind": "CLI",
+   "name": "ask.py (agent + LLM)",
+   "typed": "python scripts/ask.py \"what is short selling?\" --url http://127.0.0.1:8000 --strategy single --backend azure --confirm-spend -k 3",
+   "output": "question: 'what is short selling?'   strategy: single   search: http://127.0.0.1:8000\n\nstep 0: search the question as asked (hybrid, no LLM call)\nstep 1: the model asked for another search (hybrid): 'short selling definition borrow shares sell them buy back later lower price profit risk stock'\nstep 2: the model finished and picked 4 ids (the rest of the top 3 is filled from all searches, fused with RRF)\n\nfinal top 3 (2 searches, 5.9 s):\n 1. doc 409350: Shorting is the term used when someone borrows a stock and sells it at the current price to then buy it back later at hopefully a lower price. There are rules about this as noted in the link [...]\n 2. doc 9082: This is a gross simplification as there are a few different ways to do this. The principle overall is the same though. To short a stock, you borrow X shares from a third party and sell them at [...]\n 3. doc 233379: \"Selling short is simply by definition the selling, then later re-buying of stock you don't initially own. Say you tally your entire portfolio balance: the quantity of each stock you own, and [...]\n\nLLM calls 2, tokens 926 in + 134 out, estimated $0.00146 (placeholder prices in src/config.py)\nLLM azure (gpt-6-sol): 2 request(s) sent to the service, 0 answered from the disk cache (.llm_cache/azure/, no request)",
+   "calls": [
+    {
+     "method": "POST",
+     "path": "/guardrails/check",
+     "headers": {
+      "Accept": "*/*",
+      "User-Agent": "python-httpx/0.28.1",
+      "Content-Type": "application/json"
+     },
+     "body": {
+      "text": "what is short selling?"
+     },
+     "status": 200,
+     "ms": 9.2,
+     "response": {
+      "allowed": true,
+      "findings": [],
+      "text": "what is short selling?",
+      "pii_redacted": {}
+     }
+    },
+    {
+     "method": "POST",
+     "path": "/search",
+     "headers": {
+      "Accept": "*/*",
+      "User-Agent": "python-httpx/0.28.1",
+      "Content-Type": "application/json"
+     },
+     "body": {
+      "query": "what is short selling?",
+      "k": 3,
+      "strategy": "hybrid",
+      "include_text": true
+     },
+     "status": 200,
+     "ms": 104.8,
+     "response": {
+      "results": [
+       {
+        "doc_id": "336018",
+        "score": 0.903582,
+        "text": "\"Learn something new every day... I found this interesting and thought I'd throw my 2c in. Good description (I hope) from Short Selling: What is Short Selling First, let's describe what short selling ... (+1955 chars)"
+       },
+       {
+        "doc_id": "127585",
+        "score": 0.857037,
+        "text": "\"In India the Short is what is called in other markets call as \"\"Naked Short\"\" [I think I got the right term]. It means that you can only short sell intra day and by the end of the day you have to buy... (+416 chars)"
+       },
+       {
+        "doc_id": "409350",
+        "score": 0.748472,
+        "text": "Shorting is the term used when someone borrows a stock and sells it at the current price to then buy it back later at hopefully a lower price. There are rules about this as noted in the link that begi... (+274 chars)"
+       }
+      ],
+      "partial": false,
+      "missing_shards": [],
+      "model": "minilm-ft",
+      "strategy": "hybrid",
+      "latency_ms": 59.64
+     }
+    },
+    {
+     "method": "POST",
+     "path": "/search",
+     "headers": {
+      "Accept": "*/*",
+      "User-Agent": "python-httpx/0.28.1",
+      "Content-Type": "application/json"
+     },
+     "body": {
+      "query": "short selling definition borrow shares sell them buy back later lower price profit risk stock",
+      "k": 3,
+      "strategy": "hybrid",
+      "include_text": true
+     },
+     "status": 200,
+     "ms": 59.0,
+     "response": {
+      "results": [
+       {
+        "doc_id": "409350",
+        "score": 1.0,
+        "text": "Shorting is the term used when someone borrows a stock and sells it at the current price to then buy it back later at hopefully a lower price. There are rules about this as noted in the link that begi... (+274 chars)"
+       },
+       {
+        "doc_id": "9082",
+        "score": 0.814451,
+        "text": "This is a gross simplification as there are a few different ways to do this. The principle overall is the same though. To short a stock, you borrow X shares from a third party and sell them at the cur... (+506 chars)"
+       },
+       {
+        "doc_id": "233379",
+        "score": 0.705141,
+        "text": "\"Selling short is simply by definition the selling, then later re-buying of stock you don't initially own. Say you tally your entire portfolio balance: the quantity of each stock you own, and your cas... (+1065 chars)"
+       }
+      ],
+      "partial": false,
+      "missing_shards": [],
+      "model": "minilm-ft",
+      "strategy": "hybrid",
+      "latency_ms": 54.48
+     }
+    }
+   ],
+   "about": "One question through the single agent. Before its LLM sees anything it asks the router's guardrails (POST /guardrails/check); then it searches, reads the snippets and may rewrite the query and search again, up to 3 steps. The LLM never talks to the router: the agent code does, with ordinary HTTP calls like the other three ways.",
+   "top3": [
+    "336018",
+    "127585",
+    "409350"
+   ]
+  }
+ ]
+}

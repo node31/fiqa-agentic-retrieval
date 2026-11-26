@@ -14,7 +14,9 @@ HOW TO READ THE ARROWS
     A request has the colour of whoever sent it (solid), and its answer has the same colour (dashed), so one
     caller's conversation is one colour all the way down: alice blue, bob brown, the coordinator green, the FiQA
     agent purple. Red is used only for errors. A pink tag under an arrow says what the FiQA agent's memory stored
-    (or deleted) while answering that message.
+    (or deleted) while answering that message. A pink "from memory" tag says what memory ADDED to a message the
+    FiQA agent sent: the fact or earlier turn in an LLM prompt, or the words appended to a router search. That
+    text was not in the question the coordinator sent; the detail pane highlights it inside the JSON.
 
 THE SCENES
     1. Discovery      alice reads the coordinator's card; the coordinator reads the FiQA agent's card.
@@ -306,6 +308,10 @@ header.top span{font-size:13px;color:#cbd5e1}
 .heads div i{display:block;font-style:normal;font-weight:400;font-size:10.5px;color:#64748b}
 .rows{position:relative} .life{position:absolute;top:0;bottom:0;width:0;border-left:1px dashed #cbd5e1}
 .row{position:relative;height:38px;cursor:pointer} .row.mem{height:60px}
+.fromtag{position:absolute;top:33px;font-size:11px;background:#fff;color:#be185d;border:1.5px dashed #ec4899;border-radius:9px;padding:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.frommem{background:#fdf2f8;border:2px dashed #ec4899;color:#831843;border-radius:6px;padding:8px 10px;font-size:12.5px;margin:8px 0}
+.frommem span{display:inline-block;background:#fce7f3;border:1px solid #f9a8d4;border-radius:9px;padding:1px 8px;margin:3px 4px 0 0;font-weight:600}
+#side pre mark{background:#f9a8d4;color:#500724;border-radius:3px;padding:0 2px}
 .row.hidden{visibility:hidden} .row:hover{background:rgba(59,130,246,.06)} .row.sel{background:rgba(59,130,246,.12)}
 .arrow{position:absolute;top:24px;height:0;border-top:2.5px solid currentColor}
 .arrow.resp{border-top-style:dashed}
@@ -325,7 +331,53 @@ LANE_NOTE = {"alice": "acme user", "bob": "globex user", "coordinator :8310": "A
              "FiQA agent :8300": "A2A agent, memory", "router :8000": "search service", LLM_LANE: "gpt-6-sol"}
 
 
+FACT_LINE, TURN_LINE = "What I know about the user: ", "Earlier in this conversation the user asked: "
+
+
+def from_memory(events: list[dict]) -> None:
+    """Mark what memory added to each message the FiQA agent sent (``e["from_memory"]``), in place.
+
+    LLM prompt: its "What I know about the user" / "Earlier in this conversation" lines (src/a2a/server.py
+    llm_input). Router search: the words after the question the FiQA agent was asked (memory's contextualize
+    appends the user's facts to the query it searches).
+
+    >>> ev = [{"kind": "request", "src": "coordinator :8310", "dst": "FiQA agent :8300",
+    ...        "body": {"method": "SendMessage", "params": {"message": {"parts": [{"text": "which account?"}]}}}},
+    ...       {"kind": "request", "src": "FiQA agent :8300", "dst": "router :8000", "body": {"query": "which account? Canada"}},
+    ...       {"kind": "request", "src": "FiQA agent :8300", "dst": "LLM (Azure)",
+    ...        "body": {"input": "Question: which account?\\nWhat I know about the user: I live in Canada\\n\\nPassages:"}}]
+    >>> from_memory(ev)
+    >>> ev[1]["from_memory"]
+    [{'kind': 'appended to the search', 'text': 'Canada', 'mark': ' Canada'}]
+    >>> ev[2]["from_memory"]
+    [{'kind': 'fact', 'text': 'I live in Canada', 'mark': 'What I know about the user: I live in Canada'}]
+    """
+    question = None
+    for e in events:
+        if e.get("kind") != "request":
+            continue
+        body = e.get("body") if isinstance(e.get("body"), dict) else {}
+        if e["dst"] == "FiQA agent :8300" and body.get("method") == "SendMessage":
+            parts = (body.get("params") or {}).get("message", {}).get("parts", [])
+            question = next((x["text"] for x in parts if "text" in x), None)
+        elif e["src"] == "FiQA agent :8300" and e["dst"] == LLM_LANE:
+            tags = []
+            for line in str(body.get("input", "")).splitlines():
+                if line.startswith(FACT_LINE):
+                    tags += [{"kind": "fact", "text": f, "mark": line} for f in line[len(FACT_LINE):].split("; ")]
+                elif line.startswith(TURN_LINE):
+                    tags.append({"kind": "earlier turn", "text": line[len(TURN_LINE):], "mark": line})
+            if tags:
+                e["from_memory"] = tags
+        elif e["src"] == "FiQA agent :8300" and e["dst"] == "router :8000" and question:
+            q = str(body.get("query", ""))
+            if q.startswith(question) and q.strip() != question.strip():
+                extra = q[len(question):]
+                e["from_memory"] = [{"kind": "appended to the search", "text": extra.strip(), "mark": extra}]
+
+
 def render(rec: dict) -> str:
+    from_memory(rec["events"])
     data = json.dumps(rec, ensure_ascii=False).replace("</", "<\\/")
     parties = rec["parties"]
     heads = "".join(f'<div style="color:{PARTY_COLOR.get(p, "#333")}">{p}<i>{LANE_NOTE.get(p, "")}</i></div>' for p in parties)
@@ -350,6 +402,7 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({{"&":"&amp;","<":"&lt
 const isErr = e => e.kind === "response" && (e.status !== 200 || /^error/.test(e.label));
 const asker = e => e.kind === "request" ? e.src : e.dst;   // a response has the colour of whoever asked
 const memText = m => m.map(x => `${{x.op === "+" ? "+" : "\\u2212"}} ${{x.user}}'s ${{x.kind}}: ${{x.text}}`).join(" \\u00b7 ");
+const fromText = m => m.map(x => x.kind === "appended to the search" ? `+ "${{x.text}}"` : `${{x.kind}} "${{x.text}}"`).join(" \u00b7 ");
 let shown = 0, timer = null;
 function build() {{
   const lanes = P.map((p, i) => `<div class="life" style="left:${{(i + 0.5) * 100 / N}}%"></div>`).join("");
@@ -358,8 +411,9 @@ function build() {{
     const a = col(e.src), b = col(e.dst), lo = Math.min(a, b), hi = Math.max(a, b);
     const left = (lo + 0.5) * 100 / N, width = (hi - lo) * 100 / N, dir = b > a ? "right" : "left";
     const c = isErr(e) ? ERR : COLOR[asker(e)];
-    const mem = e.memory ? `<div class="memtag" style="left:${{left}}%;max-width:${{width}}%">memory ${{esc(memText(e.memory))}}</div>` : "";
-    return `<div class="row hidden ${{e.memory ? "mem" : ""}}" id="r${{i}}" onclick="pick(${{i}})"><span class="t">${{e.t}} ms</span>` +
+    const mem = e.memory ? `<div class="memtag" style="left:${{left}}%;max-width:${{width}}%">memory ${{esc(memText(e.memory))}}</div>` :
+      e.from_memory ? `<div class="fromtag" style="left:${{left}}%;max-width:${{width}}%">from memory: ${{esc(fromText(e.from_memory))}}</div>` : "";
+    return `<div class="row hidden ${{e.memory || e.from_memory ? "mem" : ""}}" id="r${{i}}" onclick="pick(${{i}})"><span class="t">${{e.t}} ms</span>` +
       `<div class="lbl ${{isErr(e) ? "err" : ""}}" style="left:${{left}}%;width:${{width}}%;${{isErr(e) ? "color:" + ERR : ""}}">${{esc(e.label)}}</div>` +
       `<div class="arrow ${{dir}} ${{e.kind === "response" ? "resp" : ""}}" style="left:${{left}}%;width:${{width}}%;color:${{c}}"></div>${{mem}}</div>`;
   }}).join("");
@@ -387,8 +441,11 @@ function pick(i) {{
   document.getElementById("r" + i).classList.add("sel");
   const e = R.events[i], c = isErr(e) ? ERR : COLOR[asker(e)];
   const head = e.kind === "request" ? `${{esc(e.src)}} &rarr; ${{esc(e.dst)}}: ${{esc(e.http || "")}}` : `${{esc(e.src)}} &rarr; ${{esc(e.dst)}}: ${{e.dst === "{LLM_LANE}" || e.src === "{LLM_LANE}" ? "reply" : "HTTP " + e.status}}`;
+  let json = esc(JSON.stringify(e.body, null, 1));
+  const fm = e.from_memory ? `<div class="frommem"><b>From memory, not in the question the coordinator sent:</b><br>${{e.from_memory.map(x => `<span>${{esc(x.kind)}}: ${{esc(x.text)}}</span>`).join("")}}<div style="margin-top:5px">${{e.dst === "{LLM_LANE}" ? "The FiQA agent added this line to the LLM's prompt from the user's memory; it is highlighted in the JSON below." : "The FiQA agent appended this to the search from the user's stored facts; it is highlighted in the query below."}}</div></div>` : "";
+  (e.from_memory || []).forEach(x => {{ const m = esc(JSON.stringify(x.mark).slice(1, -1)); json = json.split(m).join(`<mark>${{m}}</mark>`); }});
   const mem = e.memory ? `<div class="memo"><b>Memory changed while the FiQA agent answered this:</b><br>${{e.memory.map(m => `${{m.op === "+" ? "added" : "deleted"}} for ${{esc(m.user)}} (${{esc(m.kind)}}): ${{esc(m.text)}}`).join("<br>")}}</div>` : "";
-  document.getElementById("detail").innerHTML = `<h3 style="color:${{c}}">${{head}}</h3><div class="hint">at ${{e.t}} ms${{e.reply_to != null ? `, answer to message ${{e.reply_to}}` : ""}}</div><pre>${{esc(JSON.stringify(e.body, null, 1))}}</pre>${{mem}}`;
+  document.getElementById("detail").innerHTML = `<h3 style="color:${{c}}">${{head}}</h3><div class="hint">at ${{e.t}} ms${{e.reply_to != null ? `, answer to message ${{e.reply_to}}` : ""}}</div>${{fm}}<pre>${{json}}</pre>${{mem}}`;
 }}
 function summary() {{
   const s = R.summary || {{}};
@@ -397,7 +454,7 @@ function summary() {{
   (${{esc(s.llm_model || "")}}, $${{s.llm_usd}}). Press <b>Play</b>, <b>Step</b> through them, or pick a scene on the left;
   click an arrow to read its JSON.</p>
   <div class="key">{key}</div>
-  <p class="hint">Solid: a request, in the colour of whoever sent it. Dashed: its answer, in the same colour. Pink tag: what the FiQA agent's memory stored or deleted.</p>
+  <p class="hint">Solid: a request, in the colour of whoever sent it. Dashed: its answer, in the same colour. Pink tag: what the FiQA agent's memory stored or deleted. Dashed pink tag: what memory added to a message (a fact or earlier turn in the LLM prompt, words appended to a search); it was not in the question.</p>
   <p>alice's compound question: <code>${{esc(s.alice_task)}}</code>, docs <code>${{esc((s.alice_docs || []).join(", "))}}</code></p>
   <p>bob reading alice's task: <code>${{s.bob_reads_alices_task ? "allowed (a bug)" : "Task not found"}}</code></p>
   <p>bob's answer to the same question: <code>${{esc((s.bob_docs || []).join(", "))}}</code></p>

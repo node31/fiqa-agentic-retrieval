@@ -35,9 +35,10 @@ Every endpoint can be called from the browser at http://localhost:8000/docs, wit
 
 Every scenario run also writes an animated `replay.html`: clients, the router and the three shards on a stage, with
 one animation per operation and a timeline of what each request did. The GIFs below are recorded from four of the
-[eight simple scenarios](scenarios/SimpleScenarios/README.md) on the full cluster in async mode. The HTML replays are in
-[docs/assets/replays/](docs/assets/replays/) and `scenarios/SimpleScenarios/results/`; GitHub doesn't render HTML, so
-download one and open it in a browser.
+[eight simple scenarios](scenarios/SimpleScenarios/README.md) on the full cluster in async mode. Every recorded replay
+(the scenarios on each cluster type, security, A2A and memory) is in [replays/](replays/README.md): open
+`replays/index.html`, which lists them by category. GitHub doesn't render HTML, so download the folder and open it in
+a browser.
 
 | read after write | write, then delete |
 |---|---|
@@ -239,6 +240,8 @@ scripts/        ask.py (one question) · api_docs.py (API page with examples) ·
                 mint_token.py · security_demo.py · guardrails_eval.py (security, docs/topics/17_security.md)
                 cascade_policies.py · semantic_cache_eval.py · web_fallback_eval.py (docs/topics/19_llm_cost.md, 20_web_search.md)
                 a2a_demo.py · memory_eval.py (docs/topics/21_a2a.md, 22_agent_memory.md)
+                security_replay.py · memory_replay.py · a2a_two_agents.py · scenario_pages.py · replays_index.py (replays/, styled by replay_style.py)
+replays/        every recorded replay as a page that opens from disk, plus index.html (by category) and data/
 scenarios/      SimpleScenarios/ (8 CSV stories + template + recorded results) · ComplexScenarios/ (JSONL: freshness, migration, shard failure, ...)
 tests/          unit, in-process and multi-process integration tests
 results/        bench.json · runs/ (incl. the one TEST run) · ablation_*.json · migration_demo.json · write_load.json · agent_eval*.json · failures.md

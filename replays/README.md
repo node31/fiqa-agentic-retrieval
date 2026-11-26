@@ -1,0 +1,16 @@
+# Replays
+
+Open [index.html](index.html) in a browser. It lists every recorded replay, grouped by the five categories used in
+the deck and the docs, and every page here opens straight from disk: the recorded data is inside it.
+
+| page | what it shows | recorded by |
+|---|---|---|
+| [scenarios_sync_tiny.html](scenarios_sync_tiny.html), [scenarios_async_tiny.html](scenarios_async_tiny.html), [scenarios_sync_full.html](scenarios_sync_full.html), [scenarios_async_full.html](scenarios_async_full.html) | the eight scripted scenarios on one cluster type, with a nav over them; each embeds the recorded animated replay from `scenarios/SimpleScenarios/results/` unchanged | `scripts/run_simple_scenarios.py`, then `scripts/scenario_pages.py` |
+| [security.html](security.html) | 14 cases, each protection off and on, grouped by category | `scripts/security_replay.py` |
+| [a2a.html](a2a.html) | two A2A agents and an LLM, one arrow per message | `scripts/a2a_two_agents.py` |
+| [memory.html](memory.html) | 16 steps of the agent's memory, with what the LLM read and answered | `scripts/memory_replay.py` |
+
+`data/` holds the recorded JSON each page was rendered from; every generator has a `--render-only` mode that
+rebuilds its page from that file without a cluster or an LLM. The colours and the nav come from
+`scripts/replay_style.py`: Distributed blue, Agentic Security purple, Agentic Privacy teal, Agentic Cost Optimization
+amber, Agentic Extensions pink. Red is kept for errors.

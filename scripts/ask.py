@@ -105,6 +105,10 @@ def main(argv: list[str] | None = None) -> int:
             return 3
         for f in verdict["findings"]:
             print(f"guardrail flagged (log mode, not blocked): {f.get('category') or f['rule']}")
+        if (verdict.get("text") or a.question) != a.question:
+            # pii_redaction on: the agents (their LLM calls and their searches) get the redacted question.
+            print(f"pii_redaction: the LLM sees {verdict['text']!r} ({verdict.get('pii_redacted')})")
+            a.question = verdict["text"]
     raw = make_search_fn(a.url, a.token)
     texts: dict[str, str] = {}
 

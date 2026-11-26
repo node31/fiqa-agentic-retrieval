@@ -274,6 +274,14 @@ def create_app(router_url: str | None = None, llm=None, memory: MemoryStore | No
                         rules = ", ".join(f.get("category") or f.get("rule", "?") for f in verdict["findings"])
                         store.set_status(task, P.REJECTED, f"refused by the guardrails ({rules}); no LLM call was made")
                         return
+                    # pii_redaction on: the guard check returns the question redacted. Every LLM skill (and the
+                    # searches its agents make) then works from that text, so the user's PII never reaches the
+                    # LLM provider.
+                    if (verdict.get("text") or question) != question:
+                        ctx = contextualize(memory if mem_on else None, caller.tenant, caller.user, task["contextId"],
+                                            verdict["text"])
+                        meta["memory"]["query_searched"] = ctx["query"]
+                        meta["pii_redacted"] = verdict.get("pii_redacted") or {}
             raw = search_factory(caller.token)
             texts: dict[str, str] = {}
 

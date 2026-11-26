@@ -178,6 +178,25 @@ def test_answer_skill_writes_an_answer_from_what_the_llm_may_see():
     assert "[2] passage 2 about" in seen[0]
 
 
+def test_every_llm_skill_works_from_the_redacted_question():
+    # The gap security replay case 6 used to show: single / multi / cascade sent the user's raw words to the LLM.
+    redacting = lambda tok: lambda text: {"allowed": True, "findings": [], "pii_redacted": {"EMAIL": 1},  # noqa: E731
+                                          "text": text.replace("a@b.co", "[EMAIL]")}
+    for skill in ("single", "multi", "cascade"):
+        seen = []
+
+        def responder(system, user):
+            seen.append(user)
+            return heuristic_responder(system, user)
+
+        tc, search = make(llm=FakeLLM(responder), guard=redacting)
+        t = client(tc).send("mail a@b.co: what is a roth ira, and how do I open one?", skill=skill)
+        assert t["status"]["state"] == P.COMPLETED, skill
+        assert seen and not any("a@b.co" in u for u in seen), skill                 # the LLM never read it
+        assert search.queries and not any("a@b.co" in q for q in search.queries), skill
+        assert t["metadata"]["pii_redacted"] == {"EMAIL": 1} and "[EMAIL]" in t["metadata"]["memory"]["query_searched"]
+
+
 def test_answer_skill_makes_no_llm_call_without_passages():
     empty = StubSearch()
     empty.factory = lambda tok: lambda q, s, k: []

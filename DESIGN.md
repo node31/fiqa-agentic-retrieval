@@ -2,6 +2,19 @@
 
 ## 1. Problem statement
 
+The problem underneath everything here: an LLM is text in, text out, trained on someone else's data, and I want it
+to work on mine. There are three ways to do that:
+
+| way | what it means | what it needs |
+|---|---|---|
+| distillation | ask a strong model many questions about my domain, keep its answers, and train my own (smaller) model on them | many paid calls, a model I can train, and terms of use that allow it |
+| fine-tuning | take a model whose weights I can download and keep training it on my data | an open-weight model (section 6.12 explains why the weights decide this) |
+| RAG, retrieval augmented generation | leave the model as it is; at question time, search my data and put the best passages into the prompt | a good search over my data, and a way to keep it fresh and safe |
+
+This project builds RAG, in steps, because the search is useful on its own, works with any LLM, and sees my data
+change without retraining anything. It also fine-tunes the small embedding model the search uses (section 6.12),
+which is the second way applied to the retriever instead of the LLM.
+
 I built a retrieval system over BEIR FiQA: 57,638 personal-finance forum answers, with 5,500 train, 500 dev and 648 test
 questions, each labelled with the passages that answer it. The system has three layers:
 
@@ -328,6 +341,20 @@ BM25, dense and hybrid all match single node to four decimals (0.0% difference).
 `timings_ms`; in a real-corpus run the parts were roughly: stats round trip ~15 ms, query-encode overhang 0 to 15 ms,
 slowest shard's own compute ~4 to 5 ms, network and queueing ~8 to 12 ms, merge and fuse under 1 ms.
 
+The search itself did get faster with shards. `results/latency_breakdown.json` times each step in one process, with
+no HTTP (500 dev questions, depth 100):
+
+| step | one node, 57.6K docs | 3 shards in parallel, ~19.2K docs each |
+|---|---|---|
+| encode the query | 11.2 ms p50 | 11.2 ms (once, at the router) |
+| BM25 | 1.3 ms | 0.7 ms (slowest shard) |
+| faiss | 6.2 ms | 2.4 ms (slowest shard) |
+| fuse (and, sharded, merge) | 0.2 ms | 0.6 ms |
+| search total, without the encode | 7.9 ms p50 / 9.7 ms p95 | 3.7 ms p50 / 4.6 ms p95 |
+
+So sharding halves the search work, but the work is only a few milliseconds, and the extra HTTP round trips cost
+more than it saves (section 11).
+
 ### 6.6 Shard write path (B2)
 
 Every write carries `(doc_id, version)`. A shard applies it only if the version is newer than what it has, so a replay
@@ -384,8 +411,15 @@ Results under heavy writes (`results/write_load.json`: real corpus, 3 shards, 8 
 |---|---|---|
 | writes acked per second | 57.8 | 94.2 |
 | ack p50 / p95 ms | 128 / 181 | 78 / 120 |
-| visible lag p95 / max ms | 0 / 0 | 466 / 583 |
 | search p50 under this load | 131 ms | 184 ms |
+
+Async makes the write ack fast; it was never meant to make search faster. Search p50 rose under async because the
+two runs did not carry the same load: in the same 30 s async accepted 2,835 writes against sync's 1,741, and its 8
+workers embedded every one of them on the same CPU the searches use. A linear estimate from the idle 3-shard p50
+(28.6 ms) puts the cost at 1.77 ms of search p50 per write per second for sync, (131 - 28.6) / 57.8, and 1.64 ms
+for async, (183.5 - 28.6) / 94.2. At sync's write rate, async would then search at about 28.6 + 1.64 x 57.8 = 123 ms,
+slightly faster than sync. That is an estimate from two points, not a measurement. The price of async is freshness:
+the visible lag was 466 ms at p95 and 583 ms at worst, inside the 1 s bound; sync has none.
 
 ### 6.7 Model migration (B3)
 
@@ -527,6 +561,29 @@ What the traces showed:
 
 ### 6.12 Fine-tuned MiniLM (after the tasks)
 
+Only a model whose weights I can download can be fine-tuned, so the first question is how open a model is. The MTEB
+leaderboard scores openness on six yes/no checks (an idea it credits to the OSAI index): open weights (can I run and
+fine-tune it?), an open license (may I use and ship the result?), open training code (can I reproduce it?), open
+training data (can I audit what it learned?), a paper (can I read the method?) and a model card (do I know its
+intended use?). Weights and license decide whether I can use a model; code and data whether I can reproduce and
+audit it; paper and card whether I can understand it. Scored on 26 November 2026 from each vendor's own pages
+(partial = 0.5):
+
+| model | weights | license | code | data | paper | card | score |
+|---|---|---|---|---|---|---|---|
+| all-MiniLM-L6-v2 (the base model) | yes | Apache-2.0 | no | no (in MTEB's metadata) | yes | yes | 4/6 |
+| bge-small-en-v1.5 | yes | MIT | no | yes | yes | yes | 5/6 |
+| OpenAI GPT-6.2 Astra | no (API only) | no | no | no | system card | yes | 2/6 |
+| Anthropic Claude Fable 5.2 | no | no | no | no | system card | yes | 2/6 |
+| Google Gemini 4 Carbon | no | no | no | no | safety report | yes | 2/6 |
+| xAI Grok 4.7 | no | no | no | no | model card | yes | 2/6 |
+| Meta Llama 4 Maverick | yes (gated) | partial: custom license with a use policy and a 700M-user clause | no | no | partial: model card only | yes | 3/6 |
+| OpenAI gpt-oss-120b | yes | Apache-2.0 | no (inference code only) | no | yes (arXiv 2508.10925) | yes | 4/6 |
+
+The four API flagships score 2: there is nothing to download, so the only ways to adapt them are a better prompt
+(RAG) or distillation. Both embedding models are open-weight and openly licensed, which is what made this section
+possible.
+
 FiQA's 5,500 train questions have labelled answers that nothing used. I fine-tuned all-MiniLM-L6-v2 on them
 (`scripts/finetune.py`, `make finetune`) and registered the result as a third model, `minilm-ft`. Training is the
 offline path; putting it into service is the B3 migration (6.7) with no new serving code. The full walkthrough, with a
@@ -564,6 +621,60 @@ Online switch on the Docker stack: migrate, cutover and finalize under 4 query t
 (`results/migration_minilm_ft_load.json`); the backfill took 6 s because it reused the offline vectors. The stack now
 serves only `minilm-ft`, and the Docker tour passes against it. The agent results (6.11) were measured with plain
 MiniLM and were not re-run.
+
+### 6.13 Extensions, in five categories
+
+What I built beyond the three parts, grouped the same way in the deck, the docs and the replays:
+
+| category | what it covers | built | headline |
+|---|---|---|---|
+| Distributed | how the cluster behaves under writes | sync vs async apply (6.6) | async: 1.6x the writes per second, visible within 1 s |
+| Agentic Security | who is calling, what they may do, and abuse of the LLM | signed tokens (AuthN), tenant ownership and filtering (AuthZ, read and write your own only), harmful-intent and prompt-injection guardrails, topic scope against off-topic use | 0 of 6,648 real FiQA questions refused; 23 of 25 held-out fraud questions caught; off-topic caught 70% (minilm-ft) |
+| Agentic Privacy | personal data and accountability | PII redaction (emails, phones, cards with Luhn, IBANs with mod 97, SSNs, IPs), a hash-chained audit log | the LLM provider never sees the PII with redaction on; editing any audit line breaks the chain from there |
+| Agentic Cost Optimization | what each answer costs | fine-tuning (6.12), budgets, call and token caps, the cascade, the semantic cache, trimmed prompts, LLM query rewrite for follow-ups, rate limiting | worst case $0.01425 a question; cache answers 65% of paraphrases |
+| Agentic Extensions | agents that talk to agents, remember, and look outside the corpus | A2A 1.0 (agent card, tasks, a coordinator that delegates), memory with attribution, isolation, expiry, access, deletion and opt-out, web fallback | Coverage@10 0.11 to 0.34 through the coordinator; follow-up R@10 0.103 to 0.455 with memory |
+
+Each one sits behind a toggle or a flag and is off by default; [docs/design/EXTENSIONS.md](docs/design/EXTENSIONS.md)
+lists them all and [docs/topics/17_security.md](docs/topics/17_security.md) to
+[22_agent_memory.md](docs/topics/22_agent_memory.md) explain them.
+
+#### How a tenant-filtered search keeps tenants apart
+
+Every document has an owner: base-corpus docs with an odd id belong to acme and even ids to globex, and a new doc
+belongs to whoever wrote it first. With `tenant_filter` on, the router sends the caller's tenant to every shard, and
+each shard filters inside both retrievers, before it picks its top k.
+
+BM25 builds a row mask, one true or false per doc. It is used twice. First, the statistics (N, total length and each
+term's df) are counted over the tenant's rows only, so each tenant gets its own IDF. In a toy corpus of 6 docs where
+acme owns 1, 3 and 5, and "roth" appears in docs 1, 3 and 4:
+
+| | N | df("roth") | IDF = ln(1 + (N - df + 0.5) / (df + 0.5)) |
+|---|---|---|---|
+| everyone | 6 | 3 | ln(2.0) = 0.69 |
+| acme only | 3 | 2 | ln(1.6) = 0.47 |
+
+Shared statistics would let globex change acme's scores just by writing documents, and let acme probe how common a
+word is in globex's documents. Second, globex's rows are scored 0 before the top k, so they can never come back.
+
+Dense search passes faiss an `IDSelectorBatch` with the tenant's internal ids, and faiss skips every other vector
+during the scan, so acme gets the exact 10 nearest acme docs. Dropping globex's hits after ranking would return
+fewer than 10, or none, whenever globex's docs were closer (the `authz` toggle alone shows exactly that). The router
+then merges and fuses as usual.
+
+#### Off-topic: what the LLM does without the check
+
+With topic scope off, "give me a recipe for chocolate chip cookies" sent to the agent's `answer` skill returned three
+unrelated finance passages, and the LLM ignored them and wrote a full recipe (half a cup of butter, 350°F, 10 to 12
+minutes), paid for by the finance service. With `guard_scope=block` the best passage scores 0.403 on minilm-ft,
+below the calibrated 0.4421, the router returns nothing, and the agent makes no LLM call
+([demo_security_a2a_memory.md](docs/guides/demo_security_a2a_memory.md), D7).
+
+#### Replays
+
+Every recorded replay is in [replays/](replays/README.md) and opens from disk: the eight scenarios on each of the four
+cluster types, the security replay (14 cases, each protection off and on), the A2A replay (two agents and an LLM,
+one arrow per message) and the memory replay (16 steps with what the LLM read and answered).
+
 ## 7. API design
 
 ### Router (`src/service/router.py`, port 8000)
@@ -792,6 +903,8 @@ scaling, writes and agents), is in [docs/design/EXTENSIONS.md](docs/design/EXTEN
 7. Reserve about 3 slots for the full question when a worker fails.
 8. Batch or quantise the query encoder. (Fine-tuning the dense model on FiQA train, the other half of this item, is
    done: section 6.12.)
+9. Filter abusive words in questions and in the LLM's answers (a word list first, then a toxicity classifier), so the
+   service neither answers in kind nor stores them in memory.
 
 Security and LLM guardrails are built, each behind its own runtime toggle and off by default:
 [docs/topics/17_security.md](docs/topics/17_security.md) has the threat model, how each piece works, how it is checked, and
@@ -815,6 +928,85 @@ The agents also run as an A2A (Agent2Agent 1.0) service with conversation and us
 - Without memory a follow-up question keeps R@10 0.103 of the original's 0.491. Prepending the last turn recovers
   0.439, and an LLM rewrite 0.455.
 - Memory is kept for identified users only, PII-redacted, isolated per user, expiring, and deletable.
+
+## Appendix A. The formulas, and what each one means
+
+**BM25** (`src/retrieval/bm25.py`, k1 = 1.2, b = 0.75). Rewards a word that appears often in this doc but rarely in
+the corpus, with diminishing returns for repeats and a penalty for long docs.
+
+    score(q, d) = Σ_t IDF(t) · tf(t,d) · (k1 + 1) / (tf(t,d) + k1 · (1 - b + b · |d| / avgdl))
+    IDF(t)      = ln(1 + (N - df(t) + 0.5) / (df(t) + 0.5))
+
+tf is how often t appears in d, |d| the doc's length, avgdl the average length, N the number of docs and df(t) how
+many contain t. Sharded, N, the lengths and df are summed over every shard first (the DFS phase), so the score is the
+one a single node would give; with a tenant filter they are counted over that tenant's docs only.
+
+**Cosine similarity** (dense). How closely two embeddings point the same way, from -1 to 1; with unit-length vectors it
+is the dot product, which is what faiss's inner-product index computes: cos(q, d) = q · d / (|q| |d|).
+
+**Min-max normalisation and linear fusion** (`src/retrieval/hybrid.py`, α = 0.7). Puts both lists on 0 to 1, then
+blends them, weighting dense more because it is stronger on FiQA.
+
+    norm(s) = (s - min) / (max - min)          fused(d) = α · norm_dense(d) + (1 - α) · norm_bm25(d)
+
+**Reciprocal rank fusion, RRF** (c = 60). Joins ranked lists by rank, not by score, so scales don't matter: each list
+gives a doc 1 / (c + rank), and a doc high in several lists wins. RRF(d) = Σ_lists 1 / (c + rank_list(d)).
+
+**Recall@k and Coverage@k** (`src/metrics.py`). Recall@k is the share of a question's gold passages found in the top
+k. Coverage@k, for compound questions, is 1 only if the top k holds at least one gold passage for each half.
+
+**DCG, IDCG and nDCG@10.** Rewards putting relevant passages near the top: each hit is discounted by its rank, and the
+sum is divided by the best possible sum, so a perfect ranking scores 1.
+
+    DCG@k  = Σ_{i=1..k} (2^rel_i - 1) / log2(i + 1)      IDCG@k = DCG@k of the ideal order      nDCG@k = DCG@k / IDCG@k
+
+**MRR@10.** One over the rank of the first relevant passage (0 if none in the top 10), averaged over questions.
+
+**Percentiles, p50 and p95.** The latency that 50% (95%) of requests stay under. p95 shows the slow tail that the
+average hides, such as waiting for the slowest of three shards.
+
+**In-batch negatives loss** (`scripts/finetune.py`, scale 20). Each question in a batch of 64 should score its own
+answer higher than the other 127 passages in the batch (the others' answers and the hard negatives):
+loss = -log( e^(20 · cos(q, p+)) / Σ_j e^(20 · cos(q, p_j)) ). The scale sharpens the softmax.
+
+**Paired bootstrap confidence interval.** Resample the questions with replacement many times, recompute the nDCG
+difference each time, and read the 2.5th and 97.5th percentiles: if the interval excludes 0, the gain is not luck.
+
+**Cost per call** (`src/agent/llm.py`). usd = input_tokens / 1M · price_in + output_tokens / 1M · price_out
+(placeholders: $1 and $4 per million). A budget reserves the worst case (the full max_output_tokens) before a call.
+
+**Token bucket** (`src/security/ratelimit.py`, 120 a minute, bursts of 20). Each user has a bucket of up to 20 tokens
+that refills at 2 a second; a request takes one, and an empty bucket means HTTP 429.
+
+**Hash chain** (`src/security/audit.py`). Each audit line stores the previous line's hash and its own:
+hash_i = sha256(line_i without its hash, including prev = hash_{i-1}). Editing, deleting or reordering any line
+breaks every link after it, and `/admin/audit/verify` reports the first bad one.
+
+**Luhn and mod 97** (`src/security/pii.py`). Checksums that tell a real card number or IBAN from a random digit
+string: Luhn doubles every second digit from the right and needs the sum to be a multiple of 10; an IBAN, rearranged
+and turned into digits, must leave remainder 1 when divided by 97. They keep order numbers from being redacted.
+
+**Thresholds by percentile** (topic scope, web fallback). The scope threshold is the 1st percentile of the best dense
+score over the 500 dev questions, so by construction about 1% of real questions fall below it. The semantic cache
+answers a new question from a cached one when their cosine is at least 0.85.
+
+## Appendix B. Harness, loop, agent, software factory
+
+The words used about agents, and where each thing lives:
+
+| term | what it is | where it lives |
+|---|---|---|
+| LLM | text in, text out; remembers nothing between calls | the cloud (here Azure AI Foundry, gpt-6-sol) |
+| harness | the program that runs everything, including the security checks | a machine or a server (here `scripts/ask.py`, the A2A server) |
+| loop | the while loop inside the harness: build the context, call the LLM, run the tool it asked for, repeat | inside the harness (`src/agent/single_agent.py`) |
+| agent | the harness running the loop with one system prompt and one tool list | not a separate box: a configuration (`src/agent/prompts.py`) |
+| software factory | many harnesses with different agent configs (planner, coder, tester, reviewer), chained with CI checks and a human sign-off | across machines and pipelines |
+
+One pass of the loop: build the context (system prompt, history, tool specs) and send it to the LLM; read the reply;
+if it is a tool request, check it (allowed? needs approval? sandboxed?), run the tool, add the result to the history
+and go round again; if it is not, it is the final answer and the loop stops. Memory, context compaction and logs also
+live in the harness. In this repository the single agent is exactly that loop with one tool (search) and a budget of
+3 LLM calls; the multi-agent system runs three agent configs (planner, workers, verifier) inside one harness.
 
 ---
 Reproducibility: quality metrics come from `results/bench.json`, `results/ablation_*.json`, `results/write_load.json`,

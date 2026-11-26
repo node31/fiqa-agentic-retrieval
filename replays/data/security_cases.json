@@ -3,7 +3,10 @@
   "recorded": "2026-11-24",
   "url": "http://127.0.0.1:8000",
   "model": "minilm-ft",
-  "toggles_restored": true
+  "toggles_restored": true,
+  "rerecorded": {
+   "6": "2026-11-26"
+  }
  },
  "cases": [
   {
@@ -613,20 +616,19 @@
     "audit",
     "web_fallback"
    ],
-   "gap": true,
    "off": {
-    "label": "pii_redaction OFF",
-    "meta": "",
+    "label": "pii_redaction OFF: the agent's LLM reads the email and the card number",
+    "meta": "/guardrails/check pii_redacted = {}",
     "blocks": [
      {
       "type": "places",
       "side": "off",
       "rows": [
        {
-        "place": "the shards (the search itself)",
+        "place": "a plain POST /search (the shards)",
         "off": "my email is jane.doe@example.com and my card 4111 1111 1111 1111 was charged twice, what should I do?",
         "on": "my email is jane.doe@example.com and my card 4111 1111 1111 1111 was charged twice, what should I do?",
-        "note": "needs the real words; the shards never store questions"
+        "note": "the search needs the real words; the shards never store questions"
        },
        {
         "place": "the audit log",
@@ -641,28 +643,47 @@
         "note": "always redacted, and the clause that held the PII is dropped"
        },
        {
-        "place": "the agent's LLM (first prompt, 1st line)",
-        "off": "Question: my email is jane.doe@example.com and my card 4111 1111 1111 1111 was charged twice, what should I do?",
-        "on": "Question: my email is jane.doe@example.com and my card 4111 1111 1111 1111 was charged twice, what should I do?",
-        "note": "NOT redacted: the user's own words go to the LLM provider"
+        "place": "an agent's searches and its LLM (A2A skills, ask.py)",
+        "off": "my email is jane.doe@example.com and my card 4111 1111 1111 1111 was charged twice, what should I do?",
+        "on": "my email is [EMAIL] and my card [CARD] was charged twice, what should I do?",
+        "note": "follows the toggle: the agents use the text /guardrails/check returns"
        }
       ]
+     },
+     {
+      "type": "prompt",
+      "text": "Question: my email is jane.doe@example.com and my card 4111 1111 1111 1111 was charged twice, what should I do?\n\nSearch 1 (hybrid): 'my email is jane.doe@example.com and my card 4111 1111 1111 1111 was charged twice, what should I do?'\n[301455] You will need to first try and get the seller to refund. (Get the name of the person you talked to and a date and time). Then you can contact the bank the card was issued through and dispute the char\n[410243] Short of canceling the card, you could just report the card as lost and ask for a new card number on the same account. Another option is to just make a note to look for the charge and keep disputing i\n[75252] Obviously, the credit card's administators know who this charge was submitted by. Contact them, tell them that you don't recognize the charge, and ask them to tell you who it was from. If they can't o\n[176742] \"Personally, I would just dispute this one with your CC. I had a situation where a subscription I had cancelled the prior year was billed to me. I called up to have a refund issued, they couldn't fi\n[583321] \"You should dispute the transaction with the credit card. Describe the story and attach the cash payment receipt, and dispute it as a duplicate charge. There will be no impact on your score, but if yo\n[567201] \"A bona-fide company never needs your credit card details, certainly not your 3-digit-on-back-of-card #, to issue a refund. On an older charge, they might have to work with their merchant provider.\n[169287] Your simplest option, and probably the only reasonable one, is to dispute the original charge with your bank. Since you used a debit card and not a credit card, you don't have quite as much protectio\n[576243] I don't think you should have to cancel your card. Call your customer service line and just indicate to them what has happened. You aren't getting service for what they are charging you and they are\n[161062] Have you signed anything? If not - then tell them you don't know who they are and have not agreed to pay. If you did sign that piece of paper at the airport, then you have probably agreed to pay. Eit\n[140809] \"First of all, this does not sound like a debit situation. Every debit has to be authorized by the entry of a pin code. So, the hotel could not have arbitrarily created a new debit charge. Usually, ho",
+      "llm": {
+       "first_prompt": "Question: my email is jane.doe@example.com and my card 4111 1111 1111 1111 was charged twice, what should I do?\n\nSearch 1 (hybrid): 'my email is jane.doe@example.com and my card 4111 1111 1111 1111 was charged twice, what should I do?'\n[301455] You will need to first try and get the seller to refund. (Get the name of the person you talked to and a date and time). Then you can contact the bank the card was issued through and dispute the char\n[410243] Short of canceling the card, you could just report the card as lost and ask for a new card number on the same account. Another option is to just make a note to look for the charge and keep disputing i\n[75252] Obviously, the credit card's administators know who this charge was submitted by. Contact them, tell them that you don't recognize the charge, and ask them to tell you who it was from. If they can't o\n[176742] \"Personally, I would just dispute this one with your CC. I had a situation where a subscription I had cancelled the prior year was billed to me. I called up to have a refund issued, they couldn't fi\n[583321] \"You should dispute the transaction with the credit card. Describe the story and attach the cash payment receipt, and dispute it as a duplicate charge. There will be no impact on your score, but if yo\n[567201] \"A bona-fide company never needs your credit card details, certainly not your 3-digit-on-back-of-card #, to issue a refund. On an older charge, they might have to work with their merchant provider.\n[169287] Your simplest option, and probably the only reasonable one, is to dispute the original charge with your bank. Since you used a debit card and not a credit card, you don't have quite as much protectio\n[576243] I don't think you should have to cancel your card. Call your customer service line and just indicate to them what has happened. You aren't getting service for what they are charging you and they are\n[161062] Have you signed anything? If not - then tell them you don't know who they are and have not agreed to pay. If you did sign that piece of paper at the airport, then you have probably agreed to pay. Eit\n[140809] \"First of all, this does not sound like a debit situation. Every debit has to be authorized by the entry of a pin code. So, the hotel could not have arbitrarily created a new debit charge. Usually, ho",
+       "replies": [
+        "{\"action\":\"finish\",\"doc_ids\":[\"301455\",\"583321\",\"176742\",\"75252\",\"576243\",\"410243\",\"169287\"]}"
+       ],
+       "llm_calls": 1,
+       "tokens_in": 765,
+       "tokens_out": 60,
+       "cost_usd": 0.00101,
+       "top3": [
+        "301455",
+        "583321",
+        "176742"
+       ]
+      }
      }
     ]
    },
    "on": {
-    "label": "pii_redaction ON",
-    "meta": "",
+    "label": "pii_redaction ON: the agent's LLM reads [EMAIL] and [CARD]",
+    "meta": "/guardrails/check pii_redacted = {\"EMAIL\": 1, \"CARD\": 1}",
     "blocks": [
      {
       "type": "places",
       "side": "on",
       "rows": [
        {
-        "place": "the shards (the search itself)",
+        "place": "a plain POST /search (the shards)",
         "off": "my email is jane.doe@example.com and my card 4111 1111 1111 1111 was charged twice, what should I do?",
         "on": "my email is jane.doe@example.com and my card 4111 1111 1111 1111 was charged twice, what should I do?",
-        "note": "needs the real words; the shards never store questions"
+        "note": "the search needs the real words; the shards never store questions"
        },
        {
         "place": "the audit log",
@@ -677,16 +698,36 @@
         "note": "always redacted, and the clause that held the PII is dropped"
        },
        {
-        "place": "the agent's LLM (first prompt, 1st line)",
-        "off": "Question: my email is jane.doe@example.com and my card 4111 1111 1111 1111 was charged twice, what should I do?",
-        "on": "Question: my email is jane.doe@example.com and my card 4111 1111 1111 1111 was charged twice, what should I do?",
-        "note": "NOT redacted: the user's own words go to the LLM provider"
+        "place": "an agent's searches and its LLM (A2A skills, ask.py)",
+        "off": "my email is jane.doe@example.com and my card 4111 1111 1111 1111 was charged twice, what should I do?",
+        "on": "my email is [EMAIL] and my card [CARD] was charged twice, what should I do?",
+        "note": "follows the toggle: the agents use the text /guardrails/check returns"
        }
       ]
+     },
+     {
+      "type": "prompt",
+      "text": "Question: my email is [EMAIL] and my card [CARD] was charged twice, what should I do?\n\nSearch 1 (hybrid): 'my email is [EMAIL] and my card [CARD] was charged twice, what should I do?'\n[301455] You will need to first try and get the seller to refund. (Get the name of the person you talked to and a date and time). Then you can contact the bank the card was issued through and dispute the char\n[576243] I don't think you should have to cancel your card. Call your customer service line and just indicate to them what has happened. You aren't getting service for what they are charging you and they are\n[410243] Short of canceling the card, you could just report the card as lost and ask for a new card number on the same account. Another option is to just make a note to look for the charge and keep disputing i\n[583321] \"You should dispute the transaction with the credit card. Describe the story and attach the cash payment receipt, and dispute it as a duplicate charge. There will be no impact on your score, but if yo\n[176742] \"Personally, I would just dispute this one with your CC. I had a situation where a subscription I had cancelled the prior year was billed to me. I called up to have a refund issued, they couldn't fi\n[75252] Obviously, the credit card's administators know who this charge was submitted by. Contact them, tell them that you don't recognize the charge, and ask them to tell you who it was from. If they can't o\n[169287] Your simplest option, and probably the only reasonable one, is to dispute the original charge with your bank. Since you used a debit card and not a credit card, you don't have quite as much protectio\n[5334] Sign up for alerts. Everytime you use your card, you'll get an alert. That way if there is an unauthorized transaction, you'll know right away. The alerts can also tell you what amount was charged -\n[550496] Keeping a receipt does allow you to verify that the expected amount was charged/debited it also can help when you need to return an item. Regarding double charging, the credit card companies look for\n[97329] Generally when items go to collection you will receive a letter in the mail not an email. You can try to dispute the charge with the credit companies (TransUnion, Equifax, and Experian) showing that t",
+      "llm": {
+       "first_prompt": "Question: my email is [EMAIL] and my card [CARD] was charged twice, what should I do?\n\nSearch 1 (hybrid): 'my email is [EMAIL] and my card [CARD] was charged twice, what should I do?'\n[301455] You will need to first try and get the seller to refund. (Get the name of the person you talked to and a date and time). Then you can contact the bank the card was issued through and dispute the char\n[576243] I don't think you should have to cancel your card. Call your customer service line and just indicate to them what has happened. You aren't getting service for what they are charging you and they are\n[410243] Short of canceling the card, you could just report the card as lost and ask for a new card number on the same account. Another option is to just make a note to look for the charge and keep disputing i\n[583321] \"You should dispute the transaction with the credit card. Describe the story and attach the cash payment receipt, and dispute it as a duplicate charge. There will be no impact on your score, but if yo\n[176742] \"Personally, I would just dispute this one with your CC. I had a situation where a subscription I had cancelled the prior year was billed to me. I called up to have a refund issued, they couldn't fi\n[75252] Obviously, the credit card's administators know who this charge was submitted by. Contact them, tell them that you don't recognize the charge, and ask them to tell you who it was from. If they can't o\n[169287] Your simplest option, and probably the only reasonable one, is to dispute the original charge with your bank. Since you used a debit card and not a credit card, you don't have quite as much protectio\n[5334] Sign up for alerts. Everytime you use your card, you'll get an alert. That way if there is an unauthorized transaction, you'll know right away. The alerts can also tell you what amount was charged -\n[550496] Keeping a receipt does allow you to verify that the expected amount was charged/debited it also can help when you need to return an item. Regarding double charging, the credit card companies look for\n[97329] Generally when items go to collection you will receive a letter in the mail not an email. You can try to dispute the charge with the credit companies (TransUnion, Equifax, and Experian) showing that t",
+       "replies": [
+        "{\"action\":\"search\",\"query\":\"charged twice on credit card duplicate transaction contact merchant refund dispute charge bank pending authorization\",\"strategy\":\"hybrid\"}",
+        "{\"action\":\"finish\",\"doc_ids\":[\"301455\",\"583321\",\"550496\",\"490955\",\"576243\",\"176742\",\"75252\",\"169287\",\"410243\",\"5334\"]}"
+       ],
+       "llm_calls": 2,
+       "tokens_in": 1925,
+       "tokens_out": 104,
+       "cost_usd": 0.00234,
+       "top3": [
+        "301455",
+        "583321",
+        "550496"
+       ]
+      }
      }
     ]
    },
-   "why": "The toggle governs passages returned to the caller. The question is redacted wherever it is STORED or SENT AWAY by the service (audit log, web), toggle or not. It is not redacted in the agent's own prompt: that is the user's text going to the LLM the user chose, and masking it would lose meaning (\"my card was charged twice\"). A deployment that must not send PII to its LLM provider would redact in scripts/ask.py before the first call; this replay marks it as a gap."
+   "why": "The question is redacted wherever the service stores it or sends it away (the audit log, the web provider), whatever the toggle. With pii_redaction on, the agents also work from the redacted question: before the first LLM call they ask the router's /guardrails/check, which returns the question masked, and they search and prompt with that. So the LLM provider never sees the email or the card number. A plain /search still uses the real words, because the shards need them to find anything and keep nothing."
   },
   {
    "group": "PII redaction",

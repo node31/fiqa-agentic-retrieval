@@ -83,13 +83,13 @@ put it back on minilm.
 
 ## Security replay
 
-[results/SecurityReplay/replay.html](results/SecurityReplay/replay.html) (download it and open it in a browser) is a
+[replays/security.html](../../replays/security.html) (download it and open it in a browser) is a
 different kind of replay: no timeline, one view per protection. Each of its 14 cases shows one request with the
 protection off and on, side by side, as the Docker stack answered it: which documents came back and whose they
 are, the status codes of writes and admin calls, where a question with personal data ends up, and the exact prompt
 the agent's LLM receives with and without the injection and topic-scope guards (with the real Azure run's tokens
-and reply). Cases 6 and 10 are marked as known gaps. `python scripts/security_replay.py --confirm-spend` records it
-again (about $0.01); `--render-only` rebuilds the page from `cases.json`. The protections themselves are explained
+and reply). Case 10 is marked as a known gap; case 6 was one until every agent path sent the LLM the redacted question, and was re-recorded then. `python scripts/security_replay.py --confirm-spend` records it
+again (about $0.01); `--render-only` rebuilds the page from `replays/data/security_cases.json`, and `--only 6` re-records a single case. The protections themselves are explained
 in [docs/topics/17_security.md](../../docs/topics/17_security.md).
 
 ## A2A replay: two agents

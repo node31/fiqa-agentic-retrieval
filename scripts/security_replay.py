@@ -3,11 +3,13 @@
     docker compose up -d                               # the stack
     python scripts/security_replay.py --confirm-spend   # record the cases (4 Azure calls, about $0.01) and render
     python scripts/security_replay.py --no-llm          # record without the Azure calls (those cases show the prompt only)
-    python scripts/security_replay.py --render-only     # re-render replay.html from the recorded cases.json
+    python scripts/security_replay.py --render-only     # re-render the page from the recorded data
+    python scripts/security_replay.py --only 6 --confirm-spend   # re-record one case (here 6) and keep the rest
 
-Writes scenarios/SimpleScenarios/results/SecurityReplay/cases.json and replay.html. Open replay.html in a browser:
-the list on the left holds the cases; each case shows the request, what came back with the protection OFF, what came
-back with it ON, and why the two differ. Case 10 is a known gap (a harmful document can be written) and is marked so.
+Writes replays/data/security_cases.json and replays/security.html. Open the page in a browser: the list on the
+left holds the cases, grouped and coloured by category (scripts/replay_style.py); each case shows the request, what
+came back with the protection OFF, what came back with it ON, and why the two differ. Case 10 is a known gap (a
+harmful document can be written) and is marked so.
 
 How a case is recorded: an admin sets the toggles (POST /admin/security), the same calls are sent as alice (tenant
 acme, odd doc ids), bob (globex, even ids), admin or anonymous, and the responses are kept as they came back
@@ -32,14 +34,28 @@ if str(ROOT) not in sys.path:
 
 import httpx  # noqa: E402
 
+from scripts.replay_style import CATEGORIES, NAV_CSS, legend_html, nav_html, nav_order  # noqa: E402
 from scripts.security_demo import ALL_OFF, Demo  # noqa: E402
 from src.agent.tools import SearchTool, http_search_fn, render_hits  # noqa: E402
 from src.security import tokens  # noqa: E402
 from src.security.tenants import default_tenant  # noqa: E402
 
-OUT = ROOT / "scenarios" / "SimpleScenarios" / "results" / "SecurityReplay"
+OUT = ROOT / "replays"
+DATA = OUT / "data" / "security_cases.json"
+PAGE = OUT / "security.html"
 Q = "should I pay off my mortgage early or invest?"
 CUT = 160
+
+
+def category_of(case: dict) -> str:
+    """Which of the five categories (scripts/replay_style.py) a case belongs to: PII is privacy, the rate limit is
+    cost (it caps what one caller can spend), everything else here (who is calling, what they may do, guardrails,
+    off-topic abuse) is security."""
+    if case["group"] == "PII redaction":
+        return "privacy"
+    if case["group"] == "Rate limit":
+        return "cost"
+    return "security"
 
 
 # ------------------------------------------------------------------ recording helpers
@@ -105,6 +121,55 @@ def run_agent(llm, url: str, question: str, token: str | None = None) -> dict:
             "replies": [c["reply"] for c in rec.calls], "llm_calls": res.llm_calls,
             "tokens_in": res.input_tokens, "tokens_out": res.output_tokens, "cost_usd": round(res.cost_usd, 5),
             "top3": res.doc_ids[:3]}
+
+
+def pii_question_case(d: Demo, llm) -> dict:
+    """Case 6: where a question with PII goes, with pii_redaction off and on (re-record alone: --only 6).
+
+    The agents (A2A skills and scripts/ask.py) ask the router's /guardrails/check first and work from the ``text``
+    it returns: the question itself with the toggle off, the question redacted with it on. So the agent's searches
+    and its LLM prompt follow the toggle; the audit log and the web provider are redacted either way."""
+    url = str(d.c.base_url)
+    pq = "my email is jane.doe@example.com and my card 4111 1111 1111 1111 was charged twice, what should I do?"
+    side: dict[str, dict] = {}
+    for mode in ("off", "on"):
+        d.toggles(**ALL_OFF)
+        d.toggles(identity="on", audit="on", web_fallback="on", pii_redaction=mode)
+        r = d.call("POST", "/search", "alice", query=pq, k=5, include_text=True, web=True)
+        body = r.json()
+        audit = d.c.get("/admin/audit", params={"limit": 1}, headers=d.h("admin")).json()["events"][-1]
+        verdict = d.call("POST", "/guardrails/check", "alice", text=pq).json()
+        llm_q = verdict.get("text") or pq
+        agent = run_agent(llm, url, llm_q, d.tok["alice"]) if llm else None
+        side[mode] = {"audit": audit.get("query"), "web": (body.get("web_fallback") or {}).get("query_sent"),
+                      "llm_q": llm_q, "redacted": verdict.get("pii_redacted") or {},
+                      "prompt": (agent or {}).get("first_prompt") or agent_prompt(llm_q, body["results"]),
+                      "agent": agent}
+    places = [{"place": "a plain POST /search (the shards)", "off": pq, "on": pq,
+               "note": "the search needs the real words; the shards never store questions"},
+              {"place": "the audit log", "off": side["off"]["audit"], "on": side["on"]["audit"],
+               "note": "always redacted, whatever the toggle"},
+              {"place": "the web provider (web_fallback)", "off": side["off"]["web"], "on": side["on"]["web"],
+               "note": "always redacted, and the clause that held the PII is dropped"},
+              {"place": "an agent's searches and its LLM (A2A skills, ask.py)", "off": side["off"]["llm_q"],
+               "on": side["on"]["llm_q"], "note": "follows the toggle: the agents use the text /guardrails/check returns"}]
+
+    def panel(mode: str, label: str) -> dict:
+        s = side[mode]
+        return {"label": label, "meta": f"/guardrails/check pii_redacted = {json.dumps(s['redacted'])}",
+                "blocks": [{"type": "places", "side": mode, "rows": places},
+                           {"type": "prompt", "text": s["prompt"], **({"llm": s["agent"]} if s["agent"] else {})}]}
+
+    return dict(group="PII redaction", title="PII in the question: where it goes", who="alice (acme)", question=pq,
+                toggles=["pii_redaction", "audit", "web_fallback"],
+                off=panel("off", "pii_redaction OFF: the agent's LLM reads the email and the card number"),
+                on=panel("on", "pii_redaction ON: the agent's LLM reads [EMAIL] and [CARD]"),
+                why="The question is redacted wherever the service stores it or sends it away (the audit log, the web "
+                    "provider), whatever the toggle. With pii_redaction on, the agents also work from the redacted "
+                    "question: before the first LLM call they ask the router's /guardrails/check, which returns the "
+                    "question masked, and they search and prompt with that. So the LLM provider never sees the email "
+                    "or the card number. A plain /search still uses the real words, because the shards need them to "
+                    "find anything and keep nothing.")
 
 
 # ------------------------------------------------------------------ the cases
@@ -238,31 +303,8 @@ def record(d: Demo, llm) -> list[dict]:
             "With identity on, no token, a bad signature, alg none and an expired token are all 401.")
 
     # 6. PII in the question
-    pq = "my email is jane.doe@example.com and my card 4111 1111 1111 1111 was charged twice, what should I do?"
-    d.toggles(**ALL_OFF)
-    d.toggles(identity="on", audit="on", web_fallback="on")
-    r = d.call("POST", "/search", "alice", query=pq, k=5, include_text=True, web=True)
-    body = r.json()
-    audit = d.c.get("/admin/audit", params={"limit": 1}, headers=d.h("admin")).json()["events"][-1]
-    prompt = agent_prompt(pq, body["results"])
-    places = [{"place": "the shards (the search itself)", "off": pq, "on": pq,
-               "note": "needs the real words; the shards never store questions"},
-              {"place": "the audit log", "off": audit.get("query"), "on": audit.get("query"),
-               "note": "always redacted, whatever the toggle"},
-              {"place": "the web provider (web_fallback)", "off": (body.get("web_fallback") or {}).get("query_sent"),
-               "on": (body.get("web_fallback") or {}).get("query_sent"),
-               "note": "always redacted, and the clause that held the PII is dropped"},
-              {"place": "the agent's LLM (first prompt, 1st line)", "off": prompt.split("\n")[0],
-               "on": prompt.split("\n")[0], "note": "NOT redacted: the user's own words go to the LLM provider"}]
-    add(group="PII redaction", title="PII in the question: where it goes", who="alice (acme)", question=pq,
-        toggles=["pii_redaction", "audit", "web_fallback"], gap=True,
-        off={"label": "pii_redaction OFF", "meta": "", "blocks": [{"type": "places", "side": "off", "rows": places}]},
-        on={"label": "pii_redaction ON", "meta": "", "blocks": [{"type": "places", "side": "on", "rows": places}]},
-        why="The toggle governs passages returned to the caller. The question is redacted wherever it is STORED or "
-            "SENT AWAY by the service (audit log, web), toggle or not. It is not redacted in the agent's own prompt: "
-            "that is the user's text going to the LLM the user chose, and masking it would lose meaning "
-            "(\"my card was charged twice\"). A deployment that must not send PII to its LLM provider would redact "
-            "in scripts/ask.py before the first call; this replay marks it as a gap.")
+    cases.append(pii_question_case(d, llm))
+    print(f"  recorded {len(cases)}. {cases[-1]['title']}", flush=True)
 
     # 7 + 8. PII in the answers: write a doc with PII, read it back
     pdoc = f"demo-replay-pii-{d.tag}"
@@ -475,12 +517,10 @@ CSS = """
 body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:#f4f5f7;color:#1f2328}
 header{background:#1e2a3a;color:#fff;padding:12px 24px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:2}
 header h1{font-size:19px;margin:0} header button{margin-left:6px;padding:6px 14px;border:0;border-radius:4px;background:#3b82f6;color:#fff;cursor:pointer}
-.wrap{display:flex} aside{width:310px;flex:none;background:#fff;border-right:1px solid #ddd;min-height:calc(100vh - 52px)}
-aside h3{font-size:11px;text-transform:uppercase;color:#888;margin:14px 16px 4px}
-aside ol{list-style:none;margin:0;padding:0} aside li{padding:7px 16px;font-size:13px;color:#444;border-left:4px solid transparent;cursor:pointer}
-aside li:hover{background:#f6f8fa} aside li.cur{background:#eef4ff;border-left-color:#3b82f6;color:#111}
-aside li b{display:inline-block;width:24px;color:#888} aside .gap{font-size:10px;background:#fde68a;border-radius:6px;padding:0 5px;margin-left:4px}
+.wrap{display:flex}
 main{flex:1;padding:18px 26px;min-width:0}
+.catpill{display:inline-block;font-size:12px;font-weight:700;padding:2px 9px;border-radius:10px;margin-left:8px}
+aside .gap{font-size:10px;background:#fde68a;border-radius:6px;padding:0 5px;margin-left:4px}
 .q{background:#fff;border:1px solid #ddd;border-radius:6px;padding:12px 16px;margin-bottom:14px}
 .q .who{font-size:13px;color:#666} .q .text{font-size:17px;margin-top:4px;word-break:break-word}
 .toggles{margin-top:8px;font-size:13px} .toggles span{display:inline-block;font-size:12px;padding:2px 8px;border-radius:10px;margin-right:6px;background:#d1fae5;color:#065f46}
@@ -505,22 +545,24 @@ pre{background:#0f172a;color:#e2e8f0;padding:10px;margin:8px;border-radius:6px;o
 
 
 def render(cases: list[dict], meta: dict) -> str:
+    for c in cases:
+        c["category"] = category_of(c)
+    nav = nav_html([{"title": c["title"], "category": c["category"], "group": c["group"],
+                     "badge": '<span class="gap">gap</span>' if c.get("gap") else ""} for c in cases])
+    cats = json.dumps({k: {"label": v["label"], "color": v["color"], "light": v["light"]} for k, v in CATEGORIES.items()})
+    order = json.dumps(nav_order(cases))
+    legend = legend_html(sorted({c["category"] for c in cases}, key=list(CATEGORIES).index))
     data = json.dumps({"cases": cases, "meta": meta}, ensure_ascii=False).replace("</", "<\\/")
-    return f"""<!doctype html><html><head><meta charset="utf-8"><title>Security replay</title><style>{CSS}</style></head>
-<body><header><h1 id="h">Security replay</h1><div><button onclick="go(cur-1)">&larr; prev</button><button onclick="go(cur+1)">next &rarr;</button></div></header>
-<div class="wrap"><aside id="side"></aside><main id="main"></main></div>
+    return f"""<!doctype html><html><head><meta charset="utf-8"><title>Security replay</title><style>{CSS}{NAV_CSS}</style></head>
+<body><header><h1 id="h">Security replay</h1><div>{legend} <button onclick="go(step(-1))">&larr; prev</button><button onclick="go(step(1))">next &rarr;</button></div></header>
+<div class="wrap"><aside id="side">{nav}</aside><main id="main"></main></div>
 <script>
 const D = {data};
+const CAT = {cats};
+const ORDER = {order};   // nav order: prev / next walk the list as it is shown
+const step = d => ORDER[ORDER.indexOf(cur) + d];
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}})[c]);
 let cur = 0;
-function side() {{
-  let g = null, h = "";
-  D.cases.forEach((c, i) => {{
-    if (c.group !== g) {{ if (g !== null) h += "</ol>"; g = c.group; h += `<h3>${{esc(g)}}</h3><ol>`; }}
-    h += `<li id="l${{i}}" onclick="go(${{i}})"><b>${{i + 1}}</b>${{esc(c.title)}}${{c.gap ? '<span class="gap">gap</span>' : ""}}</li>`;
-  }});
-  document.getElementById("side").innerHTML = h + "</ol>";
-}}
 function st(s) {{ return `<span class="st ${{s === 200 ? "ok" : "no"}}">${{s}}</span>`; }}
 function block(b, side) {{
   if (b.type === "results") {{
@@ -545,21 +587,21 @@ function panel(p, cls) {{
   return `<div class="panel ${{cls}}"><h2>${{esc(p.label)}}</h2>${{p.meta ? `<div class="meta">${{esc(p.meta)}}</div>` : ""}}${{p.blocks.map(b => block(b, cls)).join("")}}</div>`;
 }}
 function go(i) {{
-  if (i < 0 || i >= D.cases.length) return;
+  if (i === undefined || i < 0 || i >= D.cases.length) return;
   document.querySelectorAll("aside li").forEach(l => l.classList.remove("cur"));
   document.getElementById("l" + i).classList.add("cur");
-  cur = i; const c = D.cases[i];
+  cur = i; const c = D.cases[i]; const k = CAT[c.category];
   document.getElementById("h").textContent = `Security replay · case ${{i + 1}} of ${{D.cases.length}}`;
   document.getElementById("main").innerHTML =
-    `<div class="q"><div class="who">${{esc(c.who)}}</div><div class="text">${{esc(c.question)}}</div>` +
+    `<div class="q" style="border-left:6px solid ${{k.color}}"><div class="who">${{esc(c.who)}}<span class="catpill" style="background:${{k.light}};color:${{k.color}}">${{esc(k.label)}}</span></div><div class="text">${{esc(c.question)}}</div>` +
     `<div class="toggles">Toggles in this case: ${{c.toggles.map(t => `<span>${{esc(t)}}</span>`).join("")}}</div></div>` +
     `<div class="cols">${{panel(c.off, "off")}}${{panel(c.on, "on")}}</div>` +
     `<div class="why ${{c.gap ? "gap" : ""}}"><b>${{c.gap ? "Known gap. " : "Why the two sides differ. "}}</b>${{esc(c.why)}}</div>` +
     `<p style="font-size:12px;color:#777">Recorded ${{esc(D.meta.recorded)}} on ${{esc(D.meta.url)}} (model ${{esc(D.meta.model)}}). Arrow keys move between cases.</p>`;
   location.hash = i + 1;
 }}
-document.addEventListener("keydown", e => {{ if (e.key === "ArrowRight") go(cur + 1); if (e.key === "ArrowLeft") go(cur - 1); }});
-side(); go(Math.max(0, (parseInt(location.hash.slice(1)) || 1) - 1));
+document.addEventListener("keydown", e => {{ if (e.key === "ArrowRight") go(step(1)); if (e.key === "ArrowLeft") go(step(-1)); }});
+go(Math.max(0, (parseInt(location.hash.slice(1)) || 1) - 1));
 </script></body></html>"""
 
 
@@ -569,10 +611,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--confirm-spend", action="store_true", help="run the real agent on Azure in cases 12 and 13")
     ap.add_argument("--no-llm", action="store_true", help="record without any LLM call")
     ap.add_argument("--render-only", action="store_true")
+    ap.add_argument("--only", type=int, choices=[6], help="re-record just this case and keep the others as recorded")
     a = ap.parse_args(argv)
-    OUT.mkdir(parents=True, exist_ok=True)
+    DATA.parent.mkdir(parents=True, exist_ok=True)
     if a.render_only:
-        rec = json.loads((OUT / "cases.json").read_text(encoding="utf-8"))
+        rec = json.loads(DATA.read_text(encoding="utf-8"))
     else:
         llm = None
         if not a.no_llm:
@@ -583,18 +626,27 @@ def main(argv: list[str] | None = None) -> int:
         d = Demo(a.url)
         original = {k: v["value"] for k, v in d.c.get("/admin/security", headers=d.h("admin")).json().items()}
         try:
-            cases = record(d, llm)
+            if a.only:
+                rec = json.loads(DATA.read_text(encoding="utf-8"))
+                rec["cases"][a.only - 1] = pii_question_case(d, llm)
+                rec["meta"].setdefault("rerecorded", {})[str(a.only)] = time.strftime("%Y-%m-%d")
+                print(f"  re-recorded {a.only}. {rec['cases'][a.only - 1]['title']}", flush=True)
+            else:
+                cases = record(d, llm)
         finally:
             d.toggles(**ALL_OFF)
             for doc in getattr(d, "created", []):
                 d.write("admin", doc, op="delete")
             restored = d.toggles(**original)
-        model = d.c.get("/health").json().get("active_model")
-        rec = {"meta": {"recorded": time.strftime("%Y-%m-%d"), "url": a.url, "model": model,
-                        "toggles_restored": restored == original}, "cases": cases}
-        (OUT / "cases.json").write_text(json.dumps(rec, indent=1, ensure_ascii=False), encoding="utf-8")
-    (OUT / "replay.html").write_text(render(rec["cases"], rec["meta"]), encoding="utf-8")
-    print(f"wrote {(OUT / 'replay.html').relative_to(ROOT)} ({len(rec['cases'])} cases)")
+        if not a.only:
+            model = d.c.get("/health").json().get("active_model")
+            rec = {"meta": {"recorded": time.strftime("%Y-%m-%d"), "url": a.url, "model": model,
+                            "toggles_restored": restored == original}, "cases": cases}
+        for c in rec["cases"]:
+            c.pop("category", None)   # derived at render time
+        DATA.write_text(json.dumps(rec, indent=1, ensure_ascii=False), encoding="utf-8")
+    PAGE.write_text(render(rec["cases"], rec["meta"]), encoding="utf-8")
+    print(f"wrote {PAGE.relative_to(ROOT)} ({len(rec['cases'])} cases)")
     return 0
 
 

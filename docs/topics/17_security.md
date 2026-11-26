@@ -22,7 +22,7 @@ python scripts/guardrails_eval.py                  # what the guardrails catch a
 
 or open http://localhost:8000/docs, click Authorize, paste a token, and follow steps 7 to 11 of the tour at the top.
 
-The recorded result is [the security replay](../../scenarios/SimpleScenarios/results/SecurityReplay/replay.html)
+The recorded result is [the security replay](../../replays/security.html)
 (download and open it in a browser): 14 cases, each the same request with the protection off and on, side by side.
 It covers reading and writing across tenants, admin endpoints and bad tokens, PII in questions, answers and
 writes, harmful questions and a harmful document write, injection in a question and in a stored passage (with the
@@ -430,11 +430,12 @@ Not in the shards and not in the index. It runs in five places, all on the way o
 | the router, `Policy.post_search()` | the passage text a search returns | while `pii_redaction` is on |
 | the router, `Policy.audit()` | the question, before the audit line is written | always |
 | the router, `web_fallback()` | the question before it is sent to the web provider (the clause that held the PII is dropped too), and the titles and snippets that come back | always |
-| the router, `/guardrails/check` | the question, returned as `text` for the agent's LLM (the A2A `answer` skill sends the LLM this, not the raw question) | while `pii_redaction` is on |
+| the router, `/guardrails/check` | the question, returned as `text`: every agent path (the A2A skills `answer`, `single`, `multi` and `cascade`, and `scripts/ask.py`) then searches and prompts its LLM with this text, not the raw question | while `pii_redaction` is on |
 | the A2A server, `MemoryStore.remember_*` | a conversation turn or a user fact, before it is stored | always |
 
-The question itself is not redacted before the search: the shards need the real words to find anything, and they
-never store questions. Part D of [demo_security_a2a_memory.md](../guides/demo_security_a2a_memory.md) shows the
+The question itself is not redacted before a plain `/search`: the shards need the real words to find anything, and
+they never store questions. An agent is different, because its LLM is a third party: with `pii_redaction` on, the
+agent's own searches and its prompts use the redacted question (case 6 of the security replay shows both sides). Part D of [demo_security_a2a_memory.md](../guides/demo_security_a2a_memory.md) shows the
 question and the passages as a real LLM read them, with the toggle off and on.
 
 #### A worked example

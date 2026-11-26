@@ -9,7 +9,9 @@
 Writes replays/data/security_cases.json and replays/security.html. Open the page in a browser: the list on the
 left holds the cases, grouped and coloured by category (scripts/replay_style.py); each case shows the request, what
 came back with the protection OFF, what came back with it ON, and why the two differ. Case 10 is a known gap (a
-harmful document can be written) and is marked so.
+harmful document can be written) and is marked so. A case opens with both sides hidden so a presenter can ask the
+room first: the buttons Show OFF, Show ON, Compare both and Hide both (keys 1, 2, 3, 0) reveal them, and the "why"
+box appears with Compare both.
 
 How a case is recorded: an admin sets the toggles (POST /admin/security), the same calls are sent as alice (tenant
 acme, odd doc ids), bob (globex, even ids), admin or anonymous, and the responses are kept as they came back
@@ -541,6 +543,13 @@ pre{background:#0f172a;color:#e2e8f0;padding:10px;margin:8px;border-radius:6px;o
 .why{background:#fffbeb;border:1px solid #f59e0b;border-radius:6px;padding:11px 15px;margin-top:14px;font-size:14px;line-height:1.5}
 .why.gap{background:#fef3c7;border-color:#b45309}
 .empty{padding:10px 14px;color:#777;font-size:13px}
+.reveal{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-size:13px;color:#555}
+.reveal button{padding:6px 13px;border-radius:16px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;font-size:13px;font-weight:600}
+.reveal button.off{color:#8a1c1c;border-color:#f5b5b0} .reveal button.on{color:#14532d;border-color:#9fd8b2}
+.reveal button.both{color:#1d4ed8;border-color:#93c5fd} .reveal button.cur{box-shadow:inset 0 0 0 2px currentColor}
+.reveal kbd{font-size:11px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:3px;padding:0 4px;margin-left:4px;color:#475569}
+.hidden-panel{border:2px dashed #cbd5e1;border-radius:6px;padding:28px 14px;text-align:center;color:#94a3b8;font-size:14px;cursor:pointer;background:#fafafa}
+.hidden-panel.off{border-color:#f5b5b0} .hidden-panel.on{border-color:#9fd8b2}
 """
 
 
@@ -563,6 +572,10 @@ const ORDER = {order};   // nav order: prev / next walk the list as it is shown
 const step = d => ORDER[ORDER.indexOf(cur) + d];
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}})[c]);
 let cur = 0;
+let view = "none";   // which sides are shown: none | off | on | both; every case opens with both hidden
+const SIDE = {{off: "the toggle OFF side", on: "the toggle ON side"}};
+function setView(v) {{ view = v; draw(); }}
+function show(side) {{ setView(view === "both" || (view !== "none" && view !== side) ? "both" : side); }}
 function st(s) {{ return `<span class="st ${{s === 200 ? "ok" : "no"}}">${{s}}</span>`; }}
 function block(b, side) {{
   if (b.type === "results") {{
@@ -586,21 +599,34 @@ function block(b, side) {{
 function panel(p, cls) {{
   return `<div class="panel ${{cls}}"><h2>${{esc(p.label)}}</h2>${{p.meta ? `<div class="meta">${{esc(p.meta)}}</div>` : ""}}${{p.blocks.map(b => block(b, cls)).join("")}}</div>`;
 }}
+function side(c, cls) {{
+  if (view === "both" || view === cls) return panel(c[cls], cls);
+  return `<div class="hidden-panel ${{cls}}" onclick="show('${{cls}}')">${{esc(c[cls].label)}}<br><span style="font-size:12px">hidden: click here or Show ${{cls.toUpperCase()}}</span></div>`;
+}}
+function draw() {{
+  const c = D.cases[cur]; const k = CAT[c.category];
+  const b = (v, cls, text, key) => `<button class="${{cls}} ${{view === v ? "cur" : ""}}" onclick="setView('${{v}}')">${{text}}<kbd>${{key}}</kbd></button>`;
+  document.getElementById("main").innerHTML =
+    `<div class="q" style="border-left:6px solid ${{k.color}}"><div class="who">${{esc(c.who)}}<span class="catpill" style="background:${{k.light}};color:${{k.color}}">${{esc(k.label)}}</span></div><div class="text">${{esc(c.question)}}</div>` +
+    `<div class="toggles">Toggles in this case: ${{c.toggles.map(t => `<span>${{esc(t)}}</span>`).join("")}}</div></div>` +
+    `<div class="reveal">Reveal: ${{b("off", "off", "Show OFF", "1")}}${{b("on", "on", "Show ON", "2")}}${{b("both", "both", "Compare both", "3")}}${{b("none", "", "Hide both", "0")}}</div>` +
+    `<div class="cols">${{side(c, "off")}}${{side(c, "on")}}</div>` +
+    (view === "both" ? `<div class="why ${{c.gap ? "gap" : ""}}"><b>${{c.gap ? "Known gap. " : "Why the two sides differ. "}}</b>${{esc(c.why)}}</div>` : "") +
+    `<p style="font-size:12px;color:#777">Recorded ${{esc(D.meta.recorded)}} on ${{esc(D.meta.url)}} (model ${{esc(D.meta.model)}}). Arrow keys move between cases; 1 / 2 / 3 / 0 reveal OFF, ON, both, none. "Why the two sides differ" appears with both.</p>`;
+}}
 function go(i) {{
   if (i === undefined || i < 0 || i >= D.cases.length) return;
   document.querySelectorAll("aside li").forEach(l => l.classList.remove("cur"));
   document.getElementById("l" + i).classList.add("cur");
-  cur = i; const c = D.cases[i]; const k = CAT[c.category];
+  cur = i; view = "none";
   document.getElementById("h").textContent = `Security replay · case ${{i + 1}} of ${{D.cases.length}}`;
-  document.getElementById("main").innerHTML =
-    `<div class="q" style="border-left:6px solid ${{k.color}}"><div class="who">${{esc(c.who)}}<span class="catpill" style="background:${{k.light}};color:${{k.color}}">${{esc(k.label)}}</span></div><div class="text">${{esc(c.question)}}</div>` +
-    `<div class="toggles">Toggles in this case: ${{c.toggles.map(t => `<span>${{esc(t)}}</span>`).join("")}}</div></div>` +
-    `<div class="cols">${{panel(c.off, "off")}}${{panel(c.on, "on")}}</div>` +
-    `<div class="why ${{c.gap ? "gap" : ""}}"><b>${{c.gap ? "Known gap. " : "Why the two sides differ. "}}</b>${{esc(c.why)}}</div>` +
-    `<p style="font-size:12px;color:#777">Recorded ${{esc(D.meta.recorded)}} on ${{esc(D.meta.url)}} (model ${{esc(D.meta.model)}}). Arrow keys move between cases.</p>`;
+  draw();
   location.hash = i + 1;
 }}
-document.addEventListener("keydown", e => {{ if (e.key === "ArrowRight") go(step(1)); if (e.key === "ArrowLeft") go(step(-1)); }});
+document.addEventListener("keydown", e => {{
+  if (e.key === "ArrowRight") go(step(1)); if (e.key === "ArrowLeft") go(step(-1));
+  const v = {{"1": "off", "2": "on", "3": "both", "0": "none"}}[e.key]; if (v) setView(v);
+}});
 go(Math.max(0, (parseInt(location.hash.slice(1)) || 1) - 1));
 </script></body></html>"""
 

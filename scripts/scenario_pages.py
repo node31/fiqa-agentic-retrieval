@@ -8,6 +8,9 @@ the run's summary from console.txt (expectations, write and search times, RESULT
 itself. The replay is copied into the page as a string and shown in an iframe (``srcdoc``), so a page works when it
 is opened straight from disk and the 32 recorded replay.html files are not touched. A tab row at the top switches
 between the four cluster types; the nav, its colour and the prev / next keys work as in every page in replays/.
+Two links in the top card open the current scenario's replay on a page of its own, for a bigger view: "original
+file" is the recorded replay.html under scenarios/ (a relative link, so it needs the whole repo), and "this copy in
+a new tab" opens the copy held in this page (it works even when replays/ is copied on its own).
 
     >>> describe("# Scenario 2: ReadAfterWrite\\n#\\n# Ann writes, Bob reads.\\nt,who\\n")
     ('ReadAfterWrite', 'Ann writes, Bob reads.')
@@ -75,6 +78,8 @@ header h1{font-size:19px;margin:0} header button{margin-left:6px;padding:6px 14p
 .wrap{display:flex} main{flex:1;padding:14px 22px;min-width:0}
 .card{background:#fff;border:1px solid #ddd;border-left:6px solid #2563eb;border-radius:6px;padding:10px 16px;margin-bottom:12px;display:flex;gap:18px}
 .card .txt{flex:1;min-width:0} .card h2{font-size:17px;margin:2px 0 4px} .card p{margin:0;font-size:14px;color:#333;line-height:1.45}
+.open{margin-top:8px;font-size:13px} .open a{display:inline-block;margin-right:8px;padding:3px 11px;border-radius:12px;background:#dbeafe;color:#1d4ed8;font-weight:600;text-decoration:none;border:1px solid #93c5fd}
+.open a:hover{background:#2563eb;color:#fff}
 .pass{display:inline-block;background:#dcfce7;color:#166534;font-weight:700;border-radius:10px;padding:1px 9px;font-size:12px;margin-left:6px}
 pre{background:#0f172a;color:#e2e8f0;padding:8px 10px;border-radius:6px;font-size:11.5px;margin:0;white-space:pre-wrap;flex:0 0 470px;max-height:150px;overflow:auto}
 iframe{width:100%;height:calc(100vh - 250px);min-height:620px;border:1px solid #ddd;border-radius:6px;background:#fff}
@@ -92,7 +97,8 @@ def page(key: str, folder: str, label: str) -> str:
         items.append({"title": TITLES.get(n, title or name), "category": "distributed",
                       "badge": f'<span class="pass">{html.escape(result)}</span>'})
         data.append({"n": n, "name": name, "title": f"{TITLES.get(n, title)} ({title})", "about": about,
-                     "result": result, "summary": summ, "replay": (run / "replay.html").read_text(encoding="utf-8")})
+                     "result": result, "summary": summ, "replay": (run / "replay.html").read_text(encoding="utf-8"),
+                     "file": f"../scenarios/SimpleScenarios/results/{folder}/{name}/replay.html"})
     mode, size = key.split("_")
     tabs = "".join(f'<a href="scenarios_{k}.html"{" class=cur" if k == key else ""}>{html.escape(lb)}</a>'
                    for k, _, lb in CLUSTERS)
@@ -106,7 +112,8 @@ def page(key: str, folder: str, label: str) -> str:
 <div class="card" style="border-left-color:{color}"><div class="txt"><h2 id="t"></h2><p id="a"></p>
 <p style="margin-top:6px;font-size:12px;color:#666"><b>{html.escape(mode)}</b>: {html.escape(ABOUT[mode])} ·
 <b>{html.escape(size)}</b>: {html.escape(ABOUT[size])}. The replay below plays the recorded run; its own controls
-start, pause and step it.</p></div><pre id="s"></pre></div>
+start, pause and step it.</p>
+<div class="open">Open this replay on its own page: <a id="of" target="_blank" rel="noopener">original file &#8599;</a><a href="#" onclick="openCopy();return false">this copy in a new tab &#8599;</a></div></div><pre id="s"></pre></div>
 <iframe id="f" title="recorded replay"></iframe></main></div>
 <script>
 const D = {blob};
@@ -121,7 +128,12 @@ function go(i) {{
   document.getElementById("a").textContent = s.about;
   document.getElementById("s").textContent = s.summary;
   document.getElementById("f").srcdoc = s.replay;
+  document.getElementById("of").href = s.file;
   location.hash = i + 1;
+}}
+function openCopy() {{
+  const url = URL.createObjectURL(new Blob([D[cur].replay], {{type: "text/html"}}));
+  window.open(url, "_blank");
 }}
 document.addEventListener("keydown", e => {{ if (e.key === "ArrowRight") go(cur + 1); if (e.key === "ArrowLeft") go(cur - 1); }});
 go(Math.max(0, (parseInt(location.hash.slice(1)) || 1) - 1));

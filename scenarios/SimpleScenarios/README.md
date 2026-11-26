@@ -94,16 +94,18 @@ in [docs/topics/17_security.md](../../docs/topics/17_security.md).
 
 ## A2A replay: two agents
 
-[results/A2AReplay/replay.html](results/A2AReplay/replay.html) is a sequence diagram of one recorded session
-between two A2A agents: a coordinator on :8310 that splits a compound question and delegates each part to the
-FiQA agent on :8300, which searches the router. Every JSON-RPC message (and every router search behind it) is one
-arrow; click an arrow to see the full request or response. Five scenes: discovery (agent cards), delegation,
-private tasks (bob asking for alice's task id gets `-32001 Task not found`), tenants (with identity and the tenant
-filter on, alice's searches return acme passages and bob's globex ones) and memory (alice says she lives in Canada,
-so her next delegated parts are searched with "Canada" added and bob's are not; then she deletes her memory).
-`python scripts/a2a_two_agents.py` records it again against the running stack (no LLM calls, it restores the
-router's toggles afterwards); `--render-only` rebuilds the page from `messages.json`. The protocol is explained in
-[docs/topics/21_a2a.md](../../docs/topics/21_a2a.md).
+[replays/a2a.html](../../replays/a2a.html) is a sequence diagram of one recorded session between two A2A agents and
+an LLM: a coordinator on :8310 that splits a compound question and delegates each part to the FiQA agent on :8300,
+which searches the router and asks its LLM (gpt-6-sol on Azure, in its own lane on the right) to write a short
+answer. Every JSON-RPC message, router search and LLM call is one arrow, coloured by who sent the request; click an
+arrow to see the full request or response, and the pink tags say what the FiQA agent's memory stored or deleted.
+Five scenes, listed in the nav on the left: discovery (agent cards), delegation, private tasks (bob asking for
+alice's task id gets `-32001 Task not found`), tenants (with identity and the tenant filter on, alice's searches
+return acme passages and bob's globex ones) and memory (alice says she lives in Canada, so her next delegated parts
+are searched with "Canada" added and answered "In Canada, ..."; bob's are not; then she deletes her memory).
+`python scripts/a2a_two_agents.py --confirm-spend` records it again against the running stack (8 Azure calls, about
+$0.01; it restores the router's toggles afterwards); `--render-only` rebuilds the page from
+`replays/data/a2a_messages.json`. The protocol is explained in [docs/topics/21_a2a.md](../../docs/topics/21_a2a.md).
 
 ## Memory replay
 

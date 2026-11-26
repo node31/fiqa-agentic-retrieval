@@ -79,19 +79,22 @@ def coordinator_card(base_url: str, agent_url: str) -> dict:
     }
 
 
-def delegating_search(agent_url: str, http_factory: Callable[[str | None], httpx.Client] | None = None):
+def delegating_search(agent_url: str, http_factory: Callable[[str | None], httpx.Client] | None = None,
+                      part_skill: str = "retrieve"):
     """search_factory for create_app: (token) -> (query, strategy, k) -> fused hits from the FiQA agent.
 
     ``http_factory(token)`` gives the HTTP client for one caller (tests pass a TestClient; the two-agent demo
-    passes a client that records every message). The FiQA agent's card is read once per caller.
+    passes a client that records every message). The FiQA agent's card is read once per caller. ``part_skill`` is
+    the FiQA agent's skill each part goes to: "retrieve" (no LLM) or "answer" (the FiQA agent's LLM also writes a
+    short answer per part; the coordinator still fuses only the passages, and uses no LLM itself).
     """
     def factory(token: str | None):
         agent = A2AClient(agent_url, token, http=http_factory(token) if http_factory else None)
 
         def search(query: str, strategy: str, k: int) -> list[dict]:
             parts = split_question(query)
-            first = agent.send(parts[0], k=k)
-            tasks = [first] + [agent.send(p, context_id=first["contextId"], k=k) for p in parts[1:]]
+            first = agent.send(parts[0], k=k, skill=part_skill)
+            tasks = [first] + [agent.send(p, context_id=first["contextId"], k=k, skill=part_skill) for p in parts[1:]]
             hits: dict[str, dict] = {}
             for t in tasks:
                 if t["status"]["state"] != P.COMPLETED:   # e.g. REJECTED by the router's guardrails
@@ -110,11 +113,11 @@ def delegating_search(agent_url: str, http_factory: Callable[[str | None], httpx
 
 
 def create_coordinator_app(agent_url: str, base_url: str = "http://localhost:8310",
-                           http_factory: Callable[[str | None], httpx.Client] | None = None):
+                           http_factory: Callable[[str | None], httpx.Client] | None = None, part_skill: str = "retrieve"):
     from src.a2a.server import create_app
 
-    return create_app(memory=None, search_factory=delegating_search(agent_url, http_factory), base_url=base_url,
-                      card=coordinator_card(base_url, agent_url), plain_skills=("delegate",))
+    return create_app(memory=None, search_factory=delegating_search(agent_url, http_factory, part_skill),
+                      base_url=base_url, card=coordinator_card(base_url, agent_url), plain_skills=("delegate",))
 
 
 def main(argv: list[str] | None = None) -> int:

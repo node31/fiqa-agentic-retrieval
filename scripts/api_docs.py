@@ -152,14 +152,20 @@ Every shard starts embedding its docs with `model` in the background. Queries ke
 on every write is embedded with both models (dual-write). Follow progress with `GET /admin/status`
 (`shards.N.models.<model>.progress` / `ready`).""", {
         "bge": ex("Migrate to bge-small (fast: uses the cached vectors)", {"model": "bge-small"}),
+        "ft": ex("Migrate to minilm-ft, the fine-tuned MiniLM (fast: uses the cached vectors)", {"model": "minilm-ft"},
+                 "Needs artifacts/emb_minilm-ft.npy and artifacts/models/minilm-ft (scripts/finetune.py, or the "
+                 "release asset). docs/topics/18_fine_tuning.md has the numbers."),
+        "minilm": ex("Migrate back to the base minilm", {"model": "minilm"},
+                     "For a stack that serves minilm-ft or bge-small and has dropped minilm."),
         "throttled": ex("Migrate slowly, to watch the progress", {"model": "bge-small", "throttle_s": 0.05},
                         "Sleeps between backfill batches; poll /admin/status to see progress climb."),
         "reencode": ex("Migrate and re-embed everything (realistic cost, minutes on CPU)",
                        {"model": "bge-small", "reencode": True}),
     }),
     ("/admin/cutover", "post"): ("3. Model migration (admin)", "Step 2: switch queries to the new model", """
-Answers 409 unless `model` is ready on every shard. After it, search responses say `"model": "bge-small"`.""", {
+Answers 409 unless `model` is ready on every shard. After it, search responses say `"model": "<model>"`.""", {
         "bge": ex("Cut over to bge-small", {"model": "bge-small"}),
+        "ft": ex("Cut over to minilm-ft (the fine-tuned model)", {"model": "minilm-ft"}),
         "back": ex("Cut over back to minilm", {"model": "minilm"}),
     }),
     ("/admin/rollback", "post"): ("3. Model migration (admin)", "Step 3a: switch back to the previous model", """
@@ -167,8 +173,9 @@ Instant: the previous model's index was kept and updated by dual-write. No body.
     ("/admin/finalize", "post"): ("3. Model migration (admin)", "Step 3b: drop a model's index", """
 Frees the memory of a model that is not active. After a migrate + cutover + rollback, drop the tried model with
 the first example. Refused (409) for the active model.""", {
-        "drop_bge": ex("Drop bge-small (after rolling back to minilm)", {"model": "bge-small"}),
-        "drop_minilm": ex("Drop minilm (after cutting over to bge-small for good)", {"model": "minilm"}),
+        "drop_bge": ex("Drop bge-small (after rolling back)", {"model": "bge-small"}),
+        "drop_ft": ex("Drop minilm-ft (after rolling back to minilm)", {"model": "minilm-ft"}),
+        "drop_minilm": ex("Drop minilm (after cutting over to minilm-ft or bge-small for good)", {"model": "minilm"}),
     }),
     ("/admin/status", "get"): ("4. Health and status", "Cluster status", """
 Per shard: health, doc count, the models it holds (with build progress), write counters, the apply mode (sync or

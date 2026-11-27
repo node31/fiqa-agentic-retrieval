@@ -30,7 +30,7 @@ run once for it too (section 6.12).
 
 ## 2. Requirements
 
-**Functional** (the slide numbers are in [DesignV3.pptx](docs/design/DesignV3.pptx); its slide 4 is this table, with links)
+**Functional** (the slide numbers are in [DesignV3.pptx](docs/design/DesignV3.pptx); its slide 4 is this table, with links. [DesignV3_mac.pptx](docs/design/DesignV3_mac.pptx) is the same deck with absolute file links for a Mac clone)
 
 | area | requirement | what I built | deck slides |
 |---|---|---|---|
@@ -39,12 +39,12 @@ run once for it too (section 6.12).
 | A3 | at least one real ablation | fusion method x weight sweep, cross-encoder rerank depth sweep, dense model, local vs global IDF | 11 |
 | A4 | three analysed failures | `results/failures.md` | 12 |
 | B1 | ≥ 3 shards, router, ≤ 1% quality gap, timeouts, 1 vs N shard latency | 3 shards, scatter-gather router, 0.0% gap, 0.5 s timeout with partial results | 13, 14 |
-| B2 | idempotent versioned upsert/delete, consistent indexes, a tested freshness guarantee | versions + tombstones + WAL; sync mode (searchable on the next query) and async mode (searchable within 1 s) | 15 to 17, 25, 27, 28, 31 |
-| B3 | zero-downtime model migration with cutover and rollback | dual-write + background backfill, `make migrate`, `make cutover`, `make rollback`; 2,045 queries, 0 failed | 18, 25, 29, 30 |
-| C1 | 100 compound questions with half-tracked gold | `data/compound_dev.jsonl` + `data/build_compound.py` | 19 |
-| C2 | single agent, one search tool, ≤ 3 steps | `src/agent/single_agent.py` | 20, 21, 23 |
-| C3 | orchestrator + ≥ 2 sub-agent roles, shared slots, budgets, partial failure, skip when simple | `src/agent/orchestrator.py`: planner, workers, verifier | 21, 23 |
-| C4 | compare baseline, single, multi on plain and compound sets; routing policy; ship calls | `scripts/agent_eval.py`, `results/agent_eval.json` | 22 |
+| B2 | idempotent versioned upsert/delete, consistent indexes, a tested freshness guarantee | versions + tombstones + WAL; sync mode (searchable on the next query) and async mode (searchable within 1 s) | 15 to 17, 19, 21, 22, 25 |
+| B3 | zero-downtime model migration with cutover and rollback | dual-write + background backfill, `make migrate`, `make cutover`, `make rollback`; 2,045 queries, 0 failed | 18, 19, 23, 24 |
+| C1 | 100 compound questions with half-tracked gold | `data/compound_dev.jsonl` + `data/build_compound.py` | 26 |
+| C2 | single agent, one search tool, ≤ 3 steps | `src/agent/single_agent.py` | 27, 28, 30 |
+| C3 | orchestrator + ≥ 2 sub-agent roles, shared slots, budgets, partial failure, skip when simple | `src/agent/orchestrator.py`: planner, workers, verifier | 28, 30 |
+| C4 | compare baseline, single, multi on plain and compound sets; routing policy; ship calls | `scripts/agent_eval.py`, `results/agent_eval.json` | 29 |
 
 **Non-functional**
 

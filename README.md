@@ -7,9 +7,10 @@ orchestrator on top, evaluated on plain and compound questions.
 
 The tasks and constraints are in [FIQA_RETRIEVAL_TASKS.md](FIQA_RETRIEVAL_TASKS.md). Design, results and trade-offs are
 in [DESIGN.md](DESIGN.md), also as a [Word document](docs/design/DesignV3.docx) and
-[slides](docs/design/DesignV3.pptx) (64 slides in 21 sections: why RAG, then the results through security, privacy,
-openness and fine-tuning, cost, memory, A2A and web search, next steps, and an appendix with every formula; the
-extensions are colour-coded in five categories). The earlier versions, [DESIGN.docx](docs/design/DESIGN.docx) and
+[slides](docs/design/DesignV3.pptx) (73 slides in 22 sections: why RAG, a map of every requirement to its slides, then
+the results through security, privacy, openness and fine-tuning, cost, memory, A2A, web search and the ways to call
+the router, detailed results, next steps, and an appendix with every formula; the extensions are colour-coded in five
+categories; [DesignV3_mac.pptx](docs/design/DesignV3_mac.pptx) is the same deck with absolute replay links for a Mac clone). The earlier versions, [DESIGN.docx](docs/design/DESIGN.docx) and
 [DESIGN.pptx](docs/design/DESIGN.pptx), are kept. What I'd add next, task by task, as the engineering lead is in
 [docs/design/EXTENSIONS.md](docs/design/EXTENSIONS.md). Security (tenant identity, authorisation, tenant filtering inside
 the shards, PII redaction, an audit log) and LLM guardrails (harmful intent, prompt injection, topic scope, rate

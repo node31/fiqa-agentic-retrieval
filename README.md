@@ -6,14 +6,10 @@ idempotent writes and zero-downtime embedding-model migration. Part C is a hand-
 orchestrator on top, evaluated on plain and compound questions.
 
 The tasks and constraints are in [FIQA_RETRIEVAL_TASKS.md](FIQA_RETRIEVAL_TASKS.md). Design, results and trade-offs are
-in [DESIGN.md](DESIGN.md), also as a [Word document](docs/design/DesignV4.docx) and
-[slides](docs/design/DesignV4.pptx) (83 slides: a one-slide executive summary, then thirteen sections by what the
-customer needs, each opening with why it matters to them; [DesignV4_mac.pptx](docs/design/DesignV4_mac.pptx) has
-absolute replay links for a Mac clone). The previous version, [DesignV3.pptx](docs/design/DesignV3.pptx) (73 slides in 22 sections: why RAG, a map of every requirement to its slides, then
-the results through security, privacy, openness and fine-tuning, cost, memory, A2A, web search and the ways to call
-the router, detailed results, next steps, and an appendix with every formula; the extensions are colour-coded in five
-categories; [DesignV3_mac.pptx](docs/design/DesignV3_mac.pptx) is the same deck with absolute replay links for a Mac clone), and the earlier versions, [DESIGN.docx](docs/design/DESIGN.docx) and
-[DESIGN.pptx](docs/design/DESIGN.pptx), are kept. What I'd add next, task by task, as the engineering lead is in
+in [DESIGN.md](DESIGN.md), also as a [Word document](docs/design/Design.docx) and
+[slides](docs/design/Design.pptx) (77 slides: a one-slide executive summary, then eight sections by what the
+customer needs, each opening with why it matters to them; [Design_mac.pptx](docs/design/Design_mac.pptx) has
+absolute replay links for a Mac clone). What I'd add next, task by task, as the engineering lead is in
 [docs/design/EXTENSIONS.md](docs/design/EXTENSIONS.md). Security (tenant identity, authorisation, tenant filtering inside
 the shards, PII redaction, an audit log) and LLM guardrails (harmful intent, prompt injection, topic scope, rate
 limit), each behind its own runtime toggle and all off by default, are in [docs/topics/17_security.md](docs/topics/17_security.md).
@@ -253,7 +249,7 @@ results/        bench.json · runs/ (incl. the one TEST run) · ablation_*.json 
 examples/       small standalone scripts
 FIQA_RETRIEVAL_TASKS.md  the task spec: parts A-C, constraints, deliverables
 AGENTS.md       how to set up, test and work in the repo (for coding agents)
-docs/           topics/ (00-22, one concept each) · from_zero/ (the whole system from scratch) · walkthroughs/ (eval, Part A/B results) · guides/ (scenarios, manual tests) · faq/ (concepts, this project) · design/ (DESIGN.docx, DESIGN.pptx, EXTENSIONS.md) · assets/
+docs/           topics/ (00-22, one concept each) · from_zero/ (the whole system from scratch) · walkthroughs/ (eval, Part A/B results) · guides/ (scenarios, manual tests) · faq/ (concepts, this project) · design/ (Design.docx, Design.pptx, Design_mac.pptx, EXTENSIONS.md) · assets/
 ```
 
 ## Measured on

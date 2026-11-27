@@ -4,14 +4,14 @@
 
 | | |
 |---|---|
+| **Why it matters to the customer** | Answers grounded in their own data, fast and fresh, kept apart from every other customer, at a bounded cost and tailored to them. |
 | **Problem** | An LLM is text in, text out and knows nothing about the customer's data. Make it answer from 57,638 personal-finance passages: fast, fresh and safe. |
 | **Approaches tried** | Search: BM25, MiniLM and bge-small dense, RRF vs linear fusion, cross-encoder reranking. Service: sync vs async writes. Agents: single vs multi-agent. What lost: reranking (0.406 vs 0.419 nDCG@10), RRF (below dense alone), bge-small (no gain in hybrid). |
 | **Final solution** | Hybrid search (BM25 + a fine-tuned MiniLM, linear fusion at α = 0.7) over 3 shards behind one router, with versioned, idempotent writes and a zero-downtime model migration; LLM agents on top, plain questions straight to search and compound ones to the single agent. |
 | **Results** | nDCG@10 0.419 → 0.447 on dev (0.436 on test); 3 shards give exactly single-node quality; 0 of 2,045 queries failed during a live migration; compound Recall@10 0.20 → 0.40 at $0.0039 a question. |
 | **Extensions** | Security (tenants, guardrails), privacy (PII redaction, audit log), cost (budgets, cascade, rate limit), fine-tuning, memory, A2A and web search; each off by default and each measured (section 6.13). |
-| **Why it matters to the customer** | Answers grounded in their own data, fast and fresh, kept apart from every other customer, at a bounded cost and tailored to them. |
 
-The deck, [DesignV4.pptx](docs/design/DesignV4.pptx), follows the same order in thirteen sections, each opening with
+The deck, [Design.pptx](docs/design/Design.pptx), follows the same order in eight sections, each opening with
 one line on why it matters to the customer.
 
 ## 1. Problem statement
@@ -44,17 +44,17 @@ run once for it too (section 6.12).
 
 ## 2. Requirements
 
-**Functional** (the slide numbers are in [DesignV3.pptx](docs/design/DesignV3.pptx); its slide 4 is this table, with links. [DesignV3_mac.pptx](docs/design/DesignV3_mac.pptx) is the same deck with absolute file links for a Mac clone; [DesignV4.pptx](docs/design/DesignV4.pptx) regroups the same slides by what the customer needs, so its numbers differ)
+**Functional** (the slide numbers are in [Design.pptx](docs/design/Design.pptx); its slide 4 is this table, with links. [Design_mac.pptx](docs/design/Design_mac.pptx) is the same deck with absolute file links for a Mac clone)
 
 | area | requirement | what I built | deck slides |
 |---|---|---|---|
-| A1 | BM25, two dense models, a hybrid; a CLI | own BM25, all-MiniLM-L6-v2 and bge-small-en-v1.5, hybrid linear fusion; `python src/search.py --query ... --top-k 10 --strategy hybrid` | 9, 56 |
-| A2 | nDCG@10, Recall@10, MRR, p50/p95, peak RAM, stratified recall, cold vs warm | `src/eval.py` writes `results/bench.json` | 10 |
-| A3 | at least one real ablation | fusion method x weight sweep, cross-encoder rerank depth sweep, dense model, local vs global IDF | 11 |
-| A4 | three analysed failures | `results/failures.md` | 12 |
+| A1 | BM25, two dense models, a hybrid; a CLI | own BM25, all-MiniLM-L6-v2 and bge-small-en-v1.5, hybrid linear fusion; `python src/search.py --query ... --top-k 10 --strategy hybrid` | 6, 59 |
+| A2 | nDCG@10, Recall@10, MRR, p50/p95, peak RAM, stratified recall, cold vs warm | `src/eval.py` writes `results/bench.json` | 7 |
+| A3 | at least one real ablation | fusion method x weight sweep, cross-encoder rerank depth sweep, dense model, local vs global IDF | 8 |
+| A4 | three analysed failures | `results/failures.md` | 9 |
 | B1 | ≥ 3 shards, router, ≤ 1% quality gap, timeouts, 1 vs N shard latency | 3 shards, scatter-gather router, 0.0% gap, 0.5 s timeout with partial results | 13, 14 |
-| B2 | idempotent versioned upsert/delete, consistent indexes, a tested freshness guarantee | versions + tombstones + WAL; sync mode (searchable on the next query) and async mode (searchable within 1 s) | 15 to 17, 19, 21, 22, 25 |
-| B3 | zero-downtime model migration with cutover and rollback | dual-write + background backfill, `make migrate`, `make cutover`, `make rollback`; 2,045 queries, 0 failed | 18, 19, 23, 24 |
+| B2 | idempotent versioned upsert/delete, consistent indexes, a tested freshness guarantee | versions + tombstones + WAL; sync mode (searchable on the next query) and async mode (searchable within 1 s) | 15, 16, 18, 20, 21, 24 |
+| B3 | zero-downtime model migration with cutover and rollback | dual-write + background backfill, `make migrate`, `make cutover`, `make rollback`; 2,045 queries, 0 failed | 17, 18, 22, 23 |
 | C1 | 100 compound questions with half-tracked gold | `data/compound_dev.jsonl` + `data/build_compound.py` | 26 |
 | C2 | single agent, one search tool, ≤ 3 steps | `src/agent/single_agent.py` | 27, 28, 30 |
 | C3 | orchestrator + ≥ 2 sub-agent roles, shared slots, budgets, partial failure, skip when simple | `src/agent/orchestrator.py`: planner, workers, verifier | 28, 30 |
@@ -651,12 +651,9 @@ matters to the customer:
 
 | extension | why it matters to the customer |
 |---|---|
-| security | one customer never sees another customer's data |
-| privacy | the customer's data goes nowhere it shouldn't, including the LLM provider |
-| cost optimization | the customer wants it at a lower cost |
-| fine-tuning | the customer wants it tuned to their needs |
-| memory | the customer wants an assistant that remembers their facts |
-| A2A (and web search) | the customer wants specialised answers from specialised agents |
+| security and privacy | one customer never sees another's data, and no customer's data goes anywhere it shouldn't, including the LLM provider |
+| cost and fine-tuning | the customer wants it cheaper, and tuned to their needs |
+| memory and A2A (and web search) | the customer wants an assistant that remembers them and calls on specialised agents |
 
 
 | category | what it covers | built | headline |

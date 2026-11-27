@@ -172,7 +172,45 @@ Test clusters use their own ports (18000+, 19000+), so they can run while the de
 - **A number in a doc:** it must come from a file in `results/` or a recorded run, and the run's command goes next
   to it. Estimates are labelled as estimates.
 
-## 8. Rules
+## 8. Code size (read this before counting lines)
+
+The assignment asks for about 2,000 lines of code. It means `src/`, excluding tests and the data loader
+(`src/beir_data.py`), counted as logical code lines: no blank lines, comments or docstrings. This repo is also a
+learning resource, so most lines in it are documentation; a raw line count overstates the code by a lot.
+
+How to count, and what you should get (measured 2026-11-27, commit `384f7fc`):
+
+| what | command | result |
+|---|---|---|
+| the budgeted number | `python scripts/count_loc.py` | **3,812 code lines** in `src/` (8,445 lines with docs, comments and blanks; 55% is not code) |
+| every tracked Python file, raw | `git ls-files '*.py'` and count lines | 138 files, 23,588 lines (18,987 non-blank, non-comment) |
+
+Raw lines by folder: `scripts/` 11,151 · `tests/` 2,550 · `src/service/` 2,484 · `src/agent/` 2,116 · `examples/` 1,222
+· `src/a2a/` 1,021 · `src/` top level 1,002 · `src/retrieval/` 903 · `src/security/` 811 · `src/index/` 235 · `data/` 93.
+Only `src/` counts toward the budget; `scripts/`, `tests/`, `examples/` and `data/` do not.
+
+The 3,812 splits into the assignment and the extensions built after it:
+
+| part | code lines | modules |
+|---|---|---|
+| the assignment (Parts A to C) | about 2,140 | `src/retrieval/`, `src/index/`, `src/search.py`, `src/eval.py`, `src/metrics.py`, `src/config.py`, `src/util.py`, `src/service/` (router, store, shard_server, wal, cluster), `src/agent/` (single_agent, orchestrator, tools, llm, prompts, fake_policies) |
+| extensions, each opt-in and off by default | about 1,670 | `src/a2a/` 718 · `src/security/` 426 · `src/service/async_apply.py` 206 · `src/agent/cascade.py` 116 · `src/agent/memory.py` 114 · `src/agent/semantic_cache.py` 45 · `src/service/websearch.py` 44 |
+
+The assignment part is "about 2,140" and not exact, because the router and the store also carry a few hooks for the
+extensions (the security policy, tenant ownership, the web fallback). So the assignment is close to the 2,000 budget;
+the overrun is the extensions. DESIGN.md's non-functional table still says 2,004, which was measured before them.
+
+What to tell someone who asks whether code can be cut:
+- Deleting scripts does not help: they are not in the budget, and almost every one produces a number in `results/`
+  or a replay that the decks and docs cite. `scripts/render_agent_table.py` (25 lines, mentioned only in
+  `docs/faq/project_faq.md`) is the one near-dead script.
+- Deleting an extension removes a section of the deck, its replay and its tests, so it is a scope decision, not
+  clean-up. The extensions could instead move out of `src/` into their own package, which deletes nothing but
+  touches many imports, tests and docs.
+- **Never delete files in this repo without the owner's explicit approval.** Report the numbers and the options
+  above, and wait.
+
+## 9. Rules
 
 - **No secrets in git.** The Azure key lives in `.env` (gitignored; see `.env.example`).
   `tests/test_no_secrets.py` also fails on keys, absolute home paths and internal hostnames in tracked files.
@@ -185,7 +223,7 @@ Test clusters use their own ports (18000+, 19000+), so they can run while the de
 - **Docs style:** first person, plain sentences, no em or en dashes in prose, only measured numbers.
 - Line endings: `.gitattributes` keeps `*.sh` as LF, or bash fails on Windows checkouts.
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 | symptom | cause | fix |
 |---|---|---|

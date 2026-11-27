@@ -74,7 +74,7 @@ client ◄── top k, partial, missing_shards, model, timings_ms, security ─
 | `scenarios/` | `SimpleScenarios/` (8 CSV stories, `results/<cluster>/<scenario>/` with console, events and the animated replay) and `ComplexScenarios/` (JSONL) |
 | `replays/` | every recorded replay as a page that opens from disk, `index.html` by category, `data/` with the JSON each page was rendered from |
 | `results/` | every number the docs quote (`bench.json`, `runs/`, `ablation_*.json`, `write_load.json`, `agent_eval*.json`, `guardrails_eval.json`, ...) |
-| `docs/topics/00..22` | one topic per file, in the order of the project; `docs/guides/` hand-run guides (manual tests, the security/A2A/memory demo); `docs/design/` the generated decks and docx (`DesignV3.*` current, `DesignV3_mac.pptx` the same deck with absolute replay links, `DESIGN.*` the earlier version) plus `EXTENSIONS.md` |
+| `docs/topics/00..22` | one topic per file, in the order of the project; `docs/guides/` hand-run guides (manual tests, the security/A2A/memory demo); `docs/design/` the generated decks and docx (`DesignV4.*` current, `DesignV4_mac.pptx` the same deck with absolute replay links, `DesignV3.*` and `DESIGN.*` earlier versions) plus `EXTENSIONS.md` |
 | `tests/` | unit tests, in-process integration tests, and multi-process cluster tests (`conftest.py`, a tiny FiQA fixture) |
 
 ## 4. Invariants (break one and something silently goes wrong)

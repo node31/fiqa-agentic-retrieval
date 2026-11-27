@@ -1,5 +1,19 @@
 # Design: distributed, agentic retrieval over FiQA
 
+## Executive summary
+
+| | |
+|---|---|
+| **Problem** | An LLM is text in, text out and knows nothing about the customer's data. Make it answer from 57,638 personal-finance passages: fast, fresh and safe. |
+| **Approaches tried** | Search: BM25, MiniLM and bge-small dense, RRF vs linear fusion, cross-encoder reranking. Service: sync vs async writes. Agents: single vs multi-agent. What lost: reranking (0.406 vs 0.419 nDCG@10), RRF (below dense alone), bge-small (no gain in hybrid). |
+| **Final solution** | Hybrid search (BM25 + a fine-tuned MiniLM, linear fusion at α = 0.7) over 3 shards behind one router, with versioned, idempotent writes and a zero-downtime model migration; LLM agents on top, plain questions straight to search and compound ones to the single agent. |
+| **Results** | nDCG@10 0.419 → 0.447 on dev (0.436 on test); 3 shards give exactly single-node quality; 0 of 2,045 queries failed during a live migration; compound Recall@10 0.20 → 0.40 at $0.0039 a question. |
+| **Extensions** | Security (tenants, guardrails), privacy (PII redaction, audit log), cost (budgets, cascade, rate limit), fine-tuning, memory, A2A and web search; each off by default and each measured (section 6.13). |
+| **Why it matters to the customer** | Answers grounded in their own data, fast and fresh, kept apart from every other customer, at a bounded cost and tailored to them. |
+
+The deck, [DesignV4.pptx](docs/design/DesignV4.pptx), follows the same order in thirteen sections, each opening with
+one line on why it matters to the customer.
+
 ## 1. Problem statement
 
 The problem underneath everything here: an LLM is text in, text out, trained on someone else's data, and I want it
@@ -30,7 +44,7 @@ run once for it too (section 6.12).
 
 ## 2. Requirements
 
-**Functional** (the slide numbers are in [DesignV3.pptx](docs/design/DesignV3.pptx); its slide 4 is this table, with links. [DesignV3_mac.pptx](docs/design/DesignV3_mac.pptx) is the same deck with absolute file links for a Mac clone)
+**Functional** (the slide numbers are in [DesignV3.pptx](docs/design/DesignV3.pptx); its slide 4 is this table, with links. [DesignV3_mac.pptx](docs/design/DesignV3_mac.pptx) is the same deck with absolute file links for a Mac clone; [DesignV4.pptx](docs/design/DesignV4.pptx) regroups the same slides by what the customer needs, so its numbers differ)
 
 | area | requirement | what I built | deck slides |
 |---|---|---|---|
@@ -165,6 +179,8 @@ flowchart TB
 
 ### 6.1 Retrieval (A1)
 
+*Why it matters to the customer: the customer wants answers from their own data.*
+
 BM25 scores a passage by how many rare query words it contains, with diminishing returns for repeats and a penalty for
 long passages. Dense retrieval embeds the query and every passage as 384-number vectors and ranks by cosine similarity,
 so it matches meaning ("betting against a stock" finds "short selling"). Hybrid combines both lists.
@@ -297,6 +313,8 @@ What I concluded:
 In 58 of the 161 failures neither retriever had any gold passage in its top 100, so fusion or reranking could not help.
 
 ### 6.5 Router: sharding and scatter-gather (B1)
+
+*Why it matters to the customer: the customer wants answers fast.*
 
 The router owns the query path. Each shard holds one third of the corpus and answers for its slice only.
 
@@ -451,6 +469,8 @@ more per query here) or errors on the new path.
 
 ### 6.8 Compound question set (C1)
 
+*Why it matters to the customer: the customer wants a grounded answer, not a list of documents (6.8 to 6.11).*
+
 `data/build_compound.py` (seed 42) samples 200 dev questions, embeds them with MiniLM, and pairs each with a random
 unpaired partner whose cosine similarity is below 0.25, falling back to the least similar partner when none qualifies.
 The halves end up on different topics: mean pair cosine 0.088, maximum 0.346. Each pair was rewritten
@@ -561,6 +581,8 @@ What the traces showed:
 
 ### 6.12 Fine-tuned MiniLM (after the tasks)
 
+*Why it matters to the customer: the customer wants it tuned to their needs.*
+
 Only a model whose weights I can download can be fine-tuned, so the first question is how open a model is. The MTEB
 leaderboard scores openness on six yes/no checks (an idea it credits to the OSAI index): open weights (can I run and
 fine-tune it?), an open license (may I use and ship the result?), open training code (can I reproduce it?), open
@@ -624,7 +646,18 @@ MiniLM and were not re-run.
 
 ### 6.13 Extensions, in five categories
 
-What I built beyond the three parts, grouped the same way in the deck, the docs and the replays:
+What I built beyond the three parts, grouped the same way in the deck, the docs and the replays. Why each one
+matters to the customer:
+
+| extension | why it matters to the customer |
+|---|---|
+| security | one customer never sees another customer's data |
+| privacy | the customer's data goes nowhere it shouldn't, including the LLM provider |
+| cost optimization | the customer wants it at a lower cost |
+| fine-tuning | the customer wants it tuned to their needs |
+| memory | the customer wants an assistant that remembers their facts |
+| A2A (and web search) | the customer wants specialised answers from specialised agents |
+
 
 | category | what it covers | built | headline |
 |---|---|---|---|
@@ -704,6 +737,8 @@ block and a `tenant` per hit), is in [docs/topics/17_security.md](docs/topics/17
 default, the API is exactly as in this table.
 
 ### Ways to call the router
+
+*Why it matters to the customer: the customer reaches it however they work: a browser, a script, a terminal or an agent.*
 
 The same API has four front doors. All of them end as HTTP requests to the router, so the same question gets the
 same passages: [replays/ways_to_call.html](replays/ways_to_call.html) sends "what is short selling?" through each one
@@ -802,6 +837,8 @@ and global-IDF guarantees would be lost.
 | shards trust the router | with security on, anything inside the Docker network can still call a shard directly ([17_security.md](docs/topics/17_security.md) section 7) |
 
 ## 11. Results
+
+*Why it matters to the customer: the customer can check every claim against a measured number.*
 
 ### Benchmark table (dev, 500 questions)
 
@@ -906,6 +943,8 @@ sharding buys capacity and failure isolation, not speed.
 | Code size | 2,004 logical lines in `src/` excluding the data loader |
 
 ## 13. Next steps
+
+*Why it matters to the customer: the customer knows what breaks first, and what I'd fix next.*
 
 The eight I'd do first are below. The longer list, grouped by part of the system (parameters, fine-tuning, datasets, chunking, evaluation,
 scaling, writes and agents), is in [docs/design/EXTENSIONS.md](docs/design/EXTENSIONS.md).
